@@ -18,6 +18,7 @@
         <a class="navbar-item" :class="page==='overview' && 'is-active has-text-weight-semibold'" @click="page='overview'">Overview</a>
         <a class="navbar-item" :class="page==='hosts' && 'is-active has-text-weight-semibold'" @click="page='hosts'">Hosts</a>
         <a class="navbar-item" :class="page==='services' && 'is-active has-text-weight-semibold'" @click="page='services'">Services</a>
+        <a class="navbar-item" :class="page==='scheduler' && 'is-active has-text-weight-semibold'" @click="page='scheduler'">Scheduler</a>
       </div>
       <div class="navbar-end">
         <div class="navbar-item">
@@ -32,6 +33,28 @@
 
   <section class="section">
     <div class="container">
+
+      <!-- Pending approvals (visible on every page) -->
+      <template x-if="approvals.length > 0">
+        <div class="notification is-warning">
+          <p class="has-text-weight-semibold mb-2">Pending approvals</p>
+          <template x-for="ap in approvals" :key="ap.id">
+            <div class="level is-mobile">
+              <div class="level-left">
+                <div class="level-item" x-text="`${ap.module} ${ap.action}`"></div>
+                <div class="level-item is-size-7" x-text="hostName(ap.hostId)"></div>
+                <div class="level-item"><span class="tag is-danger" x-show="ap.destructive">destructive</span></div>
+              </div>
+              <div class="level-right">
+                <div class="level-item buttons are-small">
+                  <button class="button is-success" @click="confirmApproval(ap.id)">Confirm</button>
+                  <button class="button is-light" @click="rejectApproval(ap.id)">Reject</button>
+                </div>
+              </div>
+            </div>
+          </template>
+        </div>
+      </template>
 
       <!-- Overview -->
       <div x-show="page==='overview'">
@@ -165,8 +188,75 @@
         </template>
       </div>
 
+      <!-- Scheduler -->
+      <div x-show="page==='scheduler'">
+        <div class="level">
+          <div class="level-left"><h1 class="title">Scheduler</h1></div>
+          <div class="level-right"><button class="button is-primary" @click="openTask()">Add Task</button></div>
+        </div>
+        <template x-if="tasks.length===0">
+          <p class="has-text-grey">No scheduled tasks.</p>
+        </template>
+        <table class="table is-fullwidth" x-show="tasks.length>0">
+          <thead><tr><th></th><th>Name</th><th>Schedule</th><th>Action</th><th>Hosts</th><th>Next run</th><th></th></tr></thead>
+          <tbody>
+            <template x-for="t in tasks" :key="t.id">
+              <tr>
+                <td><span class="tag" :class="t.enabled ? 'is-success' : 'is-light'" x-text="t.enabled?'on':'off'"></span></td>
+                <td class="has-text-weight-semibold" x-text="t.name"></td>
+                <td><code x-text="t.schedule"></code></td>
+                <td>
+                  <span x-text="`${t.module} ${t.action}`"></span>
+                  <span class="tag is-danger is-light" x-show="t.allowDestructive">destructive</span>
+                </td>
+                <td x-text="(t.hostIds||[]).length"></td>
+                <td class="is-size-7" x-text="t.nextRun ? new Date(t.nextRun).toLocaleString() : '—'"></td>
+                <td class="has-text-right"><button class="button is-small is-danger is-light" @click="removeTask(t.id)">delete</button></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+
     </div>
   </section>
+
+  <!-- Add Task modal -->
+  <div class="modal" :class="taskOpen && 'is-active'">
+    <div class="modal-background" @click="taskOpen=false"></div>
+    <div class="modal-card">
+      <header class="modal-card-head"><p class="modal-card-title">Add Task</p></header>
+      <section class="modal-card-body">
+        <div class="field"><label class="label">Name</label><div class="control"><input class="input" x-model="newTask.name" placeholder="weekly updates"></div></div>
+        <div class="field"><label class="label">Schedule (cron)</label><div class="control"><input class="input" x-model="newTask.schedule" placeholder="0 3 * * 0"></div></div>
+        <div class="columns">
+          <div class="column field"><label class="label">Module</label><div class="control"><input class="input" x-model="newTask.module" placeholder="qup"></div></div>
+          <div class="column field"><label class="label">Action</label><div class="control"><input class="input" x-model="newTask.action" placeholder="apply"></div></div>
+        </div>
+        <div class="field">
+          <label class="label">Target hosts</label>
+          <template x-for="h in hosts" :key="h.id">
+            <label class="checkbox mr-3"><input type="checkbox" :value="h.id" @change="toggleTaskHost(h.id)"> <span x-text="h.name"></span></label>
+          </template>
+        </div>
+        <div class="columns">
+          <div class="column field">
+            <label class="label">Misfire</label>
+            <div class="control"><div class="select is-fullwidth"><select x-model="newTask.misfire">
+              <option value="skip">skip</option><option value="catchup">catchup</option><option value="retry">retry</option>
+            </select></div></div>
+          </div>
+          <div class="column field"><label class="label">Inter-host delay (s)</label><div class="control"><input class="input" type="number" x-model.number="newTask.interHostDelaySeconds"></div></div>
+        </div>
+        <label class="checkbox mr-4"><input type="checkbox" x-model="newTask.enabled"> Enabled</label>
+        <label class="checkbox"><input type="checkbox" x-model="newTask.allowDestructive"> Allow destructive</label>
+      </section>
+      <footer class="modal-card-foot">
+        <button class="button is-primary" @click="submitTask()" :disabled="!newTask.name || !newTask.schedule || !newTask.module || !newTask.action">Create</button>
+        <button class="button" @click="taskOpen=false">Cancel</button>
+      </footer>
+    </div>
+  </div>
 
   <!-- Log viewer modal -->
   <div class="modal" :class="logView.open && 'is-active'">
@@ -236,9 +326,13 @@
         overview: {},
         hosts: [],
         services: { stacks: [] },
+        tasks: [],
+        approvals: [],
         expanded: null,
         addHostOpen: false,
+        taskOpen: false,
         newHost: { name: '', ip: '', sshUser: '', sshPassword: '', tailscale: false },
+        newTask: { name: '', schedule: '', module: '', action: '', hostIds: [], misfire: 'skip', interHostDelaySeconds: 0, enabled: true, allowDestructive: false },
         job: { open: false, state: '', progress: 0, log: [] },
         logView: { open: false, title: '', lines: [], es: null },
 
@@ -252,7 +346,36 @@
             this.overview = await (await fetch('/api/v1/overview')).json();
             this.hosts = await (await fetch('/api/v1/hosts')).json();
             this.services = await (await fetch('/api/v1/services')).json();
+            this.tasks = await (await fetch('/api/v1/tasks')).json();
+            this.approvals = await (await fetch('/api/v1/approvals')).json();
           } catch (e) { console.error(e); }
+        },
+        hostName(id) { const h = this.hosts.find(x => x.id === id); return h ? h.name : id; },
+        openTask() {
+          this.newTask = { name: '', schedule: '', module: '', action: '', hostIds: [], misfire: 'skip', interHostDelaySeconds: 0, enabled: true, allowDestructive: false };
+          this.taskOpen = true;
+        },
+        toggleTaskHost(id) {
+          const i = this.newTask.hostIds.indexOf(id);
+          if (i >= 0) this.newTask.hostIds.splice(i, 1); else this.newTask.hostIds.push(id);
+        },
+        async submitTask() {
+          const r = await fetch('/api/v1/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(this.newTask) });
+          if (!r.ok) { const e = await r.json().catch(() => ({})); alert('create failed: ' + (e.error?.message || r.status)); return; }
+          this.taskOpen = false;
+          this.refresh();
+        },
+        async removeTask(id) {
+          await fetch(`/api/v1/tasks/${id}`, { method: 'DELETE' });
+          this.refresh();
+        },
+        async confirmApproval(id) {
+          const r = await fetch(`/api/v1/approvals/${id}/confirm`, { method: 'POST' });
+          if (r.ok) { const { jobId } = await r.json(); this.refresh(); if (jobId) this.watchJob(jobId); }
+        },
+        async rejectApproval(id) {
+          await fetch(`/api/v1/approvals/${id}/reject`, { method: 'POST' });
+          this.refresh();
         },
         toggle(id) { this.expanded = this.expanded === id ? null : id; },
         statusClass(s) {

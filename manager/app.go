@@ -18,25 +18,29 @@ import (
 	"google.golang.org/grpc/keepalive"
 
 	"github.com/thinkaliker/labassistant/internal/paths"
+	"github.com/thinkaliker/labassistant/manager/actions"
 	"github.com/thinkaliker/labassistant/manager/ca"
 	"github.com/thinkaliker/labassistant/manager/config"
 	"github.com/thinkaliker/labassistant/manager/events"
 	"github.com/thinkaliker/labassistant/manager/hub"
 	"github.com/thinkaliker/labassistant/manager/jobs"
 	"github.com/thinkaliker/labassistant/manager/quartermaster"
+	"github.com/thinkaliker/labassistant/manager/scheduler"
 	"github.com/thinkaliker/labassistant/manager/state"
 	pb "github.com/thinkaliker/labassistant/proto/v1"
 )
 
 // App holds the manager's wired subsystems.
 type App struct {
-	cfg    config.Config
-	ca     *ca.CA
-	store  *state.Store
-	jobs   *jobs.Registry
-	events *events.Broker
-	hub    *hub.Hub
-	qm     *quartermaster.Quartermaster
+	cfg       config.Config
+	ca        *ca.CA
+	store     *state.Store
+	jobs      *jobs.Registry
+	events    *events.Broker
+	hub       *hub.Hub
+	qm        *quartermaster.Quartermaster
+	runner    *actions.Runner
+	scheduler *scheduler.Scheduler
 }
 
 // NewApp builds the manager from its on-disk layout and configuration.
@@ -71,14 +75,31 @@ func NewApp(layout paths.Layout, cfg config.Config) (*App, error) {
 	}
 	qm := quartermaster.New(authority, store, jr, installer, cfg.Enroll.ManagerAddr, cfg.Enroll.ServerName)
 
+	h := hub.New(store, jr)
+	runner := actions.NewRunner(store, jr, h, ev)
+	sched, err := scheduler.Load(
+		layout.TasksFile(),
+		func(hostID, moduleName, action string, params json.RawMessage) error {
+			_, err := runner.Run(hostID, moduleName, action, params, true)
+			return err
+		},
+		h.Connected,
+		func() { ev.Publish(envelope("task_changed", nil)) },
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	return &App{
-		cfg:    cfg,
-		ca:     authority,
-		store:  store,
-		jobs:   jr,
-		events: ev,
-		hub:    hub.New(store, jr),
-		qm:     qm,
+		cfg:       cfg,
+		ca:        authority,
+		store:     store,
+		jobs:      jr,
+		events:    ev,
+		hub:       h,
+		qm:        qm,
+		runner:    runner,
+		scheduler: sched,
 	}, nil
 }
 
@@ -114,6 +135,7 @@ func (a *App) Serve(ctx context.Context) error {
 			errCh <- err
 		}
 	}()
+	go a.scheduler.Start(ctx)
 
 	select {
 	case <-ctx.Done():

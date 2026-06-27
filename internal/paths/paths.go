@@ -71,6 +71,9 @@ func (l Layout) CertsDir() string { return filepath.Join(l.Data, "certs") }
 // StateFile returns the path to the manager's JSON state file.
 func (l Layout) StateFile() string { return filepath.Join(l.Data, "state.json") }
 
+// TasksFile returns the path to the scheduler's persisted tasks.
+func (l Layout) TasksFile() string { return filepath.Join(l.Data, "tasks.json") }
+
 func defaultBase() string {
 	if runtime.GOOS == "linux" {
 		return "/var/lib/labassistant"

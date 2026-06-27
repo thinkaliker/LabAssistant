@@ -12,11 +12,13 @@ import (
 func (a *App) httpHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/api/v1/", api.Router(api.Deps{
-		Store:  a.store,
-		Jobs:   a.jobs,
-		Events: a.events,
-		Hub:    a.hub,
-		QM:     a.qm,
+		Store:     a.store,
+		Jobs:      a.jobs,
+		Events:    a.events,
+		Hub:       a.hub,
+		QM:        a.qm,
+		Runner:    a.runner,
+		Scheduler: a.scheduler,
 	}))
 	mux.Handle("/", http.FileServerFS(dashboard.Assets))
 	return mux

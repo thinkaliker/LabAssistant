@@ -70,6 +70,14 @@ func (m *Module) Manifest() module.Manifest {
 			mk("start", "Start a stack or service."),
 			mk("stop", "Stop a stack or service."),
 			mk("restart", "Restart a stack or service."),
+			{
+				Name:           "prune",
+				Description:    "Remove unused images and volumes (destructive).",
+				Privilege:      module.PrivilegeElevated,
+				Destructive:    true,
+				DefaultTimeout: 5 * time.Minute,
+				Streams:        true,
+			},
 		},
 	}
 }
@@ -109,6 +117,9 @@ type actionParams struct {
 }
 
 func (m *Module) Execute(ctx context.Context, req module.ActionRequest, emit func(module.Event)) (module.Result, error) {
+	if req.Action == "prune" {
+		return m.prune(ctx, emit)
+	}
 	var p actionParams
 	if len(req.Params) > 0 {
 		if err := json.Unmarshal(req.Params, &p); err != nil {
@@ -147,6 +158,20 @@ func (m *Module) Execute(ctx context.Context, req module.ActionRequest, emit fun
 		return module.Result{State: module.JobFailed, Error: "no matching stack/service"}, nil
 	}
 	emit(module.Event{Kind: module.EventLog, Message: target + " is now " + desired})
+	emit(module.Event{Kind: module.EventState, State: module.JobSucceeded})
+	return module.Result{State: module.JobSucceeded}, nil
+}
+
+func (m *Module) prune(ctx context.Context, emit func(module.Event)) (module.Result, error) {
+	emit(module.Event{Kind: module.EventState, State: module.JobRunning})
+	for _, step := range []string{"deleted 3 dangling images", "reclaimed 412MB"} {
+		select {
+		case <-ctx.Done():
+			return module.Result{State: module.JobTimedOut, Error: ctx.Err().Error()}, nil
+		case <-time.After(400 * time.Millisecond):
+		}
+		emit(module.Event{Kind: module.EventLog, Message: step})
+	}
 	emit(module.Event{Kind: module.EventState, State: module.JobSucceeded})
 	return module.Result{State: module.JobSucceeded}, nil
 }

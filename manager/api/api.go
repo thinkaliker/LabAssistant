@@ -5,28 +5,28 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
-	"time"
 
-	"google.golang.org/protobuf/types/known/durationpb"
-
+	"github.com/thinkaliker/labassistant/manager/actions"
 	"github.com/thinkaliker/labassistant/manager/events"
 	"github.com/thinkaliker/labassistant/manager/hub"
 	"github.com/thinkaliker/labassistant/manager/jobs"
 	"github.com/thinkaliker/labassistant/manager/quartermaster"
+	"github.com/thinkaliker/labassistant/manager/scheduler"
 	"github.com/thinkaliker/labassistant/manager/state"
-	"github.com/thinkaliker/labassistant/module"
-	pb "github.com/thinkaliker/labassistant/proto/v1"
 )
 
 // Deps are the subsystems the API handlers need.
 type Deps struct {
-	Store  *state.Store
-	Jobs   *jobs.Registry
-	Events *events.Broker
-	Hub    *hub.Hub
-	QM     *quartermaster.Quartermaster
+	Store     *state.Store
+	Jobs      *jobs.Registry
+	Events    *events.Broker
+	Hub       *hub.Hub
+	QM        *quartermaster.Quartermaster
+	Runner    *actions.Runner
+	Scheduler *scheduler.Scheduler
 }
 
 // Router returns the /api/v1 handler.
@@ -46,6 +46,13 @@ func Router(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/v1/jobs", d.listJobs)
 	mux.HandleFunc("GET /api/v1/jobs/{id}", d.getJob)
 	mux.HandleFunc("GET /api/v1/jobs/{id}/events", d.jobEvents)
+	mux.HandleFunc("GET /api/v1/approvals", d.listApprovals)
+	mux.HandleFunc("POST /api/v1/approvals/{id}/confirm", d.confirmApproval)
+	mux.HandleFunc("POST /api/v1/approvals/{id}/reject", d.rejectApproval)
+	mux.HandleFunc("GET /api/v1/tasks", d.listTasks)
+	mux.HandleFunc("POST /api/v1/tasks", d.createTask)
+	mux.HandleFunc("PUT /api/v1/tasks/{id}", d.updateTask)
+	mux.HandleFunc("DELETE /api/v1/tasks/{id}", d.deleteTask)
 	mux.HandleFunc("GET /api/v1/events", d.events)
 	return mux
 }
@@ -113,15 +120,6 @@ func (d Deps) getModules(w http.ResponseWriter, r *http.Request) {
 
 func (d Deps) runAction(w http.ResponseWriter, r *http.Request) {
 	id, name, action := r.PathValue("id"), r.PathValue("name"), r.PathValue("action")
-	h, ok := d.Store.Get(id)
-	if !ok {
-		writeErr(w, http.StatusNotFound, "not_found", "host not found")
-		return
-	}
-	if !d.Hub.Connected(id) {
-		writeErr(w, http.StatusConflict, "offline", "host is not connected")
-		return
-	}
 	params, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_request", "cannot read body")
@@ -130,21 +128,12 @@ func (d Deps) runAction(w http.ResponseWriter, r *http.Request) {
 	if len(params) == 0 {
 		params = nil
 	}
-
-	job := d.Jobs.Create(id, name, action, params)
-	cmd := &pb.Command{
-		JobId:   job.ID,
-		Module:  name,
-		Action:  action,
-		Params:  params,
-		Timeout: durationpb.New(actionTimeout(h, name, action)),
-	}
-	if err := d.Hub.Dispatch(id, cmd); err != nil {
-		d.Jobs.SetResult(job.ID, module.JobFailed, nil, err.Error())
-		writeErr(w, http.StatusConflict, "dispatch_failed", err.Error())
+	out, err := d.Runner.Run(id, name, action, params, false)
+	if err != nil {
+		writeRunnerErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusAccepted, map[string]string{"jobId": job.ID})
+	writeJSON(w, http.StatusAccepted, out)
 }
 
 func (d Deps) listJobs(w http.ResponseWriter, r *http.Request) {
@@ -158,20 +147,6 @@ func (d Deps) getJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, j.Snapshot())
-}
-
-func actionTimeout(h state.Host, mod, action string) time.Duration {
-	for _, m := range h.Modules {
-		if m.Name != mod {
-			continue
-		}
-		for _, a := range m.Actions {
-			if a.Name == action && a.DefaultTimeout > 0 {
-				return a.DefaultTimeout
-			}
-		}
-	}
-	return 5 * time.Minute
 }
 
 // countUpdates sums a "count" field from any module status that reports one (e.g. qup).
@@ -201,4 +176,16 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 
 func writeErr(w http.ResponseWriter, code int, errCode, msg string) {
 	writeJSON(w, code, map[string]any{"error": map[string]string{"code": errCode, "message": msg}})
+}
+
+// writeRunnerErr maps actions.Runner errors to HTTP statuses.
+func writeRunnerErr(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, actions.ErrHostNotFound), errors.Is(err, actions.ErrNotFound):
+		writeErr(w, http.StatusNotFound, "not_found", err.Error())
+	case errors.Is(err, actions.ErrOffline):
+		writeErr(w, http.StatusConflict, "offline", err.Error())
+	default:
+		writeErr(w, http.StatusInternalServerError, "error", err.Error())
+	}
 }
