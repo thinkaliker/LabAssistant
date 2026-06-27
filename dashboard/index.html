@@ -25,7 +25,8 @@
         <div class="navbar-item">
           <div class="buttons">
             <button class="button is-primary" @click="addHostOpen=true">Add Host</button>
-            <button class="button is-dark" title="Settings">&#9881;</button>
+            <button class="button is-dark" title="Settings" @click="page='settings'">&#9881;</button>
+            <button class="button is-dark" title="Log out" x-show="authUser" @click="logout()">⎋</button>
           </div>
         </div>
       </div>
@@ -134,6 +135,9 @@
                                   x-text="`${m.name} ${a.name}`"></button>
                         </div>
                       </template>
+                      <div class="level-item">
+                        <button class="button is-small" @click="openConfig(h.id, m)">⚙ config</button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -241,8 +245,97 @@
         </table>
       </div>
 
+      <!-- Settings -->
+      <div x-show="page==='settings'">
+        <h1 class="title">Settings</h1>
+
+        <div class="box">
+          <h2 class="subtitle">Manager</h2>
+          <div class="columns">
+            <div class="column field">
+              <label class="label">Log level</label>
+              <div class="control"><div class="select"><select x-model="settings.logLevel">
+                <option>debug</option><option>info</option><option>warn</option><option>error</option>
+              </select></div></div>
+            </div>
+            <div class="column field">
+              <label class="label">Default timezone</label>
+              <div class="control"><input class="input" x-model="settings.defaultTimezone" placeholder="America/Los_Angeles"></div>
+            </div>
+          </div>
+          <button class="button is-primary" @click="saveSettings()">Save</button>
+        </div>
+
+        <div class="box">
+          <h2 class="subtitle">API Tokens</h2>
+          <div class="field has-addons">
+            <div class="control is-expanded"><input class="input" x-model="newTokenName" placeholder="token name"></div>
+            <div class="control"><button class="button is-link" @click="createToken()">Create</button></div>
+          </div>
+          <div class="notification is-success" x-show="newTokenValue">
+            <button class="delete" @click="newTokenValue=''"></button>
+            Copy now (shown once): <code x-text="newTokenValue"></code>
+          </div>
+          <table class="table is-fullwidth is-narrow" x-show="tokens.length>0">
+            <tbody>
+              <template x-for="t in tokens" :key="t.id">
+                <tr><td x-text="t.name||'(unnamed)'"></td><td class="is-size-7 has-text-grey" x-text="new Date(t.createdAt).toLocaleString()"></td>
+                <td class="has-text-right"><button class="button is-small is-danger is-light" @click="revokeToken(t.id)">revoke</button></td></tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="box">
+          <h2 class="subtitle">Backup</h2>
+          <div class="buttons">
+            <button class="button" @click="downloadBackup()">Download backup</button>
+            <label class="button">
+              Restore from file…
+              <input type="file" accept="application/json" style="display:none" @change="restoreBackup($event)">
+            </label>
+          </div>
+          <p class="is-size-7 has-text-grey">Backup includes the CA private key — keep it secret. Restore requires a manager restart.</p>
+        </div>
+      </div>
+
     </div>
   </section>
+
+  <!-- Login overlay -->
+  <div class="modal" :class="needsLogin && 'is-active'">
+    <div class="modal-background"></div>
+    <div class="modal-card">
+      <header class="modal-card-head"><p class="modal-card-title">LabAssistant — Sign in</p></header>
+      <section class="modal-card-body">
+        <div class="field"><label class="label">Username</label><div class="control"><input class="input" x-model="login.username"></div></div>
+        <div class="field"><label class="label">Password</label><div class="control"><input class="input" type="password" x-model="login.password" @keydown.enter="doLogin()"></div></div>
+        <p class="help is-danger" x-show="loginError" x-text="loginError"></p>
+      </section>
+      <footer class="modal-card-foot"><button class="button is-primary" @click="doLogin()">Sign in</button></footer>
+    </div>
+  </div>
+
+  <!-- Module config modal -->
+  <div class="modal" :class="cfg.open && 'is-active'">
+    <div class="modal-background" @click="cfg.open=false"></div>
+    <div class="modal-card">
+      <header class="modal-card-head"><p class="modal-card-title" x-text="'Configure '+cfg.module"></p></header>
+      <section class="modal-card-body">
+        <template x-if="cfg.fields.length===0"><p class="has-text-grey">This module has no configurable settings.</p></template>
+        <template x-for="f in cfg.fields" :key="f.key">
+          <div class="field">
+            <label class="label" x-text="f.title||f.key"></label>
+            <div class="control"><input class="input" :type="f.secret?'password':'text'" x-model="cfg.values[f.key]"></div>
+          </div>
+        </template>
+      </section>
+      <footer class="modal-card-foot">
+        <button class="button is-primary" @click="saveModuleConfig()" x-show="cfg.fields.length>0">Save</button>
+        <button class="button" @click="cfg.open=false">Close</button>
+      </footer>
+    </div>
+  </div>
 
   <!-- Add Task modal -->
   <div class="modal" :class="taskOpen && 'is-active'">
@@ -359,11 +452,37 @@
         newTask: { name: '', schedule: '', module: '', action: '', hostIds: [], misfire: 'skip', interHostDelaySeconds: 0, enabled: true, allowDestructive: false },
         job: { open: false, state: '', progress: 0, log: [] },
         logView: { open: false, title: '', lines: [], es: null },
+        needsLogin: false,
+        authUser: '',
+        login: { username: 'admin', password: '' },
+        loginError: '',
+        settings: { logLevel: 'info', defaultTimezone: '' },
+        tokens: [],
+        newTokenName: '',
+        newTokenValue: '',
+        cfg: { open: false, hostId: '', module: '', fields: [], values: {} },
 
         async init() {
-          await this.refresh();
+          try {
+            const s = await (await fetch('/api/v1/auth/session')).json();
+            this.authUser = s.authRequired ? s.username : '';
+            if (s.authRequired && !s.authenticated) { this.needsLogin = true; return; }
+          } catch (e) { console.error(e); }
+          this.start();
+        },
+        start() {
+          this.refresh();
           const es = new EventSource('/api/v1/events');
           es.onmessage = () => this.refresh();
+        },
+        async doLogin() {
+          const r = await fetch('/api/v1/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(this.login) });
+          if (!r.ok) { this.loginError = 'Invalid credentials'; return; }
+          this.loginError = ''; this.login.password = ''; this.needsLogin = false; this.start();
+        },
+        async logout() {
+          await fetch('/api/v1/auth/logout', { method: 'POST' });
+          this.needsLogin = true;
         },
         async refresh() {
           try {
@@ -373,7 +492,40 @@
             this.tasks = await (await fetch('/api/v1/tasks')).json();
             this.approvals = await (await fetch('/api/v1/approvals')).json();
             this.audit = await (await fetch('/api/v1/audit')).json();
+            this.settings = await (await fetch('/api/v1/settings')).json();
+            this.tokens = await (await fetch('/api/v1/auth/tokens')).json();
           } catch (e) { console.error(e); }
+        },
+        async saveSettings() {
+          await fetch('/api/v1/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(this.settings) });
+          this.refresh();
+        },
+        async createToken() {
+          const r = await fetch('/api/v1/auth/tokens', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: this.newTokenName }) });
+          if (r.ok) { const t = await r.json(); this.newTokenValue = t.token; this.newTokenName = ''; this.refresh(); }
+        },
+        async revokeToken(id) { await fetch(`/api/v1/auth/tokens/${id}`, { method: 'DELETE' }); this.refresh(); },
+        async downloadBackup() {
+          const data = await (await fetch('/api/v1/backup')).json();
+          const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+          const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'labassistant-backup.json'; a.click();
+        },
+        async restoreBackup(ev) {
+          const file = ev.target.files[0]; if (!file) return;
+          const text = await file.text();
+          const r = await fetch('/api/v1/restore', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: text });
+          alert(r.ok ? 'Restored. Restart the manager to apply.' : 'Restore failed.');
+        },
+        async openConfig(hostId, m) {
+          this.cfg = { open: true, hostId, module: m.name, fields: [], values: {} };
+          const r = await (await fetch(`/api/v1/hosts/${hostId}/modules/${m.name}/config`)).json();
+          const props = (r.schema && JSON.parse(typeof r.schema === 'string' ? r.schema : JSON.stringify(r.schema)).properties) || {};
+          this.cfg.fields = Object.entries(props).map(([key, v]) => ({ key, title: v.title, secret: !!v.secret }));
+          this.cfg.values = r.config || {};
+        },
+        async saveModuleConfig() {
+          await fetch(`/api/v1/hosts/${this.cfg.hostId}/modules/${this.cfg.module}/config`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(this.cfg.values) });
+          this.cfg.open = false;
         },
         hostName(id) { const h = this.hosts.find(x => x.id === id); return h ? h.name : id; },
         openTask() {

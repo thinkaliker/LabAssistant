@@ -63,9 +63,10 @@ func (m *Module) Manifest() module.Manifest {
 		}
 	}
 	return module.Manifest{
-		Name:        "duo",
-		Version:     "0.1.0",
-		Description: "Docker updater/orchestrator: manage compose stacks and services.",
+		Name:         "duo",
+		Version:      "0.1.0",
+		Description:  "Docker updater/orchestrator: manage compose stacks and services.",
+		ConfigSchema: json.RawMessage(`{"type":"object","properties":{"registryUser":{"type":"string","title":"Registry user"},"registryToken":{"type":"string","title":"Registry token","secret":true}}}`),
 		Actions: []module.ActionSpec{
 			mk("start", "Start a stack or service."),
 			mk("stop", "Stop a stack or service."),

@@ -77,6 +77,12 @@ func (l Layout) TasksFile() string { return filepath.Join(l.Data, "tasks.json") 
 // AuditFile returns the path to the audit log.
 func (l Layout) AuditFile() string { return filepath.Join(l.Data, "audit.log") }
 
+// SettingsFile returns the path to the settings + auth store.
+func (l Layout) SettingsFile() string { return filepath.Join(l.Data, "settings.json") }
+
+// ModConfigFile returns the path to per-host module configuration.
+func (l Layout) ModConfigFile() string { return filepath.Join(l.Data, "moduleconfig.json") }
+
 func defaultBase() string {
 	if runtime.GOOS == "linux" {
 		return "/var/lib/labassistant"

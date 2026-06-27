@@ -19,14 +19,17 @@ import (
 
 	"github.com/thinkaliker/labassistant/internal/paths"
 	"github.com/thinkaliker/labassistant/manager/actions"
+	"github.com/thinkaliker/labassistant/manager/api"
 	"github.com/thinkaliker/labassistant/manager/auditor"
 	"github.com/thinkaliker/labassistant/manager/ca"
 	"github.com/thinkaliker/labassistant/manager/config"
 	"github.com/thinkaliker/labassistant/manager/events"
 	"github.com/thinkaliker/labassistant/manager/hub"
 	"github.com/thinkaliker/labassistant/manager/jobs"
+	"github.com/thinkaliker/labassistant/manager/modconfig"
 	"github.com/thinkaliker/labassistant/manager/quartermaster"
 	"github.com/thinkaliker/labassistant/manager/scheduler"
+	"github.com/thinkaliker/labassistant/manager/settings"
 	"github.com/thinkaliker/labassistant/manager/state"
 	pb "github.com/thinkaliker/labassistant/proto/v1"
 )
@@ -43,6 +46,10 @@ type App struct {
 	runner    *actions.Runner
 	scheduler *scheduler.Scheduler
 	aud       *auditor.Auditor
+	settings  *settings.Store
+	modconfig *modconfig.Store
+	sessions  *api.Sessions
+	backup    *api.Backup
 }
 
 // NewApp builds the manager from its on-disk layout and configuration.
@@ -104,6 +111,15 @@ func NewApp(layout paths.Layout, cfg config.Config) (*App, error) {
 		return nil, err
 	}
 
+	set, err := settings.Load(layout.SettingsFile())
+	if err != nil {
+		return nil, err
+	}
+	mc, err := modconfig.Load(layout.ModConfigFile())
+	if err != nil {
+		return nil, err
+	}
+
 	return &App{
 		cfg:       cfg,
 		ca:        authority,
@@ -115,6 +131,10 @@ func NewApp(layout paths.Layout, cfg config.Config) (*App, error) {
 		runner:    runner,
 		scheduler: sched,
 		aud:       aud,
+		settings:  set,
+		modconfig: mc,
+		sessions:  api.NewSessions(),
+		backup:    &api.Backup{Layout: layout},
 	}, nil
 }
 

@@ -8,6 +8,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
@@ -16,9 +17,12 @@ import (
 	"strings"
 	"syscall"
 
+	"golang.org/x/term"
+
 	"github.com/thinkaliker/labassistant/internal/paths"
 	"github.com/thinkaliker/labassistant/manager"
 	"github.com/thinkaliker/labassistant/manager/config"
+	"github.com/thinkaliker/labassistant/manager/settings"
 )
 
 func main() {
@@ -34,8 +38,10 @@ func main() {
 		err = runServe(args)
 	case "enroll":
 		err = runEnroll(args)
+	case "setpass":
+		err = runSetpass(args)
 	default:
-		err = fmt.Errorf("unknown subcommand %q (want serve or enroll)", cmd)
+		err = fmt.Errorf("unknown subcommand %q (want serve, enroll, or setpass)", cmd)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "manager:", err)
@@ -97,5 +103,48 @@ func runEnroll(args []string) error {
 		return err
 	}
 	fmt.Printf("enrolled host %q (id %s)\nbundle written to %s\n", *name, b.HostID, *out)
+	return nil
+}
+
+func runSetpass(args []string) error {
+	fs := flag.NewFlagSet("setpass", flag.ExitOnError)
+	home := fs.String("home", "", "base directory (overrides $LABASSISTANT_HOME)")
+	user := fs.String("user", "admin", "dashboard login username")
+	_ = fs.Parse(args)
+
+	layout, err := paths.Resolve(*home)
+	if err != nil {
+		return err
+	}
+	if err := layout.EnsureDirs(); err != nil {
+		return err
+	}
+	store, err := settings.Load(layout.SettingsFile())
+	if err != nil {
+		return err
+	}
+
+	var pw string
+	if term.IsTerminal(int(os.Stdin.Fd())) {
+		fmt.Print("New password: ")
+		b, err := term.ReadPassword(int(os.Stdin.Fd()))
+		fmt.Println()
+		if err != nil {
+			return err
+		}
+		pw = string(b)
+	} else {
+		// Non-interactive: read one line from stdin (e.g. piped input).
+		s := bufio.NewScanner(os.Stdin)
+		s.Scan()
+		pw = strings.TrimRight(s.Text(), "\r\n")
+	}
+	if pw == "" {
+		return fmt.Errorf("password cannot be empty")
+	}
+	if err := store.SetPassword(*user, pw); err != nil {
+		return err
+	}
+	fmt.Printf("password set for user %q\n", *user)
 	return nil
 }

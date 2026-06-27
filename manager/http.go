@@ -20,6 +20,10 @@ func (a *App) httpHandler() http.Handler {
 		Runner:    a.runner,
 		Scheduler: a.scheduler,
 		Aud:       a.aud,
+		Settings:  a.settings,
+		Sessions:  a.sessions,
+		Backup:    a.backup,
+		ModConfig: a.modconfig,
 	}))
 	mux.Handle("/", http.FileServerFS(dashboard.Assets))
 	return mux

@@ -14,8 +14,10 @@ import (
 	"github.com/thinkaliker/labassistant/manager/events"
 	"github.com/thinkaliker/labassistant/manager/hub"
 	"github.com/thinkaliker/labassistant/manager/jobs"
+	"github.com/thinkaliker/labassistant/manager/modconfig"
 	"github.com/thinkaliker/labassistant/manager/quartermaster"
 	"github.com/thinkaliker/labassistant/manager/scheduler"
+	"github.com/thinkaliker/labassistant/manager/settings"
 	"github.com/thinkaliker/labassistant/manager/state"
 )
 
@@ -29,6 +31,10 @@ type Deps struct {
 	Runner    *actions.Runner
 	Scheduler *scheduler.Scheduler
 	Aud       *auditor.Auditor
+	Settings  *settings.Store
+	Sessions  *Sessions
+	Backup    *Backup
+	ModConfig *modconfig.Store
 }
 
 // Router returns the /api/v1 handler.
@@ -57,7 +63,22 @@ func Router(d Deps) http.Handler {
 	mux.HandleFunc("DELETE /api/v1/tasks/{id}", d.deleteTask)
 	mux.HandleFunc("GET /api/v1/audit", d.audit)
 	mux.HandleFunc("GET /api/v1/events", d.events)
-	return mux
+
+	mux.HandleFunc("POST /api/v1/auth/login", d.login)
+	mux.HandleFunc("POST /api/v1/auth/logout", d.logout)
+	mux.HandleFunc("GET /api/v1/auth/session", d.session)
+	mux.HandleFunc("GET /api/v1/auth/tokens", d.listTokens)
+	mux.HandleFunc("POST /api/v1/auth/tokens", d.createToken)
+	mux.HandleFunc("DELETE /api/v1/auth/tokens/{id}", d.revokeToken)
+
+	mux.HandleFunc("GET /api/v1/settings", d.getSettings)
+	mux.HandleFunc("PUT /api/v1/settings", d.putSettings)
+	mux.HandleFunc("GET /api/v1/hosts/{id}/modules/{name}/config", d.getModuleConfig)
+	mux.HandleFunc("PUT /api/v1/hosts/{id}/modules/{name}/config", d.putModuleConfig)
+	mux.HandleFunc("GET /api/v1/backup", d.backup)
+	mux.HandleFunc("POST /api/v1/restore", d.restore)
+
+	return d.authMiddleware(mux)
 }
 
 func (d Deps) overview(w http.ResponseWriter, r *http.Request) {
