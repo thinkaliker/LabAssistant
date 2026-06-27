@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/thinkaliker/labassistant/internal/bundle"
+	"github.com/thinkaliker/labassistant/manager/auditor"
 	"github.com/thinkaliker/labassistant/manager/ca"
 	"github.com/thinkaliker/labassistant/manager/jobs"
 	"github.com/thinkaliker/labassistant/manager/state"
@@ -44,15 +45,16 @@ type Quartermaster struct {
 	ca          *ca.CA
 	store       *state.Store
 	jobs        *jobs.Registry
+	aud         *auditor.Auditor
 	installer   Installer
 	managerAddr string
 	serverName  string
 }
 
 // New builds a Quartermaster.
-func New(authority *ca.CA, store *state.Store, jr *jobs.Registry, installer Installer, managerAddr, serverName string) *Quartermaster {
+func New(authority *ca.CA, store *state.Store, jr *jobs.Registry, aud *auditor.Auditor, installer Installer, managerAddr, serverName string) *Quartermaster {
 	return &Quartermaster{
-		ca: authority, store: store, jobs: jr, installer: installer,
+		ca: authority, store: store, jobs: jr, aud: aud, installer: installer,
 		managerAddr: managerAddr, serverName: serverName,
 	}
 }
@@ -69,6 +71,8 @@ func (q *Quartermaster) Enroll(req EnrollRequest) (hostID, jobID string, err err
 		return "", "", err
 	}
 	job := q.jobs.Create(hostID, "quartermaster", "enroll", nil)
+	q.aud.Record("host_added", hostID, "user", "host added: "+req.Name,
+		map[string]string{"name": req.Name, "ip": req.IP})
 	go q.run(context.Background(), hostID, req, job.ID)
 	return hostID, job.ID, nil
 }
@@ -79,6 +83,7 @@ func (q *Quartermaster) run(ctx context.Context, hostID string, req EnrollReques
 		emit("error: " + err.Error())
 		q.store.SetStatus(hostID, state.StatusError)
 		q.jobs.SetResult(jobID, module.JobFailed, nil, err.Error())
+		q.aud.Record("host_enroll_failed", hostID, "manager", "enrollment failed: "+err.Error(), nil)
 	}
 
 	emit("issuing client certificate")
@@ -87,6 +92,7 @@ func (q *Quartermaster) run(ctx context.Context, hostID string, req EnrollReques
 		fail(err)
 		return
 	}
+	q.aud.Record("cert_issued", hostID, "manager", "client certificate issued", nil)
 	b := bundle.Bundle{
 		HostID:      hostID,
 		ManagerAddr: q.managerAddr,
@@ -108,4 +114,5 @@ func (q *Quartermaster) run(ctx context.Context, hostID string, req EnrollReques
 
 	emit("associate installed; awaiting connection")
 	q.jobs.SetResult(jobID, module.JobSucceeded, nil, "")
+	q.aud.Record("host_enroll_complete", hostID, "manager", "associate installed", nil)
 }

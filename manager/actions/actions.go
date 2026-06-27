@@ -6,12 +6,14 @@ package actions
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/durationpb"
 
+	"github.com/thinkaliker/labassistant/manager/auditor"
 	"github.com/thinkaliker/labassistant/manager/events"
 	"github.com/thinkaliker/labassistant/manager/hub"
 	"github.com/thinkaliker/labassistant/manager/jobs"
@@ -50,14 +52,15 @@ type Runner struct {
 	jobs   *jobs.Registry
 	hub    *hub.Hub
 	events *events.Broker
+	aud    *auditor.Auditor
 
 	mu        sync.Mutex
 	approvals map[string]*Approval
 }
 
 // NewRunner builds a Runner.
-func NewRunner(store *state.Store, jr *jobs.Registry, h *hub.Hub, ev *events.Broker) *Runner {
-	return &Runner{store: store, jobs: jr, hub: h, events: ev, approvals: map[string]*Approval{}}
+func NewRunner(store *state.Store, jr *jobs.Registry, h *hub.Hub, ev *events.Broker, aud *auditor.Auditor) *Runner {
+	return &Runner{store: store, jobs: jr, hub: h, events: ev, aud: aud, approvals: map[string]*Approval{}}
 }
 
 // Run dispatches an action, or creates an approval if the action is destructive and not
@@ -79,6 +82,8 @@ func (r *Runner) Run(hostID, moduleName, action string, params json.RawMessage, 
 		r.approvals[ap.ID] = ap
 		r.mu.Unlock()
 		r.events.Publish(envelope("approval_created", ap))
+		r.aud.Record("approval_created", hostID, "user",
+			fmt.Sprintf("approval requested: %s %s", moduleName, action), ap)
 		return Outcome{ApprovalID: ap.ID}, nil
 	}
 	return r.dispatch(host, moduleName, action, params)
@@ -97,6 +102,9 @@ func (r *Runner) dispatch(host state.Host, moduleName, action string, params jso
 		r.jobs.SetResult(job.ID, module.JobFailed, nil, err.Error())
 		return Outcome{}, err
 	}
+	r.aud.Record("action_dispatched", host.ID, "manager",
+		fmt.Sprintf("%s %s dispatched", moduleName, action),
+		map[string]string{"jobId": job.ID, "module": moduleName, "action": action})
 	return Outcome{JobID: job.ID}, nil
 }
 
@@ -118,6 +126,8 @@ func (r *Runner) Confirm(id string) (Outcome, error) {
 		return Outcome{}, ErrNotFound
 	}
 	r.events.Publish(envelope("approval_resolved", map[string]string{"id": id, "result": "confirmed"}))
+	r.aud.Record("approval_confirmed", ap.HostID, "user",
+		fmt.Sprintf("approved: %s %s", ap.Module, ap.Action), nil)
 	host, ok := r.store.Get(ap.HostID)
 	if !ok {
 		return Outcome{}, ErrHostNotFound
@@ -130,9 +140,11 @@ func (r *Runner) Confirm(id string) (Outcome, error) {
 
 // Reject discards a pending approval.
 func (r *Runner) Reject(id string) bool {
-	_, ok := r.take(id)
+	ap, ok := r.take(id)
 	if ok {
 		r.events.Publish(envelope("approval_resolved", map[string]string{"id": id, "result": "rejected"}))
+		r.aud.Record("approval_rejected", ap.HostID, "user",
+			fmt.Sprintf("rejected: %s %s", ap.Module, ap.Action), nil)
 	}
 	return ok
 }

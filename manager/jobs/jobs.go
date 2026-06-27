@@ -41,11 +41,25 @@ type Job struct {
 	broker *events.Broker
 }
 
+// View is a mutex-free snapshot of a job's public fields.
+type View struct {
+	ID        string          `json:"id"`
+	HostID    string          `json:"hostId"`
+	Module    string          `json:"module"`
+	Action    string          `json:"action"`
+	Params    json.RawMessage `json:"params,omitempty"`
+	State     string          `json:"state"`
+	Result    json.RawMessage `json:"result,omitempty"`
+	Error     string          `json:"error,omitempty"`
+	CreatedAt time.Time       `json:"createdAt"`
+	UpdatedAt time.Time       `json:"updatedAt"`
+}
+
 // Snapshot returns a copy of the job's public fields.
-func (j *Job) Snapshot() Job {
+func (j *Job) Snapshot() View {
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	return Job{
+	return View{
 		ID: j.ID, HostID: j.HostID, Module: j.Module, Action: j.Action,
 		Params: j.Params, State: j.State, Result: j.Result, Error: j.Error,
 		CreatedAt: j.CreatedAt, UpdatedAt: j.UpdatedAt,
@@ -63,14 +77,23 @@ func (j *Job) Subscribe() (backlog []Event, ch <-chan []byte, cancel func()) {
 
 // Registry holds all jobs and publishes updates to the aggregate feed.
 type Registry struct {
-	mu     sync.Mutex
-	m      map[string]*Job
-	global *events.Broker
+	mu         sync.Mutex
+	m          map[string]*Job
+	global     *events.Broker
+	resultHook func(View)
 }
 
 // NewRegistry creates an empty registry that mirrors job updates to global.
 func NewRegistry(global *events.Broker) *Registry {
-	return &Registry{m: map[string]*Job{}, global: global}
+	return &Registry{m: map[string]*Job{}, global: global, resultHook: func(View) {}}
+}
+
+// SetResultHook registers a callback invoked with a job's snapshot when it reaches a
+// terminal state.
+func (r *Registry) SetResultHook(fn func(View)) {
+	r.mu.Lock()
+	r.resultHook = fn
+	r.mu.Unlock()
 }
 
 // Create registers a new queued job.
@@ -101,10 +124,10 @@ func (r *Registry) Get(id string) (*Job, bool) {
 }
 
 // List returns snapshots of all jobs.
-func (r *Registry) List() []Job {
+func (r *Registry) List() []View {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	out := make([]Job, 0, len(r.m))
+	out := make([]View, 0, len(r.m))
 	for _, j := range r.m {
 		out = append(out, j.Snapshot())
 	}
@@ -147,6 +170,13 @@ func (r *Registry) SetResult(jobID string, state module.JobState, result json.Ra
 	j.UpdatedAt = time.Now()
 	j.mu.Unlock()
 	r.AddEvent(jobID, Event{Kind: "state", State: state.String(), Message: errStr})
+
+	r.mu.Lock()
+	hook := r.resultHook
+	r.mu.Unlock()
+	if hook != nil {
+		hook(j.Snapshot())
+	}
 }
 
 func encode(typ string, payload any) []byte {

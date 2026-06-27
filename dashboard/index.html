@@ -19,6 +19,7 @@
         <a class="navbar-item" :class="page==='hosts' && 'is-active has-text-weight-semibold'" @click="page='hosts'">Hosts</a>
         <a class="navbar-item" :class="page==='services' && 'is-active has-text-weight-semibold'" @click="page='services'">Services</a>
         <a class="navbar-item" :class="page==='scheduler' && 'is-active has-text-weight-semibold'" @click="page='scheduler'">Scheduler</a>
+        <a class="navbar-item" :class="page==='audit' && 'is-active has-text-weight-semibold'" @click="page='audit'">Audit</a>
       </div>
       <div class="navbar-end">
         <div class="navbar-item">
@@ -218,6 +219,28 @@
         </table>
       </div>
 
+      <!-- Audit -->
+      <div x-show="page==='audit'">
+        <h1 class="title">Audit Log</h1>
+        <template x-if="audit.length===0">
+          <p class="has-text-grey">No audit entries.</p>
+        </template>
+        <table class="table is-fullwidth is-narrow" x-show="audit.length>0">
+          <thead><tr><th>Time</th><th>Type</th><th>Host</th><th>Actor</th><th>Summary</th></tr></thead>
+          <tbody>
+            <template x-for="e in audit" :key="e.id">
+              <tr>
+                <td class="is-size-7" x-text="new Date(e.time).toLocaleString()"></td>
+                <td><span class="tag is-light" x-text="e.type"></span></td>
+                <td class="is-size-7" x-text="e.hostId ? hostName(e.hostId) : '—'"></td>
+                <td class="is-size-7" x-text="e.actor"></td>
+                <td x-text="e.summary"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+
     </div>
   </section>
 
@@ -328,6 +351,7 @@
         services: { stacks: [] },
         tasks: [],
         approvals: [],
+        audit: [],
         expanded: null,
         addHostOpen: false,
         taskOpen: false,
@@ -348,6 +372,7 @@
             this.services = await (await fetch('/api/v1/services')).json();
             this.tasks = await (await fetch('/api/v1/tasks')).json();
             this.approvals = await (await fetch('/api/v1/approvals')).json();
+            this.audit = await (await fetch('/api/v1/audit')).json();
           } catch (e) { console.error(e); }
         },
         hostName(id) { const h = this.hosts.find(x => x.id === id); return h ? h.name : id; },

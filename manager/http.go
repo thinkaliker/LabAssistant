@@ -19,6 +19,7 @@ func (a *App) httpHandler() http.Handler {
 		QM:        a.qm,
 		Runner:    a.runner,
 		Scheduler: a.scheduler,
+		Aud:       a.aud,
 	}))
 	mux.Handle("/", http.FileServerFS(dashboard.Assets))
 	return mux

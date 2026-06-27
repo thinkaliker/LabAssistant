@@ -74,6 +74,9 @@ func (l Layout) StateFile() string { return filepath.Join(l.Data, "state.json") 
 // TasksFile returns the path to the scheduler's persisted tasks.
 func (l Layout) TasksFile() string { return filepath.Join(l.Data, "tasks.json") }
 
+// AuditFile returns the path to the audit log.
+func (l Layout) AuditFile() string { return filepath.Join(l.Data, "audit.log") }
+
 func defaultBase() string {
 	if runtime.GOOS == "linux" {
 		return "/var/lib/labassistant"

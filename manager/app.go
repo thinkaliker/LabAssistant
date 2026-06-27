@@ -19,6 +19,7 @@ import (
 
 	"github.com/thinkaliker/labassistant/internal/paths"
 	"github.com/thinkaliker/labassistant/manager/actions"
+	"github.com/thinkaliker/labassistant/manager/auditor"
 	"github.com/thinkaliker/labassistant/manager/ca"
 	"github.com/thinkaliker/labassistant/manager/config"
 	"github.com/thinkaliker/labassistant/manager/events"
@@ -41,6 +42,7 @@ type App struct {
 	qm        *quartermaster.Quartermaster
 	runner    *actions.Runner
 	scheduler *scheduler.Scheduler
+	aud       *auditor.Auditor
 }
 
 // NewApp builds the manager from its on-disk layout and configuration.
@@ -59,6 +61,18 @@ func NewApp(layout paths.Layout, cfg config.Config) (*App, error) {
 	})
 	jr := jobs.NewRegistry(ev)
 
+	aud, err := auditor.Open(layout.AuditFile(), cfg.Audit.Max, func(e auditor.Entry) {
+		ev.Publish(envelope("audit", e))
+	})
+	if err != nil {
+		return nil, err
+	}
+	jr.SetResultHook(func(j jobs.View) {
+		aud.Record("job_"+j.State, j.HostID, "manager",
+			fmt.Sprintf("%s %s %s", j.Module, j.Action, j.State),
+			map[string]string{"jobId": j.ID})
+	})
+
 	var installer quartermaster.Installer
 	switch cfg.Enroll.Mode {
 	case "ssh":
@@ -73,10 +87,10 @@ func NewApp(layout paths.Layout, cfg config.Config) (*App, error) {
 			WorkDir:      filepath.Join(layout.Data, "hosts"),
 		}
 	}
-	qm := quartermaster.New(authority, store, jr, installer, cfg.Enroll.ManagerAddr, cfg.Enroll.ServerName)
+	qm := quartermaster.New(authority, store, jr, aud, installer, cfg.Enroll.ManagerAddr, cfg.Enroll.ServerName)
 
 	h := hub.New(store, jr)
-	runner := actions.NewRunner(store, jr, h, ev)
+	runner := actions.NewRunner(store, jr, h, ev, aud)
 	sched, err := scheduler.Load(
 		layout.TasksFile(),
 		func(hostID, moduleName, action string, params json.RawMessage) error {
@@ -100,6 +114,7 @@ func NewApp(layout paths.Layout, cfg config.Config) (*App, error) {
 		qm:        qm,
 		runner:    runner,
 		scheduler: sched,
+		aud:       aud,
 	}, nil
 }
 

@@ -82,9 +82,11 @@ func (d Deps) editHost(w http.ResponseWriter, r *http.Request) {
 
 // deleteHost removes a host. TODO(slice-2+): revoke its client certificate.
 func (d Deps) deleteHost(w http.ResponseWriter, r *http.Request) {
-	if err := d.Store.Remove(r.PathValue("id")); err != nil {
+	id := r.PathValue("id")
+	if err := d.Store.Remove(id); err != nil {
 		writeErr(w, http.StatusInternalServerError, "delete_failed", err.Error())
 		return
 	}
+	d.Aud.Record("host_removed", id, "user", "host removed", nil)
 	w.WriteHeader(http.StatusNoContent)
 }

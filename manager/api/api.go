@@ -10,6 +10,7 @@ import (
 	"net/http"
 
 	"github.com/thinkaliker/labassistant/manager/actions"
+	"github.com/thinkaliker/labassistant/manager/auditor"
 	"github.com/thinkaliker/labassistant/manager/events"
 	"github.com/thinkaliker/labassistant/manager/hub"
 	"github.com/thinkaliker/labassistant/manager/jobs"
@@ -27,6 +28,7 @@ type Deps struct {
 	QM        *quartermaster.Quartermaster
 	Runner    *actions.Runner
 	Scheduler *scheduler.Scheduler
+	Aud       *auditor.Auditor
 }
 
 // Router returns the /api/v1 handler.
@@ -53,6 +55,7 @@ func Router(d Deps) http.Handler {
 	mux.HandleFunc("POST /api/v1/tasks", d.createTask)
 	mux.HandleFunc("PUT /api/v1/tasks/{id}", d.updateTask)
 	mux.HandleFunc("DELETE /api/v1/tasks/{id}", d.deleteTask)
+	mux.HandleFunc("GET /api/v1/audit", d.audit)
 	mux.HandleFunc("GET /api/v1/events", d.events)
 	return mux
 }

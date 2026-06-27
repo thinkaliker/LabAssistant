@@ -22,6 +22,13 @@ type Config struct {
 
 	Auth   Auth   `toml:"auth"`
 	Enroll Enroll `toml:"enroll"`
+	Audit  Audit  `toml:"audit"`
+}
+
+// Audit configures the audit log.
+type Audit struct {
+	// Max is the number of most-recent entries kept queryable.
+	Max int `toml:"max"`
 }
 
 // Enroll configures how the quartermaster installs associates on hosts.
@@ -54,6 +61,7 @@ func Default() Config {
 			ManagerAddr: "localhost:8443",
 			ServerName:  "localhost",
 		},
+		Audit: Audit{Max: 1000},
 	}
 }
 
