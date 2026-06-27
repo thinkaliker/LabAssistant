@@ -1,0 +1,190 @@
+syntax = "proto3";
+
+package labassistant.v1;
+
+option go_package = "github.com/thinkaliker/labassistant/proto/v1;labassistantv1";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+
+// ManagerService is hosted by the manager. The associate dials home and opens a
+// single long-lived bidirectional stream over mTLS; the connection plus transport
+// keepalive provide liveness (no application-level polling).
+service ManagerService {
+  rpc Connect(stream AssociateMessage) returns (stream ManagerMessage);
+}
+
+// ---- Envelopes ----
+
+// AssociateMessage is anything the associate sends up the stream.
+message AssociateMessage {
+  oneof payload {
+    Hello hello = 1;
+    Heartbeat heartbeat = 2;
+    StatusUpdate status = 3;
+    JobEvent job_event = 4;
+    JobResult job_result = 5;
+    LogChunk log_chunk = 6;
+    CommandAck ack = 7;
+  }
+}
+
+// ManagerMessage is anything the manager sends down the stream.
+message ManagerMessage {
+  oneof payload {
+    HelloAck hello_ack = 1;
+    Command command = 2;
+    CancelJob cancel = 3;
+    LogStreamRequest log_request = 4;
+    StatusRequest status_request = 5;
+  }
+}
+
+// ---- Handshake ----
+
+// Hello is the first frame the associate sends after the mTLS stream opens.
+message Hello {
+  uint32 protocol_version = 1;       // for quartermaster version negotiation
+  string host_id = 2;                // identity; must match the mTLS client cert
+  string associate_version = 3;
+  repeated ModuleInfo modules = 4;   // manifests + detection at connect time
+}
+
+message HelloAck {
+  bool accepted = 1;
+  uint32 protocol_version = 2;       // version the manager will speak
+  string message = 3;                // reason when accepted == false
+  google.protobuf.Timestamp server_time = 4;
+}
+
+// ---- Commands (manager -> associate) ----
+
+message Command {
+  string job_id = 1;                 // manager-issued; idempotency key
+  string module = 2;
+  string action = 3;
+  bytes params = 4;                  // JSON, validated against ActionSpec.params_schema
+  google.protobuf.Duration timeout = 5;
+}
+
+message CancelJob {
+  string job_id = 1;
+}
+
+message LogStreamRequest {
+  string stream_id = 1;
+  bool stop = 2;                     // true to stop an existing stream
+  string module = 3;                 // e.g. "duo" or "sys"
+  bytes params = 4;                  // module-defined (container name, unit, follow, ...)
+}
+
+message StatusRequest {
+  string module = 1;                 // empty = all modules
+}
+
+// ---- Status / health (associate -> manager) ----
+
+message Heartbeat {
+  google.protobuf.Timestamp sent_at = 1;
+  HostHealth health = 2;
+}
+
+message HostHealth {
+  double cpu_percent = 1;
+  double mem_percent = 2;
+  uint64 uptime_seconds = 3;
+  repeated DiskUsage disks = 4;
+}
+
+message DiskUsage {
+  string mount = 1;
+  uint64 total_bytes = 2;
+  uint64 used_bytes = 3;
+}
+
+message StatusUpdate {
+  string module = 1;
+  bytes data = 2;                    // JSON, described by the module's manifest
+  google.protobuf.Timestamp observed_at = 3;
+}
+
+// ---- Jobs (associate -> manager) ----
+
+message CommandAck {
+  string job_id = 1;
+  bool queued = 2;
+  string reject_reason = 3;          // set when a duplicate/invalid command is refused
+}
+
+message JobEvent {
+  string job_id = 1;
+  EventKind kind = 2;
+  string message = 3;
+  double progress = 4;               // 0.0-1.0 when kind == EVENT_KIND_PROGRESS
+  JobState state = 5;                // set when kind == EVENT_KIND_STATE
+  google.protobuf.Timestamp at = 6;
+}
+
+message JobResult {
+  string job_id = 1;
+  JobState state = 2;
+  bytes data = 3;                    // JSON, described by ActionSpec.result_schema
+  string error = 4;
+}
+
+message LogChunk {
+  string stream_id = 1;
+  bytes data = 2;
+  bool eof = 3;
+}
+
+// ---- Module metadata ----
+
+message ModuleInfo {
+  string name = 1;
+  string version = 2;
+  string description = 3;
+  repeated ActionSpec actions = 4;
+  Detection detection = 5;
+  bytes config_schema = 6;           // JSON Schema for module-level per-host config (optional)
+}
+
+message ActionSpec {
+  string name = 1;
+  string description = 2;
+  bytes params_schema = 3;           // JSON Schema
+  bytes result_schema = 4;           // JSON Schema
+  Privilege privilege = 5;
+  bool destructive = 6;
+  google.protobuf.Duration default_timeout = 7;
+  bool streams = 8;
+}
+
+message Detection {
+  bool applicable = 1;
+  map<string, string> capabilities = 2;  // e.g. {"distro": "debian", "orchestrator": "compose"}
+}
+
+// ---- Enums ----
+
+enum Privilege {
+  PRIVILEGE_UNSPECIFIED = 0;
+  PRIVILEGE_NONE = 1;
+  PRIVILEGE_ELEVATED = 2;
+}
+
+enum EventKind {
+  EVENT_KIND_UNSPECIFIED = 0;
+  EVENT_KIND_LOG = 1;
+  EVENT_KIND_PROGRESS = 2;
+  EVENT_KIND_STATE = 3;
+}
+
+enum JobState {
+  JOB_STATE_UNSPECIFIED = 0;
+  JOB_STATE_QUEUED = 1;
+  JOB_STATE_RUNNING = 2;
+  JOB_STATE_SUCCEEDED = 3;
+  JOB_STATE_FAILED = 4;
+  JOB_STATE_TIMED_OUT = 5;
+}

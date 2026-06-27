@@ -1,0 +1,19 @@
+version: v2
+modules:
+  - path: proto
+lint:
+  use:
+    - STANDARD
+  except:
+    # Our files live at proto/v1/ (matching the Go import path github.com/.../proto/v1)
+    # while the proto package is labassistant.v1, so the directory does not contain the
+    # full package path. Skip the rule that would otherwise require proto/labassistant/v1/.
+    - PACKAGE_DIRECTORY_MATCH
+    # ManagerService.Connect is a bidirectional stream that intentionally reuses the
+    # AssociateMessage / ManagerMessage envelopes both ways, so the standard
+    # ConnectRequest / ConnectResponse naming does not apply.
+    - RPC_REQUEST_STANDARD_NAME
+    - RPC_RESPONSE_STANDARD_NAME
+breaking:
+  use:
+    - FILE

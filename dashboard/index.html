@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LabAssistant</title>
+  <link rel="stylesheet" href="/vendor/bulma-1.0.4.min.css">
+  <script defer src="/vendor/alpine-3.14.9.min.js"></script>
+</head>
+<body>
+  <!-- Phase 0 placeholder shell. The real navbar + pages (Overview, Hosts, Services,
+       Scheduler, Settings) are built in Slice 1. See BUILD.md. -->
+  <nav class="navbar is-dark" role="navigation" aria-label="main navigation">
+    <div class="navbar-brand">
+      <span class="navbar-item has-text-weight-bold">LabAssistant</span>
+    </div>
+  </nav>
+  <section class="section" x-data="{ ready: true }">
+    <div class="container">
+      <p class="subtitle" x-text="ready ? 'Dashboard scaffold ready.' : 'loading…'"></p>
+    </div>
+  </section>
+</body>
+</html>
