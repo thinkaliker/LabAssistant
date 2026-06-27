@@ -14,6 +14,7 @@ import (
 	"github.com/thinkaliker/labassistant/manager/events"
 	"github.com/thinkaliker/labassistant/manager/hub"
 	"github.com/thinkaliker/labassistant/manager/jobs"
+	"github.com/thinkaliker/labassistant/manager/quartermaster"
 	"github.com/thinkaliker/labassistant/manager/state"
 	"github.com/thinkaliker/labassistant/module"
 	pb "github.com/thinkaliker/labassistant/proto/v1"
@@ -25,6 +26,7 @@ type Deps struct {
 	Jobs   *jobs.Registry
 	Events *events.Broker
 	Hub    *hub.Hub
+	QM     *quartermaster.Quartermaster
 }
 
 // Router returns the /api/v1 handler.
@@ -32,7 +34,10 @@ func Router(d Deps) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/overview", d.overview)
 	mux.HandleFunc("GET /api/v1/hosts", d.listHosts)
+	mux.HandleFunc("POST /api/v1/hosts", d.addHost)
 	mux.HandleFunc("GET /api/v1/hosts/{id}", d.getHost)
+	mux.HandleFunc("PUT /api/v1/hosts/{id}", d.editHost)
+	mux.HandleFunc("DELETE /api/v1/hosts/{id}", d.deleteHost)
 	mux.HandleFunc("GET /api/v1/hosts/{id}/status", d.getHost)
 	mux.HandleFunc("GET /api/v1/hosts/{id}/modules", d.getModules)
 	mux.HandleFunc("POST /api/v1/hosts/{id}/modules/{name}/actions/{action}", d.runAction)

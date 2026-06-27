@@ -16,6 +16,7 @@ func (a *App) httpHandler() http.Handler {
 		Jobs:   a.jobs,
 		Events: a.events,
 		Hub:    a.hub,
+		QM:     a.qm,
 	}))
 	mux.Handle("/", http.FileServerFS(dashboard.Assets))
 	return mux

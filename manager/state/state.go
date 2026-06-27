@@ -210,6 +210,26 @@ func (s *Store) SetOffline(id string) {
 	s.update(id, false, func(h *Host) { h.Status = StatusOffline })
 }
 
+// SetStatus sets a host's status (e.g. enrolling, error).
+func (s *Store) SetStatus(id string, st HostStatus) {
+	s.update(id, false, func(h *Host) { h.Status = st })
+}
+
+// Edit mutates a host's durable fields, persists, and reports whether it existed.
+func (s *Store) Edit(id string, fn func(*Host)) bool {
+	s.mu.Lock()
+	h, ok := s.hosts[id]
+	if !ok {
+		s.mu.Unlock()
+		return false
+	}
+	fn(h)
+	_ = s.save()
+	s.mu.Unlock()
+	s.fire(Change{Kind: "host_updated", HostID: id})
+	return true
+}
+
 // SetHealth records the latest heartbeat vitals.
 func (s *Store) SetHealth(id string, health Health) {
 	s.update(id, false, func(h *Host) {

@@ -20,7 +20,20 @@ type Config struct {
 	// LogLevel is one of debug, info, warn, error.
 	LogLevel string `toml:"log_level"`
 
-	Auth Auth `toml:"auth"`
+	Auth   Auth   `toml:"auth"`
+	Enroll Enroll `toml:"enroll"`
+}
+
+// Enroll configures how the quartermaster installs associates on hosts.
+type Enroll struct {
+	// Mode is "local" (spawn the associate as a child process — dev) or "ssh".
+	Mode string `toml:"mode"`
+	// AssociateBin / HelperBin are paths to the binaries the installer deploys.
+	AssociateBin string `toml:"associate_bin"`
+	HelperBin    string `toml:"helper_bin"`
+	// ManagerAddr / ServerName are baked into each bundle (what the associate dials).
+	ManagerAddr string `toml:"manager_addr"`
+	ServerName  string `toml:"server_name"`
 }
 
 // Auth holds dashboard login settings. The password is stored only as a hash.
@@ -36,6 +49,11 @@ func Default() Config {
 		GRPCAddr: ":8443",
 		LogLevel: "info",
 		Auth:     Auth{Username: "admin"},
+		Enroll: Enroll{
+			Mode:        "local",
+			ManagerAddr: "localhost:8443",
+			ServerName:  "localhost",
+		},
 	}
 }
 

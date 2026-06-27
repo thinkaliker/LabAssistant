@@ -34,7 +34,12 @@ type Associate struct {
 	bundle  bundle.Bundle
 	modules map[string]module.Module
 	order   []string
+	helper  []string // command prefix for elevated actions; empty = run in-process
 }
+
+// SetHelper configures the command used to run elevated actions (e.g. ["sudo",
+// "/usr/local/bin/associatehelper"]). When unset, elevated actions run in-process.
+func (a *Associate) SetHelper(cmd []string) { a.helper = cmd }
 
 // New creates an associate from its enrollment bundle and compiled-in modules.
 func New(b bundle.Bundle, mods ...module.Module) *Associate {

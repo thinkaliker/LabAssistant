@@ -14,7 +14,7 @@ import (
 
 	"github.com/thinkaliker/labassistant/associate"
 	"github.com/thinkaliker/labassistant/internal/bundle"
-	"github.com/thinkaliker/labassistant/modules/qup"
+	"github.com/thinkaliker/labassistant/modules"
 )
 
 func main() {
@@ -26,6 +26,8 @@ func main() {
 
 func run() error {
 	bundlePath := flag.String("bundle", "associate-bundle.json", "path to the enrollment bundle")
+	helper := flag.String("helper", "", "path to the associatehelper binary for elevated actions")
+	useSudo := flag.Bool("sudo", false, "invoke the helper via sudo")
 	flag.Parse()
 
 	b, err := bundle.Load(*bundlePath)
@@ -33,8 +35,15 @@ func run() error {
 		return err
 	}
 
-	a := associate.New(b, qup.New())
-	slog.Info("associate starting", "host", b.HostID, "manager", b.ManagerAddr)
+	a := associate.New(b, modules.Default()...)
+	if *helper != "" {
+		cmd := []string{*helper}
+		if *useSudo {
+			cmd = []string{"sudo", *helper}
+		}
+		a.SetHelper(cmd)
+	}
+	slog.Info("associate starting", "host", b.HostID, "manager", b.ManagerAddr, "helper", *helper)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

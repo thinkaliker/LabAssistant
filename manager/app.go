@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"path/filepath"
 	"time"
 
 	"google.golang.org/grpc"
@@ -22,6 +23,7 @@ import (
 	"github.com/thinkaliker/labassistant/manager/events"
 	"github.com/thinkaliker/labassistant/manager/hub"
 	"github.com/thinkaliker/labassistant/manager/jobs"
+	"github.com/thinkaliker/labassistant/manager/quartermaster"
 	"github.com/thinkaliker/labassistant/manager/state"
 	pb "github.com/thinkaliker/labassistant/proto/v1"
 )
@@ -34,6 +36,7 @@ type App struct {
 	jobs   *jobs.Registry
 	events *events.Broker
 	hub    *hub.Hub
+	qm     *quartermaster.Quartermaster
 }
 
 // NewApp builds the manager from its on-disk layout and configuration.
@@ -51,6 +54,23 @@ func NewApp(layout paths.Layout, cfg config.Config) (*App, error) {
 		ev.Publish(envelope("host", c))
 	})
 	jr := jobs.NewRegistry(ev)
+
+	var installer quartermaster.Installer
+	switch cfg.Enroll.Mode {
+	case "ssh":
+		installer = quartermaster.SSHInstaller{
+			AssociateBin: cfg.Enroll.AssociateBin,
+			HelperBin:    cfg.Enroll.HelperBin,
+		}
+	default:
+		installer = quartermaster.LocalInstaller{
+			AssociateBin: cfg.Enroll.AssociateBin,
+			HelperBin:    cfg.Enroll.HelperBin,
+			WorkDir:      filepath.Join(layout.Data, "hosts"),
+		}
+	}
+	qm := quartermaster.New(authority, store, jr, installer, cfg.Enroll.ManagerAddr, cfg.Enroll.ServerName)
+
 	return &App{
 		cfg:    cfg,
 		ca:     authority,
@@ -58,6 +78,7 @@ func NewApp(layout paths.Layout, cfg config.Config) (*App, error) {
 		jobs:   jr,
 		events: ev,
 		hub:    hub.New(store, jr),
+		qm:     qm,
 	}, nil
 }
 

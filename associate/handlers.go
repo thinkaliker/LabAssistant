@@ -7,9 +7,20 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/thinkaliker/labassistant/internal/elevated"
 	"github.com/thinkaliker/labassistant/module"
 	pb "github.com/thinkaliker/labassistant/proto/v1"
 )
+
+// actionElevated reports whether the named action declares PrivilegeElevated.
+func actionElevated(m module.Module, action string) bool {
+	for _, a := range m.Manifest().Actions {
+		if a.Name == action {
+			return a.Privilege == module.PrivilegeElevated
+		}
+	}
+	return false
+}
 
 const associateVersion = "0.1.0"
 
@@ -108,7 +119,25 @@ func (s *session) runCommand(cmd *pb.Command) {
 
 	emit := func(ev module.Event) { s.send(jobEvent(cmd.GetJobId(), ev)) }
 	req := module.ActionRequest{JobID: cmd.GetJobId(), Action: cmd.GetAction(), Params: cmd.GetParams()}
-	res, err := m.Execute(ctx, req, emit)
+
+	var (
+		res module.Result
+		err error
+	)
+	if actionElevated(m, cmd.GetAction()) && len(s.a.helper) > 0 {
+		res, err = elevated.Run(ctx, s.a.helper, elevated.Request{
+			JobID:  cmd.GetJobId(),
+			Module: cmd.GetModule(),
+			Action: cmd.GetAction(),
+			Params: cmd.GetParams(),
+		}, emit)
+	} else {
+		if actionElevated(m, cmd.GetAction()) {
+			slog.Warn("running elevated action in-process (no helper configured)",
+				"module", cmd.GetModule(), "action", cmd.GetAction())
+		}
+		res, err = m.Execute(ctx, req, emit)
+	}
 	if err != nil {
 		s.send(jobResult(cmd.GetJobId(), module.JobFailed, nil, err.Error()))
 		return
