@@ -3,6 +3,7 @@ module github.com/thinkaliker/labassistant
 go 1.26
 
 require (
+	github.com/google/uuid v1.6.0
 	github.com/pelletier/go-toml/v2 v2.4.2
 	google.golang.org/grpc v1.81.1
 	google.golang.org/protobuf v1.36.11

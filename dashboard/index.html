@@ -7,18 +7,201 @@
   <link rel="stylesheet" href="/vendor/bulma-1.0.4.min.css">
   <script defer src="/vendor/alpine-3.14.9.min.js"></script>
 </head>
-<body>
-  <!-- Phase 0 placeholder shell. The real navbar + pages (Overview, Hosts, Services,
-       Scheduler, Settings) are built in Slice 1. See BUILD.md. -->
-  <nav class="navbar is-dark" role="navigation" aria-label="main navigation">
+<body class="has-navbar-fixed-top" x-data="app()" x-init="init()">
+
+  <nav class="navbar is-dark is-fixed-top" role="navigation">
     <div class="navbar-brand">
-      <span class="navbar-item has-text-weight-bold">LabAssistant</span>
+      <span class="navbar-item has-text-weight-bold is-size-5">LabAssistant</span>
+    </div>
+    <div class="navbar-menu is-active">
+      <div class="navbar-start">
+        <a class="navbar-item" :class="page==='overview' && 'is-active has-text-weight-semibold'" @click="page='overview'">Overview</a>
+        <a class="navbar-item" :class="page==='hosts' && 'is-active has-text-weight-semibold'" @click="page='hosts'">Hosts</a>
+      </div>
+      <div class="navbar-end">
+        <div class="navbar-item">
+          <div class="buttons">
+            <button class="button is-primary" @click="addHostOpen=true">Add Host</button>
+            <button class="button is-dark" title="Settings">&#9881;</button>
+          </div>
+        </div>
+      </div>
     </div>
   </nav>
-  <section class="section" x-data="{ ready: true }">
+
+  <section class="section">
     <div class="container">
-      <p class="subtitle" x-text="ready ? 'Dashboard scaffold ready.' : 'loading…'"></p>
+
+      <!-- Overview -->
+      <div x-show="page==='overview'">
+        <h1 class="title">Overview</h1>
+        <div class="columns">
+          <div class="column">
+            <div class="box has-text-centered">
+              <p class="heading">Nodes</p>
+              <p class="title" x-text="`${overview.hosts?.online ?? 0}/${overview.hosts?.total ?? 0}`"></p>
+              <p class="is-size-7 has-text-grey">online / total</p>
+            </div>
+          </div>
+          <div class="column">
+            <div class="box has-text-centered">
+              <p class="heading">Updates Available</p>
+              <p class="title" x-text="overview.updates?.packages ?? 0"></p>
+              <p class="is-size-7 has-text-grey">packages</p>
+            </div>
+          </div>
+          <div class="column">
+            <div class="box has-text-centered">
+              <p class="heading">CPU</p>
+              <p class="title" x-text="`${overview.resources?.cpuPercent ?? 0}%`"></p>
+            </div>
+          </div>
+          <div class="column">
+            <div class="box has-text-centered">
+              <p class="heading">Memory</p>
+              <p class="title" x-text="`${overview.resources?.memPercent ?? 0}%`"></p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Hosts -->
+      <div x-show="page==='hosts'">
+        <h1 class="title">Hosts</h1>
+        <template x-if="hosts.length===0">
+          <p class="has-text-grey">No hosts yet. Enroll one with <code>manager enroll</code>.</p>
+        </template>
+        <template x-for="h in hosts" :key="h.id">
+          <div class="box">
+            <div class="level is-mobile" style="cursor:pointer" @click="toggle(h.id)">
+              <div class="level-left">
+                <div class="level-item">
+                  <span class="tag" :class="statusClass(h.status)" x-text="h.status"></span>
+                </div>
+                <div class="level-item has-text-weight-semibold" x-text="h.name"></div>
+                <div class="level-item is-size-7 has-text-grey" x-text="h.ip"></div>
+              </div>
+              <div class="level-right">
+                <div class="level-item is-size-7 has-text-grey"
+                     x-text="h.health ? `cpu ${h.health.cpuPercent||0}% · mem ${h.health.memPercent||0}%` : '—'"></div>
+                <div class="level-item" x-text="expanded===h.id ? '▾' : '▸'"></div>
+              </div>
+            </div>
+
+            <div x-show="expanded===h.id" class="mt-3">
+              <template x-if="!h.modules || h.modules.length===0">
+                <p class="has-text-grey is-size-7">No modules reported (host offline?).</p>
+              </template>
+              <template x-for="m in (h.modules||[])" :key="m.name">
+                <div class="box has-background-light">
+                  <div class="level is-mobile">
+                    <div class="level-left">
+                      <div class="level-item has-text-weight-semibold" x-text="m.name"></div>
+                      <div class="level-item is-size-7 has-text-grey" x-text="'v'+m.version"></div>
+                      <div class="level-item is-size-7" x-text="capabilities(m)"></div>
+                    </div>
+                    <div class="level-right">
+                      <template x-for="a in (m.actions||[])" :key="a.name">
+                        <div class="level-item">
+                          <button class="button is-small is-link"
+                                  :disabled="h.status!=='online'"
+                                  @click="runAction(h.id, m.name, a.name)"
+                                  x-text="`${m.name} ${a.name}`"></button>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+      </div>
+
     </div>
   </section>
+
+  <!-- Job progress modal -->
+  <div class="modal" :class="job.open && 'is-active'">
+    <div class="modal-background" @click="job.open=false"></div>
+    <div class="modal-card">
+      <header class="modal-card-head">
+        <p class="modal-card-title">Job</p>
+        <span class="tag" :class="statusClass(job.state)" x-text="job.state"></span>
+      </header>
+      <section class="modal-card-body">
+        <progress class="progress is-link" :value="job.progress" max="1" x-show="job.state==='running'"></progress>
+        <pre style="max-height:300px;overflow:auto" x-text="job.log.join('\n')"></pre>
+      </section>
+      <footer class="modal-card-foot">
+        <button class="button" @click="job.open=false">Close</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Add Host placeholder (real enrollment lands in Slice 2) -->
+  <div class="modal" :class="addHostOpen && 'is-active'">
+    <div class="modal-background" @click="addHostOpen=false"></div>
+    <div class="modal-card">
+      <header class="modal-card-head"><p class="modal-card-title">Add Host</p></header>
+      <section class="modal-card-body">
+        <p>In Slice 1, enroll a host from the CLI:</p>
+        <pre>manager enroll --name myhost --ip 10.0.0.5 --addr manager:8443</pre>
+        <p class="is-size-7 has-text-grey">Copy the bundle to the host and run <code>associate --bundle bundle.json</code>. The SSH-based Add Host flow arrives in Slice 2.</p>
+      </section>
+      <footer class="modal-card-foot"><button class="button" @click="addHostOpen=false">Close</button></footer>
+    </div>
+  </div>
+
+  <script>
+    function app() {
+      return {
+        page: 'overview',
+        overview: {},
+        hosts: [],
+        expanded: null,
+        addHostOpen: false,
+        job: { open: false, state: '', progress: 0, log: [] },
+
+        async init() {
+          await this.refresh();
+          const es = new EventSource('/api/v1/events');
+          es.onmessage = () => this.refresh();
+        },
+        async refresh() {
+          try {
+            this.overview = await (await fetch('/api/v1/overview')).json();
+            this.hosts = await (await fetch('/api/v1/hosts')).json();
+          } catch (e) { console.error(e); }
+        },
+        toggle(id) { this.expanded = this.expanded === id ? null : id; },
+        statusClass(s) {
+          return { online: 'is-success', offline: 'is-danger', enrolling: 'is-warning',
+                   error: 'is-danger', succeeded: 'is-success', failed: 'is-danger',
+                   running: 'is-info' }[s] || 'is-light';
+        },
+        capabilities(m) {
+          const c = m.detection && m.detection.capabilities || {};
+          return Object.entries(c).map(([k, v]) => `${k}=${v}`).join(' ');
+        },
+        async runAction(hostId, mod, action) {
+          this.job = { open: true, state: 'running', progress: 0, log: [] };
+          const r = await fetch(`/api/v1/hosts/${hostId}/modules/${mod}/actions/${action}`, { method: 'POST' });
+          if (!r.ok) { this.job.state = 'failed'; this.job.log.push('dispatch failed'); return; }
+          const { jobId } = await r.json();
+          const es = new EventSource(`/api/v1/jobs/${jobId}/events`);
+          es.onmessage = (e) => {
+            const ev = JSON.parse(e.data).payload;
+            if (ev.kind === 'log') this.job.log.push(ev.message);
+            if (ev.kind === 'progress') this.job.progress = ev.progress;
+            if (ev.kind === 'state') {
+              this.job.state = ev.state;
+              if (['succeeded', 'failed', 'timed_out'].includes(ev.state)) { es.close(); this.refresh(); }
+            }
+          };
+        },
+      };
+    }
+  </script>
 </body>
 </html>

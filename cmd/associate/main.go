@@ -3,27 +3,40 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/thinkaliker/labassistant/associate"
+	"github.com/thinkaliker/labassistant/internal/bundle"
+	"github.com/thinkaliker/labassistant/modules/qup"
 )
 
 func main() {
-	if err := run(); err != nil {
+	if err := run(); err != nil && !errors.Is(err, context.Canceled) {
 		fmt.Fprintln(os.Stderr, "associate:", err)
 		os.Exit(1)
 	}
 }
 
 func run() error {
-	bundle := flag.String("bundle", "", "path to the enrollment bundle (host id, manager address, certs)")
+	bundlePath := flag.String("bundle", "associate-bundle.json", "path to the enrollment bundle")
 	flag.Parse()
 
-	slog.Info("associate starting", "bundle", *bundle)
+	b, err := bundle.Load(*bundlePath)
+	if err != nil {
+		return err
+	}
 
-	// TODO(slice-1): load the enrollment bundle, dial the manager via gRPC over mTLS,
-	// send Hello with module manifests + detection, run the heartbeat + command queue.
-	// See BUILD.md.
-	return nil
+	a := associate.New(b, qup.New())
+	slog.Info("associate starting", "host", b.HostID, "manager", b.ManagerAddr)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return a.Run(ctx)
 }
