@@ -65,8 +65,49 @@ func (s *session) handle(msg *pb.ManagerMessage) {
 	case *pb.ManagerMessage_Cancel:
 		// TODO(slice-4): cancel a running job.
 	case *pb.ManagerMessage_LogRequest:
-		// TODO(slice-3): module log streaming.
+		s.onLogRequest(p.LogRequest)
 	}
+}
+
+func (s *session) onLogRequest(req *pb.LogStreamRequest) {
+	if req.GetStop() {
+		s.stopLog(req.GetStreamId())
+		return
+	}
+	m, ok := s.a.modules[req.GetModule()]
+	if !ok {
+		return
+	}
+	streamer, ok := m.(module.LogStreamer)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithCancel(s.ctx)
+	s.logMu.Lock()
+	s.logs[req.GetStreamId()] = cancel
+	s.logMu.Unlock()
+
+	go func() {
+		streamID := req.GetStreamId()
+		_ = streamer.StreamLogs(ctx, req.GetParams(), func(line []byte) {
+			s.send(&pb.AssociateMessage{Payload: &pb.AssociateMessage_LogChunk{LogChunk: &pb.LogChunk{
+				StreamId: streamID, Data: line,
+			}}})
+		})
+		s.send(&pb.AssociateMessage{Payload: &pb.AssociateMessage_LogChunk{LogChunk: &pb.LogChunk{
+			StreamId: streamID, Eof: true,
+		}}})
+		s.stopLog(streamID)
+	}()
+}
+
+func (s *session) stopLog(streamID string) {
+	s.logMu.Lock()
+	if cancel, ok := s.logs[streamID]; ok {
+		cancel()
+		delete(s.logs, streamID)
+	}
+	s.logMu.Unlock()
 }
 
 func (s *session) onCommand(cmd *pb.Command) {
@@ -143,6 +184,13 @@ func (s *session) runCommand(cmd *pb.Command) {
 		return
 	}
 	s.send(jobResult(cmd.GetJobId(), res.State, res.Data, res.Error))
+
+	// Re-publish the module's status so the manager reflects any change the action made.
+	// For real modules this re-queries external state (docker/apt) regardless of whether
+	// the action ran in-process or in the privileged helper.
+	if st, serr := m.Status(s.ctx); serr == nil {
+		s.send(statusUpdate(cmd.GetModule(), st.Data))
+	}
 }
 
 func (s *session) onStatusRequest(req *pb.StatusRequest) {

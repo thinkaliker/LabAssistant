@@ -41,6 +41,8 @@ func Router(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/v1/hosts/{id}/status", d.getHost)
 	mux.HandleFunc("GET /api/v1/hosts/{id}/modules", d.getModules)
 	mux.HandleFunc("POST /api/v1/hosts/{id}/modules/{name}/actions/{action}", d.runAction)
+	mux.HandleFunc("GET /api/v1/services", d.services)
+	mux.HandleFunc("GET /api/v1/hosts/{id}/logs", d.hostLogs)
 	mux.HandleFunc("GET /api/v1/jobs", d.listJobs)
 	mux.HandleFunc("GET /api/v1/jobs/{id}", d.getJob)
 	mux.HandleFunc("GET /api/v1/jobs/{id}/events", d.jobEvents)

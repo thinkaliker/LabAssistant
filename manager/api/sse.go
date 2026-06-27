@@ -68,6 +68,49 @@ func (d Deps) jobEvents(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// hostLogs streams logs from a module on a host (e.g. ?module=duo&stack=media&service=jellyfin).
+func (d Deps) hostLogs(w http.ResponseWriter, r *http.Request) {
+	moduleName := r.URL.Query().Get("module")
+	if moduleName == "" {
+		writeErr(w, http.StatusBadRequest, "bad_request", "module query parameter is required")
+		return
+	}
+	params := map[string]string{}
+	for k, v := range r.URL.Query() {
+		if k == "module" || len(v) == 0 {
+			continue
+		}
+		params[k] = v[0]
+	}
+	pj, _ := json.Marshal(params)
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeErr(w, http.StatusInternalServerError, "no_stream", "streaming unsupported")
+		return
+	}
+	_, ch, cancel, err := d.Hub.OpenLogStream(r.PathValue("id"), moduleName, pj)
+	if err != nil {
+		writeErr(w, http.StatusConflict, "offline", err.Error())
+		return
+	}
+	defer cancel()
+	sseHeaders(w)
+	flusher.Flush()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case line, ok := <-ch:
+			if !ok {
+				return
+			}
+			writeSSE(w, line)
+			flusher.Flush()
+		}
+	}
+}
+
 func sseHeaders(w http.ResponseWriter) {
 	h := w.Header()
 	h.Set("Content-Type", "text/event-stream")

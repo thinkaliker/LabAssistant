@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"sync"
 
+	"github.com/google/uuid"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -41,11 +42,14 @@ type Hub struct {
 
 	mu    sync.Mutex
 	conns map[string]*conn
+
+	logMu sync.Mutex
+	logs  map[string]chan []byte // streamID -> log chunk channel
 }
 
 // New creates a Hub backed by the host registry and job registry.
 func New(store *state.Store, jr *jobs.Registry) *Hub {
-	return &Hub{store: store, jobs: jr, conns: map[string]*conn{}}
+	return &Hub{store: store, jobs: jr, conns: map[string]*conn{}, logs: map[string]chan []byte{}}
 }
 
 // Connected reports whether a host has a live stream.
@@ -58,6 +62,10 @@ func (h *Hub) Connected(hostID string) bool {
 
 // Dispatch sends a command down a host's stream.
 func (h *Hub) Dispatch(hostID string, cmd *pb.Command) error {
+	return h.sendTo(hostID, &pb.ManagerMessage{Payload: &pb.ManagerMessage_Command{Command: cmd}})
+}
+
+func (h *Hub) sendTo(hostID string, msg *pb.ManagerMessage) error {
 	h.mu.Lock()
 	c, ok := h.conns[hostID]
 	h.mu.Unlock()
@@ -65,11 +73,46 @@ func (h *Hub) Dispatch(hostID string, cmd *pb.Command) error {
 		return ErrNotConnected
 	}
 	select {
-	case c.send <- &pb.ManagerMessage{Payload: &pb.ManagerMessage_Command{Command: cmd}}:
+	case c.send <- msg:
 		return nil
 	default:
 		return errors.New("send buffer full")
 	}
+}
+
+// OpenLogStream asks a host's module to stream logs. It returns a stream id, a channel of
+// log lines, and a cancel function the caller must invoke when done (it tells the associate
+// to stop and releases the channel).
+func (h *Hub) OpenLogStream(hostID, moduleName string, params []byte) (string, <-chan []byte, func(), error) {
+	streamID := uuid.NewString()
+	ch := make(chan []byte, 128)
+	h.logMu.Lock()
+	h.logs[streamID] = ch
+	h.logMu.Unlock()
+
+	req := &pb.ManagerMessage{Payload: &pb.ManagerMessage_LogRequest{LogRequest: &pb.LogStreamRequest{
+		StreamId: streamID, Module: moduleName, Params: params,
+	}}}
+	if err := h.sendTo(hostID, req); err != nil {
+		h.closeLog(streamID)
+		return "", nil, nil, err
+	}
+	cancel := func() {
+		_ = h.sendTo(hostID, &pb.ManagerMessage{Payload: &pb.ManagerMessage_LogRequest{
+			LogRequest: &pb.LogStreamRequest{StreamId: streamID, Stop: true},
+		}})
+		h.closeLog(streamID)
+	}
+	return streamID, ch, cancel, nil
+}
+
+func (h *Hub) closeLog(streamID string) {
+	h.logMu.Lock()
+	if ch, ok := h.logs[streamID]; ok {
+		delete(h.logs, streamID)
+		close(ch)
+	}
+	h.logMu.Unlock()
 }
 
 // Connect is the bidirectional stream RPC the associate dials.
@@ -152,7 +195,16 @@ func (h *Hub) handle(hostID string, msg *pb.AssociateMessage) {
 			h.jobs.SetResult(p.Ack.GetJobId(), module.JobFailed, nil, r)
 		}
 	case *pb.AssociateMessage_LogChunk:
-		// TODO(slice-3): route log streams to subscribers.
+		lc := p.LogChunk
+		h.logMu.Lock()
+		ch, ok := h.logs[lc.GetStreamId()]
+		h.logMu.Unlock()
+		if ok && len(lc.GetData()) > 0 {
+			select {
+			case ch <- lc.GetData():
+			default:
+			}
+		}
 	}
 }
 

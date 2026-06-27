@@ -112,6 +112,7 @@ func (a *Associate) session(parent context.Context) error {
 		outbox: make(chan *pb.AssociateMessage, 64),
 		cmds:   make(chan *pb.Command, 16),
 		active: map[string]bool{},
+		logs:   map[string]context.CancelFunc{},
 	}
 	go s.sendLoop()
 	go s.heartbeatLoop()
@@ -142,6 +143,9 @@ type session struct {
 
 	mu     sync.Mutex
 	active map[string]bool // job IDs currently queued/running (idempotency)
+
+	logMu sync.Mutex
+	logs  map[string]context.CancelFunc // active log streams by stream id
 }
 
 func (s *session) sendLoop() {

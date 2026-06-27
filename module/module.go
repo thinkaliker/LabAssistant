@@ -29,6 +29,14 @@ type Module interface {
 	Execute(ctx context.Context, req ActionRequest, emit func(Event)) (Result, error)
 }
 
+// LogStreamer is an optional interface for modules that can stream logs (e.g. duo for
+// container logs, sys for system logs). The associate routes a manager log request to the
+// module's StreamLogs; it returns when ctx is cancelled or the source ends. params is a
+// module-defined JSON selector (container name, unit, follow, ...).
+type LogStreamer interface {
+	StreamLogs(ctx context.Context, params json.RawMessage, emit func(line []byte)) error
+}
+
 // Manifest is the static, data-only description of a module.
 type Manifest struct {
 	Name        string       `json:"name"`
