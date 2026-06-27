@@ -83,6 +83,9 @@ func (l Layout) SettingsFile() string { return filepath.Join(l.Data, "settings.j
 // ModConfigFile returns the path to per-host module configuration.
 func (l Layout) ModConfigFile() string { return filepath.Join(l.Data, "moduleconfig.json") }
 
+// KnownHostsFile returns the path to the SSH trust-on-first-use known-hosts file.
+func (l Layout) KnownHostsFile() string { return filepath.Join(l.Data, "known_hosts.json") }
+
 func defaultBase() string {
 	if runtime.GOOS == "linux" {
 		return "/var/lib/labassistant"

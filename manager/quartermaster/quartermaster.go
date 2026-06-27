@@ -5,6 +5,7 @@ package quartermaster
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -87,11 +88,16 @@ func (q *Quartermaster) run(ctx context.Context, hostID string, req EnrollReques
 	}
 
 	emit("issuing client certificate")
-	certPEM, keyPEM, err := q.ca.IssueClient(hostID)
+	certPEM, keyPEM, serial, err := q.ca.IssueClient(hostID)
 	if err != nil {
 		fail(err)
 		return
 	}
+	expiry := time.Now().Add(q.ca.LeafValidity())
+	q.store.Edit(hostID, func(h *state.Host) {
+		h.CertSerial = serial
+		h.CertExpiry = expiry
+	})
 	q.aud.Record("cert_issued", hostID, "manager", "client certificate issued", nil)
 	b := bundle.Bundle{
 		HostID:      hostID,

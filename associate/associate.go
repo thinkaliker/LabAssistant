@@ -5,6 +5,7 @@ package associate
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"io"
 	"log/slog"
@@ -31,10 +32,34 @@ const (
 
 // Associate is the agent runtime.
 type Associate struct {
-	bundle  bundle.Bundle
-	modules map[string]module.Module
-	order   []string
-	helper  []string // command prefix for elevated actions; empty = run in-process
+	bundleMu   sync.Mutex
+	bundle     bundle.Bundle
+	bundlePath string // where to persist a rotated cert
+	modules    map[string]module.Module
+	order      []string
+	helper     []string // command prefix for elevated actions; empty = run in-process
+}
+
+// SetBundlePath sets where the associate persists a rotated certificate.
+func (a *Associate) SetBundlePath(path string) { a.bundlePath = path }
+
+// clientTLS builds the current client TLS config under lock.
+func (a *Associate) clientTLS() (*tls.Config, error) {
+	a.bundleMu.Lock()
+	defer a.bundleMu.Unlock()
+	return a.bundle.ClientTLSConfig()
+}
+
+// applyRotatedCert persists a new client cert/key and returns whether it changed.
+func (a *Associate) applyRotatedCert(certPEM, keyPEM []byte) error {
+	a.bundleMu.Lock()
+	defer a.bundleMu.Unlock()
+	a.bundle.ClientCert = certPEM
+	a.bundle.ClientKey = keyPEM
+	if a.bundlePath != "" {
+		return a.bundle.Save(a.bundlePath)
+	}
+	return nil
 }
 
 // SetHelper configures the command used to run elevated actions (e.g. ["sudo",
@@ -67,7 +92,7 @@ func (a *Associate) Run(ctx context.Context) error {
 }
 
 func (a *Associate) session(parent context.Context) error {
-	tlsCfg, err := a.bundle.ClientTLSConfig()
+	tlsCfg, err := a.clientTLS()
 	if err != nil {
 		return err
 	}
@@ -172,13 +197,13 @@ func (s *session) send(msg *pb.AssociateMessage) {
 func (s *session) heartbeatLoop() {
 	t := time.NewTicker(heartbeatInterval)
 	defer t.Stop()
-	s.send(&pb.AssociateMessage{Payload: &pb.AssociateMessage_Heartbeat{Heartbeat: &pb.Heartbeat{SentAt: timestamppb.Now()}}})
+	s.send(&pb.AssociateMessage{Payload: &pb.AssociateMessage_Heartbeat{Heartbeat: &pb.Heartbeat{SentAt: timestamppb.Now(), Health: gatherHealth()}}})
 	for {
 		select {
 		case <-s.ctx.Done():
 			return
 		case <-t.C:
-			s.send(&pb.AssociateMessage{Payload: &pb.AssociateMessage_Heartbeat{Heartbeat: &pb.Heartbeat{SentAt: timestamppb.Now()}}})
+			s.send(&pb.AssociateMessage{Payload: &pb.AssociateMessage_Heartbeat{Heartbeat: &pb.Heartbeat{SentAt: timestamppb.Now(), Health: gatherHealth()}}})
 		}
 	}
 }

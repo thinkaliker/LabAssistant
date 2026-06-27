@@ -11,6 +11,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -38,7 +40,12 @@ type CA struct {
 	caKey   *ecdsa.PrivateKey
 	caPEM   []byte // PEM-encoded CA certificate (for pinning by clients)
 	srvCert tls.Certificate
+
+	mu      sync.Mutex
+	revoked map[string]bool // revoked client-cert serials (hex)
 }
+
+const revokedFile = "revoked.json"
 
 // LoadOrCreate loads the CA and manager server certificate from dir, generating them on
 // first run. serverSANs are the DNS names / IPs the manager is reachable at (the associate
@@ -47,21 +54,25 @@ func LoadOrCreate(dir string, serverSANs []string) (*CA, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("create certs dir: %w", err)
 	}
-	c := &CA{dir: dir}
+	c := &CA{dir: dir, revoked: map[string]bool{}}
 	if err := c.loadOrCreateCA(); err != nil {
 		return nil, err
 	}
 	if err := c.loadOrCreateServer(serverSANs); err != nil {
 		return nil, err
 	}
+	c.loadRevoked()
 	return c, nil
 }
 
 // CAPEM returns the PEM-encoded CA certificate.
 func (c *CA) CAPEM() []byte { return c.caPEM }
 
+// LeafValidity is how long issued client/server certs are valid.
+func (c *CA) LeafValidity() time.Duration { return leafValidity }
+
 // ServerTLSConfig returns a TLS config for the manager's gRPC server that requires and
-// verifies a client certificate signed by this CA (mTLS).
+// verifies a client certificate signed by this CA (mTLS), and rejects revoked certs.
 func (c *CA) ServerTLSConfig() *tls.Config {
 	pool := x509.NewCertPool()
 	pool.AddCert(c.caCert)
@@ -70,22 +81,75 @@ func (c *CA) ServerTLSConfig() *tls.Config {
 		ClientCAs:    pool,
 		ClientAuth:   tls.RequireAndVerifyClientCert,
 		MinVersion:   tls.VersionTLS13,
+		VerifyConnection: func(cs tls.ConnectionState) error {
+			if len(cs.PeerCertificates) == 0 {
+				return errors.New("no client certificate")
+			}
+			if c.IsRevoked(serialHex(cs.PeerCertificates[0].SerialNumber)) {
+				return errors.New("client certificate is revoked")
+			}
+			return nil
+		},
 	}
 }
 
+// Revoke marks a client-cert serial revoked and persists the set.
+func (c *CA) Revoke(serial string) {
+	if serial == "" {
+		return
+	}
+	c.mu.Lock()
+	c.revoked[serial] = true
+	c.saveRevoked()
+	c.mu.Unlock()
+}
+
+// IsRevoked reports whether a serial is revoked.
+func (c *CA) IsRevoked(serial string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.revoked[serial]
+}
+
+func (c *CA) loadRevoked() {
+	b, err := os.ReadFile(filepath.Join(c.dir, revokedFile))
+	if err != nil {
+		return
+	}
+	var list []string
+	if json.Unmarshal(b, &list) == nil {
+		for _, s := range list {
+			c.revoked[s] = true
+		}
+	}
+}
+
+// saveRevoked persists the revoked set. Caller holds the lock.
+func (c *CA) saveRevoked() {
+	list := make([]string, 0, len(c.revoked))
+	for s := range c.revoked {
+		list = append(list, s)
+	}
+	b, _ := json.Marshal(list)
+	_ = os.WriteFile(filepath.Join(c.dir, revokedFile), b, 0o600)
+}
+
+func serialHex(n *big.Int) string { return n.Text(16) }
+
 // IssueClient mints a client certificate+key for an associate identified by hostID
-// (carried as the certificate Common Name). Returns PEM-encoded cert and key.
-func (c *CA) IssueClient(hostID string) (certPEM, keyPEM []byte, err error) {
+// (carried as the certificate Common Name). Returns PEM-encoded cert and key plus the
+// certificate serial (hex), which the manager stores so the cert can later be revoked.
+func (c *CA) IssueClient(hostID string) (certPEM, keyPEM []byte, serial string, err error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
-	serial, err := randSerial()
+	sn, err := randSerial()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 	tmpl := &x509.Certificate{
-		SerialNumber: serial,
+		SerialNumber: sn,
 		Subject:      pkix.Name{CommonName: hostID},
 		NotBefore:    time.Now().Add(-time.Minute),
 		NotAfter:     time.Now().Add(leafValidity),
@@ -94,9 +158,9 @@ func (c *CA) IssueClient(hostID string) (certPEM, keyPEM []byte, err error) {
 	}
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, c.caCert, &key.PublicKey, c.caKey)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
-	return encodeCert(der), encodeKey(key), nil
+	return encodeCert(der), encodeKey(key), serialHex(sn), nil
 }
 
 func (c *CA) loadOrCreateCA() error {

@@ -84,8 +84,9 @@ func NewApp(layout paths.Layout, cfg config.Config) (*App, error) {
 	switch cfg.Enroll.Mode {
 	case "ssh":
 		installer = quartermaster.SSHInstaller{
-			AssociateBin: cfg.Enroll.AssociateBin,
-			HelperBin:    cfg.Enroll.HelperBin,
+			AssociateBin:   cfg.Enroll.AssociateBin,
+			HelperBin:      cfg.Enroll.HelperBin,
+			KnownHostsPath: layout.KnownHostsFile(),
 		}
 	default:
 		installer = quartermaster.LocalInstaller{
@@ -171,6 +172,7 @@ func (a *App) Serve(ctx context.Context) error {
 		}
 	}()
 	go a.scheduler.Start(ctx)
+	go a.certRotationLoop(ctx)
 
 	select {
 	case <-ctx.Done():
@@ -183,6 +185,57 @@ func (a *App) Serve(ctx context.Context) error {
 		grpcSrv.Stop()
 		_ = httpSrv.Close()
 		return err
+	}
+}
+
+// rotateCert issues a fresh client certificate for a connected host and pushes it down the
+// stream. The old certificate is left to expire (not revoked) to avoid locking the host out
+// if the new cert never lands.
+func (a *App) rotateCert(hostID string) error {
+	if _, ok := a.store.Get(hostID); !ok {
+		return fmt.Errorf("host not found")
+	}
+	if !a.hub.Connected(hostID) {
+		return fmt.Errorf("host not connected")
+	}
+	certPEM, keyPEM, serial, err := a.ca.IssueClient(hostID)
+	if err != nil {
+		return err
+	}
+	if err := a.hub.RotateCert(hostID, certPEM, keyPEM); err != nil {
+		return err
+	}
+	expiry := time.Now().Add(a.ca.LeafValidity())
+	a.store.Edit(hostID, func(h *state.Host) {
+		h.CertSerial = serial
+		h.CertExpiry = expiry
+	})
+	a.aud.Record("cert_rotated", hostID, "manager", "client certificate rotated", nil)
+	return nil
+}
+
+const certRenewThreshold = 30 * 24 * time.Hour
+
+// certRotationLoop periodically rotates certificates that are near expiry.
+func (a *App) certRotationLoop(ctx context.Context) {
+	t := time.NewTicker(time.Hour)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			for _, h := range a.store.Hosts() {
+				if h.CertExpiry.IsZero() || !a.hub.Connected(h.ID) {
+					continue
+				}
+				if time.Until(h.CertExpiry) < certRenewThreshold {
+					if err := a.rotateCert(h.ID); err != nil {
+						slog.Warn("cert rotation failed", "host", h.ID, "err", err)
+					}
+				}
+			}
+		}
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 
 	"github.com/thinkaliker/labassistant/manager/actions"
 	"github.com/thinkaliker/labassistant/manager/auditor"
+	"github.com/thinkaliker/labassistant/manager/ca"
 	"github.com/thinkaliker/labassistant/manager/events"
 	"github.com/thinkaliker/labassistant/manager/hub"
 	"github.com/thinkaliker/labassistant/manager/jobs"
@@ -23,18 +24,20 @@ import (
 
 // Deps are the subsystems the API handlers need.
 type Deps struct {
-	Store     *state.Store
-	Jobs      *jobs.Registry
-	Events    *events.Broker
-	Hub       *hub.Hub
-	QM        *quartermaster.Quartermaster
-	Runner    *actions.Runner
-	Scheduler *scheduler.Scheduler
-	Aud       *auditor.Auditor
-	Settings  *settings.Store
-	Sessions  *Sessions
-	Backup    *Backup
-	ModConfig *modconfig.Store
+	Store      *state.Store
+	Jobs       *jobs.Registry
+	Events     *events.Broker
+	Hub        *hub.Hub
+	QM         *quartermaster.Quartermaster
+	Runner     *actions.Runner
+	Scheduler  *scheduler.Scheduler
+	Aud        *auditor.Auditor
+	Settings   *settings.Store
+	Sessions   *Sessions
+	Backup     *Backup
+	ModConfig  *modconfig.Store
+	CA         *ca.CA
+	RotateCert func(hostID string) error
 }
 
 // Router returns the /api/v1 handler.
@@ -46,6 +49,7 @@ func Router(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/v1/hosts/{id}", d.getHost)
 	mux.HandleFunc("PUT /api/v1/hosts/{id}", d.editHost)
 	mux.HandleFunc("DELETE /api/v1/hosts/{id}", d.deleteHost)
+	mux.HandleFunc("POST /api/v1/hosts/{id}/rotate-cert", d.rotateCert)
 	mux.HandleFunc("GET /api/v1/hosts/{id}/status", d.getHost)
 	mux.HandleFunc("GET /api/v1/hosts/{id}/modules", d.getModules)
 	mux.HandleFunc("POST /api/v1/hosts/{id}/modules/{name}/actions/{action}", d.runAction)

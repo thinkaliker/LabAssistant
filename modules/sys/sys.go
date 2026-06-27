@@ -9,10 +9,13 @@
 package sys
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -20,6 +23,13 @@ import (
 
 	"github.com/thinkaliker/labassistant/module"
 )
+
+// realSys reports whether reboot/restart-service should run for real. Real destructive
+// host operations are gated behind LABASSISTANT_SYS_REAL=1 on Linux so development hosts
+// are never rebooted by accident.
+func realSys() bool {
+	return runtime.GOOS == "linux" && os.Getenv("LABASSISTANT_SYS_REAL") == "1"
+}
 
 // Module is the sys capability.
 type Module struct{}
@@ -56,6 +66,9 @@ func (m *Module) Status(ctx context.Context) (module.Status, error) {
 func (m *Module) Execute(ctx context.Context, req module.ActionRequest, emit func(module.Event)) (module.Result, error) {
 	switch req.Action {
 	case "reboot":
+		if realSys() {
+			return runReal(ctx, emit, "systemctl", "reboot")
+		}
 		return m.simulate(ctx, emit, "rebooting host (simulated)", "host would reboot now")
 	case "restart-service":
 		var p struct {
@@ -64,6 +77,9 @@ func (m *Module) Execute(ctx context.Context, req module.ActionRequest, emit fun
 		_ = json.Unmarshal(req.Params, &p)
 		if p.Service == "" {
 			return module.Result{State: module.JobFailed, Error: "service is required"}, nil
+		}
+		if realSys() {
+			return runReal(ctx, emit, "systemctl", "restart", p.Service)
 		}
 		return m.simulate(ctx, emit, "restarting "+p.Service+" (simulated)", p.Service+" restarted")
 	case "uptime":
@@ -104,6 +120,35 @@ func (m *Module) StreamLogs(ctx context.Context, params json.RawMessage, emit fu
 			emit([]byte(fmt.Sprintf("%s systemd[1]: log message %d", time.Now().Format(time.RFC3339), n)))
 		}
 	}
+}
+
+// runReal executes a real command, streaming its output as log events.
+func runReal(ctx context.Context, emit func(module.Event), name string, args ...string) (module.Result, error) {
+	emit(module.Event{Kind: module.EventState, State: module.JobRunning})
+	cmd := exec.CommandContext(ctx, name, args...)
+	pr, pw := io.Pipe()
+	cmd.Stdout = pw
+	cmd.Stderr = pw
+	if err := cmd.Start(); err != nil {
+		_ = pw.Close()
+		return module.Result{State: module.JobFailed, Error: err.Error()}, nil
+	}
+	done := make(chan struct{})
+	go func() {
+		sc := bufio.NewScanner(pr)
+		for sc.Scan() {
+			emit(module.Event{Kind: module.EventLog, Message: sc.Text()})
+		}
+		close(done)
+	}()
+	err := cmd.Wait()
+	_ = pw.Close()
+	<-done
+	if err != nil {
+		return module.Result{State: module.JobFailed, Error: err.Error()}, nil
+	}
+	emit(module.Event{Kind: module.EventState, State: module.JobSucceeded})
+	return module.Result{State: module.JobSucceeded}, nil
 }
 
 func runCmd(ctx context.Context, name string, args ...string) string {

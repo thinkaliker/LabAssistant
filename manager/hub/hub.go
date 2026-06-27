@@ -65,6 +65,13 @@ func (h *Hub) Dispatch(hostID string, cmd *pb.Command) error {
 	return h.sendTo(hostID, &pb.ManagerMessage{Payload: &pb.ManagerMessage_Command{Command: cmd}})
 }
 
+// RotateCert pushes a newly issued client certificate to a connected host.
+func (h *Hub) RotateCert(hostID string, certPEM, keyPEM []byte) error {
+	return h.sendTo(hostID, &pb.ManagerMessage{Payload: &pb.ManagerMessage_RotateCert{
+		RotateCert: &pb.RotateCert{CertPem: certPEM, KeyPem: keyPEM},
+	}})
+}
+
 func (h *Hub) sendTo(hostID string, msg *pb.ManagerMessage) error {
 	h.mu.Lock()
 	c, ok := h.conns[hostID]

@@ -66,7 +66,20 @@ func (s *session) handle(msg *pb.ManagerMessage) {
 		// TODO(slice-4): cancel a running job.
 	case *pb.ManagerMessage_LogRequest:
 		s.onLogRequest(p.LogRequest)
+	case *pb.ManagerMessage_RotateCert:
+		s.onRotateCert(p.RotateCert)
 	}
+}
+
+// onRotateCert persists the new certificate and drops the stream so the next reconnect
+// uses the new identity.
+func (s *session) onRotateCert(rc *pb.RotateCert) {
+	if err := s.a.applyRotatedCert(rc.GetCertPem(), rc.GetKeyPem()); err != nil {
+		slog.Warn("apply rotated cert failed", "err", err)
+		return
+	}
+	slog.Info("certificate rotated; reconnecting with new identity")
+	s.cancel()
 }
 
 func (s *session) onLogRequest(req *pb.LogStreamRequest) {

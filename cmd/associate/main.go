@@ -36,6 +36,7 @@ func run() error {
 	}
 
 	a := associate.New(b, modules.Default()...)
+	a.SetBundlePath(*bundlePath)
 	if *helper != "" {
 		cmd := []string{*helper}
 		if *useSudo {

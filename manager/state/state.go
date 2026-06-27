@@ -28,12 +28,14 @@ const (
 // Host is one managed host. All fields are returned by the API; only the durable subset
 // (see persisted) is written to state.json.
 type Host struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	IP        string    `json:"ip"`
-	Tailscale bool      `json:"tailscale"`
-	SSHUser   string    `json:"sshUser"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID         string    `json:"id"`
+	Name       string    `json:"name"`
+	IP         string    `json:"ip"`
+	Tailscale  bool      `json:"tailscale"`
+	SSHUser    string    `json:"sshUser"`
+	CertSerial string    `json:"certSerial,omitempty"`
+	CertExpiry time.Time `json:"certExpiry,omitempty"`
+	CreatedAt  time.Time `json:"createdAt"`
 
 	Status   HostStatus    `json:"status"`
 	LastSeen time.Time     `json:"lastSeen,omitempty"`
@@ -43,12 +45,14 @@ type Host struct {
 
 // persisted is the durable subset of Host written to state.json (runtime fields excluded).
 type persisted struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	IP        string    `json:"ip"`
-	Tailscale bool      `json:"tailscale"`
-	SSHUser   string    `json:"sshUser"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID         string    `json:"id"`
+	Name       string    `json:"name"`
+	IP         string    `json:"ip"`
+	Tailscale  bool      `json:"tailscale"`
+	SSHUser    string    `json:"sshUser"`
+	CertSerial string    `json:"certSerial,omitempty"`
+	CertExpiry time.Time `json:"certExpiry,omitempty"`
+	CreatedAt  time.Time `json:"createdAt"`
 }
 
 // Health is the latest host vitals from a heartbeat.
@@ -110,7 +114,8 @@ func Load(path string) (*Store, error) {
 	for _, p := range ps {
 		s.hosts[p.ID] = &Host{
 			ID: p.ID, Name: p.Name, IP: p.IP, Tailscale: p.Tailscale,
-			SSHUser: p.SSHUser, CreatedAt: p.CreatedAt, Status: StatusOffline,
+			SSHUser: p.SSHUser, CertSerial: p.CertSerial, CertExpiry: p.CertExpiry,
+			CreatedAt: p.CreatedAt, Status: StatusOffline,
 		}
 	}
 	return s, nil
@@ -257,7 +262,8 @@ func (s *Store) save() error {
 	for _, h := range s.hosts {
 		hosts = append(hosts, persisted{
 			ID: h.ID, Name: h.Name, IP: h.IP, Tailscale: h.Tailscale,
-			SSHUser: h.SSHUser, CreatedAt: h.CreatedAt,
+			SSHUser: h.SSHUser, CertSerial: h.CertSerial, CertExpiry: h.CertExpiry,
+			CreatedAt: h.CreatedAt,
 		})
 	}
 	b, err := json.MarshalIndent(hosts, "", "  ")

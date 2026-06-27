@@ -1,10 +1,10 @@
-// Package duo implements the docker updater/orchestrator module: it reports compose
-// stacks and services, controls them (start/stop/restart) at stack or service level, and
+// Package duo implements the docker updater/orchestrator module: it reports compose stacks
+// and services, controls them (start/stop/restart/prune) at stack or service level, and
 // streams container logs.
 //
-// Slice 3 operates on a simulated in-memory stack set so the Services page and log
-// streaming are demonstrable without docker. TODO(real-docker): drive `docker compose`
-// (ls/ps/start/stop/restart, logs) when docker is present.
+// When the docker CLI is present it drives real containers (see docker.go); otherwise it
+// runs against a simulated in-memory stack set so the Services page and log streaming are
+// demonstrable without docker.
 package duo
 
 import (
@@ -20,8 +20,10 @@ import (
 
 // Module is the duo capability.
 type Module struct {
+	useDocker bool
+
 	mu     sync.Mutex
-	stacks []*Stack
+	stacks []*Stack // simulated state (used only when docker is absent)
 }
 
 // Stack is a compose project and its services.
@@ -41,9 +43,14 @@ type Service struct {
 	HasLogs         bool   `json:"hasLogs"`
 }
 
-// New returns a duo module seeded with a simulated stack set.
+// New returns a duo module, using real docker when the CLI is available.
 func New() *Module {
-	return &Module{stacks: []*Stack{
+	m := &Module{}
+	if _, err := exec.LookPath("docker"); err == nil {
+		m.useDocker = true
+		return m
+	}
+	m.stacks = []*Stack{
 		{Name: "media", Path: "/srv/media/compose.yaml", Status: "running", Services: []*Service{
 			{Name: "jellyfin", Status: "running", Image: "jellyfin/jellyfin:10.9", UpdateAvailable: true, HasLogs: true},
 			{Name: "sonarr", Status: "running", Image: "linuxserver/sonarr:4.0", HasLogs: true},
@@ -51,7 +58,8 @@ func New() *Module {
 		{Name: "infra", Path: "/srv/infra/compose.yaml", Status: "running", Services: []*Service{
 			{Name: "traefik", Status: "running", Image: "traefik:3.1", HasLogs: true},
 		}},
-	}}
+	}
+	return m
 }
 
 func (m *Module) Manifest() module.Manifest {
@@ -84,23 +92,24 @@ func (m *Module) Manifest() module.Manifest {
 }
 
 func (m *Module) Detect(ctx context.Context) (module.Detection, error) {
-	caps := map[string]string{"orchestrator": "compose"}
-	if _, err := exec.LookPath("docker"); err == nil {
-		caps["docker"] = "present"
-		caps["mode"] = "simulated" // TODO(real-docker): switch to "docker"
-	} else {
-		caps["docker"] = "absent"
-		caps["mode"] = "simulated"
+	mode := "simulated"
+	if m.useDocker {
+		mode = "docker"
 	}
-	return module.Detection{Applicable: true, Capabilities: caps}, nil
+	return module.Detection{Applicable: true, Capabilities: map[string]string{
+		"orchestrator": "compose",
+		"mode":         mode,
+	}}, nil
 }
 
 func (m *Module) Status(ctx context.Context) (module.Status, error) {
+	if m.useDocker {
+		return m.dockerStatus(ctx)
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	data, _ := json.Marshal(map[string]any{"stacks": m.stacks})
-	running := 0
-	total := 0
+	running, total := 0, 0
 	for _, s := range m.stacks {
 		for _, svc := range s.Services {
 			total++
@@ -118,8 +127,15 @@ type actionParams struct {
 }
 
 func (m *Module) Execute(ctx context.Context, req module.ActionRequest, emit func(module.Event)) (module.Result, error) {
+	if m.useDocker {
+		return m.executeDocker(ctx, req, emit)
+	}
+	return m.executeSimulated(ctx, req, emit)
+}
+
+func (m *Module) executeSimulated(ctx context.Context, req module.ActionRequest, emit func(module.Event)) (module.Result, error) {
 	if req.Action == "prune" {
-		return m.prune(ctx, emit)
+		return simulate(ctx, emit, "pruning unused images/volumes", "reclaimed space (simulated)")
 	}
 	var p actionParams
 	if len(req.Params) > 0 {
@@ -134,19 +150,15 @@ func (m *Module) Execute(ctx context.Context, req module.ActionRequest, emit fun
 	if p.Service != "" {
 		target = fmt.Sprintf("service %s/%s", p.Stack, p.Service)
 	}
-
 	var desired string
 	switch req.Action {
-	case "start":
+	case "start", "restart":
 		desired = "running"
 	case "stop":
 		desired = "stopped"
-	case "restart":
-		desired = "running"
 	default:
 		return module.Result{State: module.JobFailed, Error: "unknown action: " + req.Action}, nil
 	}
-
 	emit(module.Event{Kind: module.EventState, State: module.JobRunning})
 	emit(module.Event{Kind: module.EventLog, Message: fmt.Sprintf("%sing %s", req.Action, target)})
 	select {
@@ -154,25 +166,10 @@ func (m *Module) Execute(ctx context.Context, req module.ActionRequest, emit fun
 		return module.Result{State: module.JobTimedOut, Error: ctx.Err().Error()}, nil
 	case <-time.After(600 * time.Millisecond):
 	}
-
 	if !m.apply(p, desired) {
 		return module.Result{State: module.JobFailed, Error: "no matching stack/service"}, nil
 	}
 	emit(module.Event{Kind: module.EventLog, Message: target + " is now " + desired})
-	emit(module.Event{Kind: module.EventState, State: module.JobSucceeded})
-	return module.Result{State: module.JobSucceeded}, nil
-}
-
-func (m *Module) prune(ctx context.Context, emit func(module.Event)) (module.Result, error) {
-	emit(module.Event{Kind: module.EventState, State: module.JobRunning})
-	for _, step := range []string{"deleted 3 dangling images", "reclaimed 412MB"} {
-		select {
-		case <-ctx.Done():
-			return module.Result{State: module.JobTimedOut, Error: ctx.Err().Error()}, nil
-		case <-time.After(400 * time.Millisecond):
-		}
-		emit(module.Event{Kind: module.EventLog, Message: step})
-	}
 	emit(module.Event{Kind: module.EventState, State: module.JobSucceeded})
 	return module.Result{State: module.JobSucceeded}, nil
 }
@@ -214,8 +211,11 @@ func stackStatus(s *Stack) string {
 	}
 }
 
-// StreamLogs emits simulated container log lines until ctx is cancelled.
+// StreamLogs streams container logs (real docker) or simulated lines.
 func (m *Module) StreamLogs(ctx context.Context, params json.RawMessage, emit func([]byte)) error {
+	if m.useDocker {
+		return m.dockerStreamLogs(ctx, params, emit)
+	}
 	var p actionParams
 	_ = json.Unmarshal(params, &p)
 	src := p.Stack
@@ -234,4 +234,17 @@ func (m *Module) StreamLogs(ctx context.Context, params json.RawMessage, emit fu
 			emit([]byte(fmt.Sprintf("%s [%s] log line %d", time.Now().Format(time.RFC3339), src, n)))
 		}
 	}
+}
+
+func simulate(ctx context.Context, emit func(module.Event), startMsg, doneMsg string) (module.Result, error) {
+	emit(module.Event{Kind: module.EventState, State: module.JobRunning})
+	emit(module.Event{Kind: module.EventLog, Message: startMsg})
+	select {
+	case <-ctx.Done():
+		return module.Result{State: module.JobTimedOut, Error: ctx.Err().Error()}, nil
+	case <-time.After(500 * time.Millisecond):
+	}
+	emit(module.Event{Kind: module.EventLog, Message: doneMsg})
+	emit(module.Event{Kind: module.EventState, State: module.JobSucceeded})
+	return module.Result{State: module.JobSucceeded}, nil
 }

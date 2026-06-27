@@ -23,11 +23,11 @@ func Enroll(layout paths.Layout, name, ip, managerAddr, serverName string) (bund
 	}
 
 	hostID := uuid.NewString()
-	certPEM, keyPEM, err := authority.IssueClient(hostID)
+	certPEM, keyPEM, serial, err := authority.IssueClient(hostID)
 	if err != nil {
 		return bundle.Bundle{}, err
 	}
-	if err := store.Add(state.Host{ID: hostID, Name: name, IP: ip}); err != nil {
+	if err := store.Add(state.Host{ID: hostID, Name: name, IP: ip, CertSerial: serial}); err != nil {
 		return bundle.Bundle{}, err
 	}
 	return bundle.Bundle{

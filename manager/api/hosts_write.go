@@ -80,12 +80,26 @@ func (d Deps) editHost(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, host)
 }
 
-// deleteHost removes a host. TODO(slice-2+): revoke its client certificate.
+// rotateCert issues and pushes a fresh client certificate to a connected host.
+func (d Deps) rotateCert(w http.ResponseWriter, r *http.Request) {
+	if err := d.RotateCert(r.PathValue("id")); err != nil {
+		writeErr(w, http.StatusConflict, "rotate_failed", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// deleteHost removes a host and revokes its client certificate.
 func (d Deps) deleteHost(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	host, _ := d.Store.Get(id)
 	if err := d.Store.Remove(id); err != nil {
 		writeErr(w, http.StatusInternalServerError, "delete_failed", err.Error())
 		return
+	}
+	if host.CertSerial != "" {
+		d.CA.Revoke(host.CertSerial)
+		d.Aud.Record("cert_revoked", id, "user", "client certificate revoked", nil)
 	}
 	d.Aud.Record("host_removed", id, "user", "host removed", nil)
 	w.WriteHeader(http.StatusNoContent)

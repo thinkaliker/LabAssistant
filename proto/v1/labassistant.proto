@@ -37,7 +37,15 @@ message ManagerMessage {
     CancelJob cancel = 3;
     LogStreamRequest log_request = 4;
     StatusRequest status_request = 5;
+    RotateCert rotate_cert = 6;
   }
+}
+
+// RotateCert delivers a freshly issued client certificate; the associate persists it and
+// reconnects using the new identity. The pinned CA is unchanged.
+message RotateCert {
+  bytes cert_pem = 1;
+  bytes key_pem = 2;
 }
 
 // ---- Handshake ----
