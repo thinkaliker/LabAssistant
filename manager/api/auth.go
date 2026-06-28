@@ -77,6 +77,22 @@ func (d Deps) authMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// auditReadAllowed gates audit-log reads. A human session always qualifies; API tokens must
+// be explicitly granted audit access (off by default — entries can hold sensitive details).
+// Dev-open mode (no auth configured) allows reads like every other endpoint.
+func (d Deps) auditReadAllowed(r *http.Request) bool {
+	if !d.Settings.AuthConfigured() {
+		return true
+	}
+	if c, err := r.Cookie(sessionCookie); err == nil && d.Sessions.Valid(c.Value) {
+		return true
+	}
+	if tok := bearerToken(r); tok != "" && d.Settings.TokenHasAuditAccess(tok) {
+		return true
+	}
+	return false
+}
+
 func bearerToken(r *http.Request) string {
 	h := r.Header.Get("Authorization")
 	if after, ok := strings.CutPrefix(h, "Bearer "); ok {
@@ -139,10 +155,11 @@ func (d Deps) listTokens(w http.ResponseWriter, r *http.Request) {
 
 func (d Deps) createToken(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name string `json:"name"`
+		Name        string `json:"name"`
+		AuditAccess bool   `json:"auditAccess"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
-	t, plain, err := d.Settings.AddToken(req.Name)
+	t, plain, err := d.Settings.AddToken(req.Name, req.AuditAccess)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "error", err.Error())
 		return

@@ -108,6 +108,17 @@ func NewApp(layout paths.Layout, cfg config.Config) (*App, error) {
 		},
 		h.Connected,
 		func() { ev.Publish(envelope("task_changed", nil)) },
+		func(t scheduler.Task, hostID string, err error) {
+			if err == nil {
+				return
+			}
+			summary := "scheduled " + t.Module + "/" + t.Action + " failed: " + err.Error()
+			aud.Record("task_run_failed", hostID, "scheduler", summary,
+				map[string]string{"task": t.Name, "taskId": t.ID})
+			ev.Publish(envelope("task_run_failed", map[string]string{
+				"taskId": t.ID, "name": t.Name, "hostId": hostID, "error": err.Error(),
+			}))
+		},
 	)
 	if err != nil {
 		return nil, err

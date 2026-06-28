@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math/rand/v2"
 	"os"
 	"sync"
 	"time"
@@ -21,6 +22,13 @@ const (
 	tickInterval  = 20 * time.Second
 	missedGrace   = 90 * time.Second
 	retryInterval = 60 * time.Second
+	// catchupWindow bounds catch-up: a job overdue beyond this (manager down a long time)
+	// is skipped to its next slot instead of fired late.
+	catchupWindow = 6 * time.Hour
+	// maxConcurrent caps fleet-wide simultaneous dispatches across all firing tasks.
+	maxConcurrent = 4
+	// maxJitter staggers each host dispatch to avoid a thundering herd.
+	maxJitter = 5 * time.Second
 )
 
 // Misfire policies for a run missed because the manager was down or a host was offline.
@@ -47,11 +55,16 @@ type Task struct {
 	CreatedAt             time.Time       `json:"createdAt"`
 	LastRun               time.Time       `json:"lastRun,omitempty"`
 	NextRun               time.Time       `json:"nextRun,omitempty"`
+	LastStatus            string          `json:"lastStatus,omitempty"` // dispatched | failed | skipped
+	LastError             string          `json:"lastError,omitempty"`
 }
 
 // DispatchFunc runs an action on a host (pre-approved). ConnectedFunc reports liveness.
 type DispatchFunc func(hostID, module, action string, params json.RawMessage) error
 type ConnectedFunc func(hostID string) bool
+
+// ReportFunc surfaces a per-host run outcome (err != nil = failure) for audit/notification.
+type ReportFunc func(t Task, hostID string, err error)
 
 // Scheduler holds tasks and runs the cron loop.
 type Scheduler struct {
@@ -60,19 +73,25 @@ type Scheduler struct {
 	dispatch  DispatchFunc
 	connected ConnectedFunc
 	notify    func()
+	report    ReportFunc
+	sem       chan struct{} // fleet-wide dispatch concurrency cap
 
 	mu    sync.Mutex
 	tasks map[string]*Task
 }
 
 // Load reads tasks from path and prepares the scheduler.
-func Load(path string, dispatch DispatchFunc, connected ConnectedFunc, notify func()) (*Scheduler, error) {
+func Load(path string, dispatch DispatchFunc, connected ConnectedFunc, notify func(), report ReportFunc) (*Scheduler, error) {
 	s := &Scheduler{
 		path: path, loc: time.Local, dispatch: dispatch, connected: connected,
-		notify: notify, tasks: map[string]*Task{},
+		notify: notify, report: report, tasks: map[string]*Task{},
+		sem: make(chan struct{}, maxConcurrent),
 	}
 	if notify == nil {
 		s.notify = func() {}
+	}
+	if report == nil {
+		s.report = func(Task, string, error) {}
 	}
 	b, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -130,6 +149,14 @@ func (s *Scheduler) tick(now time.Time) {
 		// Missed run while down, skip policy: advance without firing.
 		if late > missedGrace && t.Misfire == MisfireSkip {
 			t.NextRun = s.nextOr(t, now)
+			t.LastStatus = "skipped"
+			continue
+		}
+		// Catch-up bounded: a job overdue beyond the window (extended downtime) is skipped
+		// to its next slot rather than fired stale.
+		if late > catchupWindow && t.Misfire == MisfireCatchup {
+			t.NextRun = s.nextOr(t, now)
+			t.LastStatus = "skipped"
 			continue
 		}
 		t.LastRun = now
@@ -147,12 +174,53 @@ func (s *Scheduler) tick(now time.Time) {
 
 func (s *Scheduler) fire(t Task) {
 	delay := time.Duration(t.InterHostDelaySeconds) * time.Second
+	failed := false
 	for i, hostID := range t.HostIDs {
 		if i > 0 && delay > 0 {
 			time.Sleep(delay)
 		}
-		_ = s.dispatch(hostID, t.Module, t.Action, t.Params)
+		if err := s.dispatchOne(t, hostID); err != nil {
+			failed = true
+		}
 	}
+	status := "dispatched"
+	if failed {
+		status = "failed"
+	}
+	s.mu.Lock()
+	if cur, ok := s.tasks[t.ID]; ok && cur.LastStatus != "failed" {
+		// preserve a per-host failure already recorded; otherwise reflect the aggregate
+		cur.LastStatus = status
+		s.save()
+	}
+	s.mu.Unlock()
+	s.notify()
+}
+
+// dispatchOne runs one host through the global concurrency cap with jitter, then records and
+// surfaces the outcome.
+func (s *Scheduler) dispatchOne(t Task, hostID string) error {
+	s.sem <- struct{}{}
+	defer func() { <-s.sem }()
+	if maxJitter > 0 {
+		time.Sleep(time.Duration(rand.Int64N(int64(maxJitter))))
+	}
+	err := s.dispatch(hostID, t.Module, t.Action, t.Params)
+
+	s.mu.Lock()
+	if cur, ok := s.tasks[t.ID]; ok {
+		if err != nil {
+			cur.LastStatus = "failed"
+			cur.LastError = err.Error()
+		} else {
+			cur.LastError = ""
+		}
+		s.save()
+	}
+	s.mu.Unlock()
+
+	s.report(t, hostID, err)
+	return err
 }
 
 func (s *Scheduler) allConnected(t *Task) bool {

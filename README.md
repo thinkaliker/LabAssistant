@@ -79,16 +79,6 @@ Known items not yet designed into the components above.
 
 - Modules are compiled into the associate for v1; design toward external-binary modules later (the contract is already shaped for it).
 
-### Scheduler
-
-- Global concurrency cap + jitter for fleet-wide actions (beyond the per-host delay) to avoid stampedes.
-- Catch-up grace window so a long-overdue job isn't run after extended downtime.
-- Surface scheduled-run failures beyond the audit log (retry feedback + notification).
-
-### Security
-
-- Gate read access to the audit log (entries can reference sensitive operations).
-
 ### Future work (post-v1)
 
 - Associate self-update: push a new associate/helper binary over the stream and swap+restart it (chunked transfer, atomic replace, restart). Deferred from v1.

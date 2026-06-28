@@ -207,7 +207,7 @@
           <p class="has-text-grey">No scheduled tasks.</p>
         </template>
         <table class="table is-fullwidth" x-show="tasks.length>0">
-          <thead><tr><th></th><th>Name</th><th>Schedule</th><th>Action</th><th>Hosts</th><th>Next run</th><th></th></tr></thead>
+          <thead><tr><th></th><th>Name</th><th>Schedule</th><th>Action</th><th>Hosts</th><th>Last run</th><th>Next run</th><th></th></tr></thead>
           <tbody>
             <template x-for="t in tasks" :key="t.id">
               <tr>
@@ -219,6 +219,12 @@
                   <span class="tag is-danger is-light" x-show="t.allowDestructive">destructive</span>
                 </td>
                 <td x-text="(t.hostIds||[]).length"></td>
+                <td class="is-size-7">
+                  <span class="tag" x-show="t.lastStatus"
+                        :class="{'is-success':t.lastStatus==='dispatched','is-danger':t.lastStatus==='failed','is-warning':t.lastStatus==='skipped'}"
+                        x-text="t.lastStatus" :title="t.lastError||''"></span>
+                  <span x-show="!t.lastStatus" class="has-text-grey">—</span>
+                </td>
                 <td class="is-size-7" x-text="t.nextRun ? new Date(t.nextRun).toLocaleString() : '—'"></td>
                 <td class="has-text-right"><button class="button is-small is-danger is-light" @click="removeTask(t.id)">delete</button></td>
               </tr>
@@ -230,7 +236,8 @@
       <!-- Audit -->
       <div x-show="page==='audit'">
         <h1 class="title">Audit Log</h1>
-        <template x-if="audit.length===0">
+        <div class="notification is-warning" x-show="auditError" x-text="auditError"></div>
+        <template x-if="!auditError && audit.length===0">
           <p class="has-text-grey">No audit entries.</p>
         </template>
         <table class="table is-fullwidth is-narrow" x-show="audit.length>0">
@@ -276,6 +283,9 @@
             <div class="control is-expanded"><input class="input" x-model="newTokenName" placeholder="token name"></div>
             <div class="control"><button class="button is-link" @click="createToken()">Create</button></div>
           </div>
+          <label class="checkbox is-size-7 has-text-grey mb-2">
+            <input type="checkbox" x-model="newTokenAudit"> Grant audit-log read access
+          </label>
           <div class="notification is-success" x-show="newTokenValue">
             <button class="delete" @click="newTokenValue=''"></button>
             Copy now (shown once): <code x-text="newTokenValue"></code>
@@ -283,7 +293,9 @@
           <table class="table is-fullwidth is-narrow" x-show="tokens.length>0">
             <tbody>
               <template x-for="t in tokens" :key="t.id">
-                <tr><td x-text="t.name||'(unnamed)'"></td><td class="is-size-7 has-text-grey" x-text="new Date(t.createdAt).toLocaleString()"></td>
+                <tr><td x-text="t.name||'(unnamed)'"></td>
+                <td><span class="tag is-info is-light" x-show="t.auditAccess">audit</span></td>
+                <td class="is-size-7 has-text-grey" x-text="new Date(t.createdAt).toLocaleString()"></td>
                 <td class="has-text-right"><button class="button is-small is-danger is-light" @click="revokeToken(t.id)">revoke</button></td></tr>
               </template>
             </tbody>
@@ -515,7 +527,9 @@
         settings: { logLevel: 'info', defaultTimezone: '' },
         tokens: [],
         newTokenName: '',
+        newTokenAudit: false,
         newTokenValue: '',
+        auditError: '',
         cfg: { open: false, hostId: '', module: '', fields: [], values: {} },
         act: { open: false, hostId: '', module: '', action: '', destructive: false, fields: [], values: {}, error: '' },
         uninstall: { open: false, hostId: '', hostName: '', online: false, sshUser: '', sshPassword: '' },
@@ -549,7 +563,9 @@
             this.services = await (await fetch('/api/v1/services')).json();
             this.tasks = await (await fetch('/api/v1/tasks')).json();
             this.approvals = await (await fetch('/api/v1/approvals')).json();
-            this.audit = await (await fetch('/api/v1/audit')).json();
+            const ar = await fetch('/api/v1/audit');
+            if (ar.ok) { this.audit = await ar.json(); this.auditError = ''; }
+            else { this.audit = []; this.auditError = ar.status === 403 ? 'Audit access not permitted for this credential.' : 'Failed to load audit log.'; }
             this.settings = await (await fetch('/api/v1/settings')).json();
             this.tokens = await (await fetch('/api/v1/auth/tokens')).json();
           } catch (e) { console.error(e); }
@@ -559,8 +575,8 @@
           this.refresh();
         },
         async createToken() {
-          const r = await fetch('/api/v1/auth/tokens', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: this.newTokenName }) });
-          if (r.ok) { const t = await r.json(); this.newTokenValue = t.token; this.newTokenName = ''; this.refresh(); }
+          const r = await fetch('/api/v1/auth/tokens', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: this.newTokenName, auditAccess: this.newTokenAudit }) });
+          if (r.ok) { const t = await r.json(); this.newTokenValue = t.token; this.newTokenName = ''; this.newTokenAudit = false; this.refresh(); }
         },
         async revokeToken(id) { await fetch(`/api/v1/auth/tokens/${id}`, { method: 'DELETE' }); this.refresh(); },
         async downloadBackup() {

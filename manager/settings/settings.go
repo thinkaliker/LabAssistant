@@ -30,6 +30,9 @@ type Token struct {
 	Name      string    `json:"name"`
 	Hash      string    `json:"-"`
 	CreatedAt time.Time `json:"createdAt"`
+	// AuditAccess opts a token into reading the audit log. Off by default: the audit trail
+	// can reference sensitive operations, so automation tokens don't get it implicitly.
+	AuditAccess bool `json:"auditAccess"`
 }
 
 type data struct {
@@ -129,14 +132,14 @@ func (s *Store) CheckLogin(username, password string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(s.d.AuthPassHash), []byte(password)) == nil
 }
 
-// AddToken mints a token, returning its plaintext once.
-func (s *Store) AddToken(name string) (Token, string, error) {
+// AddToken mints a token, returning its plaintext once. auditAccess grants audit-log read.
+func (s *Store) AddToken(name string, auditAccess bool) (Token, string, error) {
 	raw := make([]byte, 24)
 	if _, err := rand.Read(raw); err != nil {
 		return Token{}, "", err
 	}
 	plain := hex.EncodeToString(raw)
-	t := Token{ID: uuid.NewString(), Name: name, Hash: hashToken(plain), CreatedAt: time.Now()}
+	t := Token{ID: uuid.NewString(), Name: name, Hash: hashToken(plain), CreatedAt: time.Now(), AuditAccess: auditAccess}
 	s.mu.Lock()
 	s.d.Tokens = append(s.d.Tokens, t)
 	err := s.save()
@@ -175,6 +178,19 @@ func (s *Store) CheckToken(plain string) bool {
 	for _, t := range s.d.Tokens {
 		if t.Hash == h {
 			return true
+		}
+	}
+	return false
+}
+
+// TokenHasAuditAccess reports whether the matching token is allowed to read the audit log.
+func (s *Store) TokenHasAuditAccess(plain string) bool {
+	h := hashToken(plain)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, t := range s.d.Tokens {
+		if t.Hash == h {
+			return t.AuditAccess
 		}
 	}
 	return false
