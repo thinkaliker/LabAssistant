@@ -54,7 +54,7 @@ type App struct {
 
 // NewApp builds the manager from its on-disk layout and configuration.
 func NewApp(layout paths.Layout, cfg config.Config) (*App, error) {
-	authority, err := ca.LoadOrCreate(layout.CertsDir(), nil)
+	authority, err := ca.LoadOrCreate(layout.CertsDir(), serverSANs(cfg))
 	if err != nil {
 		return nil, err
 	}
@@ -237,6 +237,19 @@ func (a *App) certRotationLoop(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// serverSANs collects the names/IPs the manager's server cert must cover so associates
+// can verify it: the configured ServerName plus the host part of ManagerAddr.
+func serverSANs(cfg config.Config) []string {
+	var sans []string
+	if cfg.Enroll.ServerName != "" {
+		sans = append(sans, cfg.Enroll.ServerName)
+	}
+	if host, _, err := net.SplitHostPort(cfg.Enroll.ManagerAddr); err == nil && host != "" {
+		sans = append(sans, host)
+	}
+	return sans
 }
 
 func envelope(typ string, payload any) []byte {

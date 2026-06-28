@@ -1,6 +1,8 @@
 package manager
 
 import (
+	"net"
+
 	"github.com/google/uuid"
 
 	"github.com/thinkaliker/labassistant/internal/bundle"
@@ -13,7 +15,11 @@ import (
 // the Slice 1 dev path (the bundle is copied to the host by hand); the quartermaster will
 // deliver it over SSH in a later slice.
 func Enroll(layout paths.Layout, name, ip, managerAddr, serverName string) (bundle.Bundle, error) {
-	authority, err := ca.LoadOrCreate(layout.CertsDir(), nil)
+	sans := []string{serverName}
+	if host, _, err := net.SplitHostPort(managerAddr); err == nil && host != "" {
+		sans = append(sans, host)
+	}
+	authority, err := ca.LoadOrCreate(layout.CertsDir(), sans)
 	if err != nil {
 		return bundle.Bundle{}, err
 	}

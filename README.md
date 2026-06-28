@@ -100,7 +100,9 @@ Known items not yet designed into the components above.
 - SSH host-key verification (trust-on-first-use) during enrollment — it is the trust anchor for the mTLS bootstrap.
 - Gate read access to the audit log (entries can reference sensitive operations).
 
-### Future work
+### Future work (post-v1)
 
+- Associate self-update: push a new associate/helper binary over the stream and swap+restart it (chunked transfer, atomic replace, restart). Deferred from v1.
+- ntfy integration
 - Webhooks for external notification.
 - Home Assistant integration.
