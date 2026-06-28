@@ -57,11 +57,13 @@ func (s *Sessions) Delete(tok string) {
 	s.mu.Unlock()
 }
 
-// authMiddleware enforces authentication on /api/v1 except the login endpoint. When no
+// authMiddleware enforces authentication on /api/v1 except the public login and session
+// status endpoints. The dashboard calls /api/v1/auth/session before logging in to decide
+// whether to show the login screen, so it must be reachable while unauthenticated. When no
 // password is configured the manager runs in dev-open mode (all requests allowed).
 func (d Deps) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/v1/auth/login" || !d.Settings.AuthConfigured() {
+		if r.URL.Path == "/api/v1/auth/login" || r.URL.Path == "/api/v1/auth/session" || !d.Settings.AuthConfigured() {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -142,11 +144,16 @@ func (d Deps) session(w http.ResponseWriter, r *http.Request) {
 			authed = true
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"authRequired":  required,
 		"authenticated": authed,
-		"username":      d.Settings.Username(),
-	})
+	}
+	// Only disclose the username to authenticated callers; this endpoint is public so the
+	// dashboard can detect whether a login is needed before any credentials are presented.
+	if authed {
+		resp["username"] = d.Settings.Username()
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (d Deps) listTokens(w http.ResponseWriter, r *http.Request) {

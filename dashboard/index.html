@@ -1,25 +1,37 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>LabAssistant</title>
   <link rel="stylesheet" href="/vendor/bulma-1.0.4.min.css">
   <script defer src="/vendor/alpine-3.14.9.min.js"></script>
+  <style>
+    [x-cloak] {
+      display: none !important
+    }
+  </style>
 </head>
-<body class="has-navbar-fixed-top" x-data="app()" x-init="init()">
 
-  <nav class="navbar is-dark is-fixed-top" role="navigation">
+<body x-data="app()" x-init="init()" :class="!needsLogin && 'has-navbar-fixed-top'">
+
+  <nav class="navbar is-dark is-fixed-top" role="navigation" x-show="ready && !needsLogin" x-cloak>
     <div class="navbar-brand">
       <span class="navbar-item has-text-weight-bold is-size-5">LabAssistant</span>
     </div>
     <div class="navbar-menu is-active">
       <div class="navbar-start">
-        <a class="navbar-item" :class="page==='overview' && 'is-active has-text-weight-semibold'" @click="page='overview'">Overview</a>
-        <a class="navbar-item" :class="page==='hosts' && 'is-active has-text-weight-semibold'" @click="page='hosts'">Hosts</a>
-        <a class="navbar-item" :class="page==='services' && 'is-active has-text-weight-semibold'" @click="page='services'">Services</a>
-        <a class="navbar-item" :class="page==='scheduler' && 'is-active has-text-weight-semibold'" @click="page='scheduler'">Scheduler</a>
-        <a class="navbar-item" :class="page==='audit' && 'is-active has-text-weight-semibold'" @click="page='audit'">Audit</a>
+        <a class="navbar-item" :class="page==='overview' && 'is-active has-text-weight-semibold'"
+          @click="page='overview'">Overview</a>
+        <a class="navbar-item" :class="page==='hosts' && 'is-active has-text-weight-semibold'"
+          @click="page='hosts'">Hosts</a>
+        <a class="navbar-item" :class="page==='services' && 'is-active has-text-weight-semibold'"
+          @click="page='services'">Services</a>
+        <a class="navbar-item" :class="page==='scheduler' && 'is-active has-text-weight-semibold'"
+          @click="page='scheduler'">Scheduler</a>
+        <a class="navbar-item" :class="page==='audit' && 'is-active has-text-weight-semibold'"
+          @click="page='audit'">Audit</a>
       </div>
       <div class="navbar-end">
         <div class="navbar-item">
@@ -33,7 +45,7 @@
     </div>
   </nav>
 
-  <section class="section">
+  <section class="section" x-show="ready && !needsLogin" x-cloak>
     <div class="container">
 
       <!-- Pending approvals (visible on every page) -->
@@ -95,7 +107,8 @@
       <div x-show="page==='hosts'">
         <h1 class="title">Hosts</h1>
         <template x-if="hosts.length===0">
-          <p class="has-text-grey">No hosts yet. Enroll one with <code>manager enroll</code>.</p>
+          <p class="has-text-grey">No hosts yet. Enroll one with <code>manager enroll</code> or use the Add Hosts
+            button.</p>
         </template>
         <template x-for="h in hosts" :key="h.id">
           <div class="box">
@@ -109,7 +122,7 @@
               </div>
               <div class="level-right">
                 <div class="level-item is-size-7 has-text-grey"
-                     x-text="h.health ? `cpu ${h.health.cpuPercent||0}% · mem ${h.health.memPercent||0}%` : '—'"></div>
+                  x-text="h.health ? `cpu ${h.health.cpuPercent||0}% · mem ${h.health.memPercent||0}%` : '—'"></div>
                 <div class="level-item" x-text="expanded===h.id ? '▾' : '▸'"></div>
               </div>
             </div>
@@ -129,11 +142,9 @@
                     <div class="level-right">
                       <template x-for="a in (m.actions||[])" :key="a.name">
                         <div class="level-item">
-                          <button class="button is-small"
-                                  :class="a.destructive ? 'is-danger' : 'is-link'"
-                                  :disabled="h.status!=='online'"
-                                  @click="startAction(h.id, m.name, a)"
-                                  x-text="`${m.name} ${a.name}`"></button>
+                          <button class="button is-small" :class="a.destructive ? 'is-danger' : 'is-link'"
+                            :disabled="h.status!=='online'" @click="startAction(h.id, m.name, a)"
+                            x-text="`${m.name} ${a.name}`"></button>
                         </div>
                       </template>
                       <div class="level-item">
@@ -155,13 +166,15 @@
       <div x-show="page==='services'">
         <h1 class="title">Services</h1>
         <template x-if="services.stacks.length===0">
-          <p class="has-text-grey">No compose stacks reported.</p>
+          <p class="has-text-grey">No compose stacks reported. Add a host which contains a docker compose stack first.
+          </p>
         </template>
         <template x-for="st in services.stacks" :key="st.hostId+'/'+st.name">
           <div class="box">
             <div class="level is-mobile">
               <div class="level-left">
-                <div class="level-item"><span class="tag" :class="statusClass(st.status)" x-text="st.status"></span></div>
+                <div class="level-item"><span class="tag" :class="statusClass(st.status)" x-text="st.status"></span>
+                </div>
                 <div class="level-item has-text-weight-semibold" x-text="st.name"></div>
                 <div class="level-item is-size-7 has-text-grey" x-text="st.hostName"></div>
               </div>
@@ -200,18 +213,32 @@
       <!-- Scheduler -->
       <div x-show="page==='scheduler'">
         <div class="level">
-          <div class="level-left"><h1 class="title">Scheduler</h1></div>
+          <div class="level-left">
+            <h1 class="title">Scheduler</h1>
+          </div>
           <div class="level-right"><button class="button is-primary" @click="openTask()">Add Task</button></div>
         </div>
         <template x-if="tasks.length===0">
           <p class="has-text-grey">No scheduled tasks.</p>
         </template>
         <table class="table is-fullwidth" x-show="tasks.length>0">
-          <thead><tr><th></th><th>Name</th><th>Schedule</th><th>Action</th><th>Hosts</th><th>Last run</th><th>Next run</th><th></th></tr></thead>
+          <thead>
+            <tr>
+              <th></th>
+              <th>Name</th>
+              <th>Schedule</th>
+              <th>Action</th>
+              <th>Hosts</th>
+              <th>Last run</th>
+              <th>Next run</th>
+              <th></th>
+            </tr>
+          </thead>
           <tbody>
             <template x-for="t in tasks" :key="t.id">
               <tr>
-                <td><span class="tag" :class="t.enabled ? 'is-success' : 'is-light'" x-text="t.enabled?'on':'off'"></span></td>
+                <td><span class="tag" :class="t.enabled ? 'is-success' : 'is-light'"
+                    x-text="t.enabled?'on':'off'"></span></td>
                 <td class="has-text-weight-semibold" x-text="t.name"></td>
                 <td><code x-text="t.schedule"></code></td>
                 <td>
@@ -221,12 +248,13 @@
                 <td x-text="(t.hostIds||[]).length"></td>
                 <td class="is-size-7">
                   <span class="tag" x-show="t.lastStatus"
-                        :class="{'is-success':t.lastStatus==='dispatched','is-danger':t.lastStatus==='failed','is-warning':t.lastStatus==='skipped'}"
-                        x-text="t.lastStatus" :title="t.lastError||''"></span>
+                    :class="{'is-success':t.lastStatus==='dispatched','is-danger':t.lastStatus==='failed','is-warning':t.lastStatus==='skipped'}"
+                    x-text="t.lastStatus" :title="t.lastError||''"></span>
                   <span x-show="!t.lastStatus" class="has-text-grey">—</span>
                 </td>
                 <td class="is-size-7" x-text="t.nextRun ? new Date(t.nextRun).toLocaleString() : '—'"></td>
-                <td class="has-text-right"><button class="button is-small is-danger is-light" @click="removeTask(t.id)">delete</button></td>
+                <td class="has-text-right"><button class="button is-small is-danger is-light"
+                    @click="removeTask(t.id)">delete</button></td>
               </tr>
             </template>
           </tbody>
@@ -241,7 +269,15 @@
           <p class="has-text-grey">No audit entries.</p>
         </template>
         <table class="table is-fullwidth is-narrow" x-show="audit.length>0">
-          <thead><tr><th>Time</th><th>Type</th><th>Host</th><th>Actor</th><th>Summary</th></tr></thead>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Type</th>
+              <th>Host</th>
+              <th>Actor</th>
+              <th>Summary</th>
+            </tr>
+          </thead>
           <tbody>
             <template x-for="e in audit" :key="e.id">
               <tr>
@@ -265,13 +301,19 @@
           <div class="columns">
             <div class="column field">
               <label class="label">Log level</label>
-              <div class="control"><div class="select"><select x-model="settings.logLevel">
-                <option>debug</option><option>info</option><option>warn</option><option>error</option>
-              </select></div></div>
+              <div class="control">
+                <div class="select"><select x-model="settings.logLevel">
+                    <option>debug</option>
+                    <option>info</option>
+                    <option>warn</option>
+                    <option>error</option>
+                  </select></div>
+              </div>
             </div>
             <div class="column field">
               <label class="label">Default timezone</label>
-              <div class="control"><input class="input" x-model="settings.defaultTimezone" placeholder="America/Los_Angeles"></div>
+              <div class="control"><input class="input" x-model="settings.defaultTimezone"
+                  placeholder="America/Los_Angeles"></div>
             </div>
           </div>
           <button class="button is-primary" @click="saveSettings()">Save</button>
@@ -293,10 +335,13 @@
           <table class="table is-fullwidth is-narrow" x-show="tokens.length>0">
             <tbody>
               <template x-for="t in tokens" :key="t.id">
-                <tr><td x-text="t.name||'(unnamed)'"></td>
-                <td><span class="tag is-info is-light" x-show="t.auditAccess">audit</span></td>
-                <td class="is-size-7 has-text-grey" x-text="new Date(t.createdAt).toLocaleString()"></td>
-                <td class="has-text-right"><button class="button is-small is-danger is-light" @click="revokeToken(t.id)">revoke</button></td></tr>
+                <tr>
+                  <td x-text="t.name||'(unnamed)'"></td>
+                  <td><span class="tag is-info is-light" x-show="t.auditAccess">audit</span></td>
+                  <td class="is-size-7 has-text-grey" x-text="new Date(t.createdAt).toLocaleString()"></td>
+                  <td class="has-text-right"><button class="button is-small is-danger is-light"
+                      @click="revokeToken(t.id)">revoke</button></td>
+                </tr>
               </template>
             </tbody>
           </table>
@@ -311,38 +356,61 @@
               <input type="file" accept="application/json" style="display:none" @change="restoreBackup($event)">
             </label>
           </div>
-          <p class="is-size-7 has-text-grey">Backup includes the CA private key — keep it secret. Restore requires a manager restart.</p>
+          <p class="is-size-7 has-text-grey">Backup includes the CA private key — keep it secret. Restore requires a
+            manager restart.</p>
         </div>
       </div>
 
     </div>
   </section>
 
-  <!-- Login overlay -->
-  <div class="modal" :class="needsLogin && 'is-active'">
-    <div class="modal-background"></div>
-    <div class="modal-card">
-      <header class="modal-card-head"><p class="modal-card-title">LabAssistant — Sign in</p></header>
-      <section class="modal-card-body">
-        <div class="field"><label class="label">Username</label><div class="control"><input class="input" x-model="login.username"></div></div>
-        <div class="field"><label class="label">Password</label><div class="control"><input class="input" type="password" x-model="login.password" @keydown.enter="doLogin()"></div></div>
-        <p class="help is-danger" x-show="loginError" x-text="loginError"></p>
-      </section>
-      <footer class="modal-card-foot"><button class="button is-primary" @click="doLogin()">Sign in</button></footer>
+  <!-- Login page (standalone — fully replaces the dashboard until authenticated) -->
+  <section class="hero is-fullheight is-light" x-show="ready && needsLogin" x-cloak>
+    <div class="hero-body">
+      <div class="container">
+        <div class="columns is-centered">
+          <div class="column is-5-tablet is-4-desktop is-3-widescreen">
+            <div class="box">
+              <h1 class="title is-4 has-text-centered mb-1">LabAssistant</h1>
+              <p class="subtitle is-6 has-text-centered has-text-grey">Sign in to continue</p>
+              <div class="field">
+                <label class="label">Username</label>
+                <div class="control"><input class="input" x-model="login.username" autofocus @keydown.enter="doLogin()">
+                </div>
+              </div>
+              <div class="field">
+                <label class="label">Password</label>
+                <div class="control"><input class="input" type="password" x-model="login.password"
+                    @keydown.enter="doLogin()"></div>
+              </div>
+              <p class="help is-danger" x-show="loginError" x-text="loginError"></p>
+              <div class="field mt-5">
+                <div class="control"><button class="button is-primary is-fullwidth" @click="doLogin()">Sign in</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
-  </div>
+  </section>
 
   <!-- Module config modal -->
   <div class="modal" :class="cfg.open && 'is-active'">
     <div class="modal-background" @click="cfg.open=false"></div>
     <div class="modal-card">
-      <header class="modal-card-head"><p class="modal-card-title" x-text="'Configure '+cfg.module"></p></header>
+      <header class="modal-card-head">
+        <p class="modal-card-title" x-text="'Configure '+cfg.module"></p>
+      </header>
       <section class="modal-card-body">
-        <template x-if="cfg.fields.length===0"><p class="has-text-grey">This module has no configurable settings.</p></template>
+        <template x-if="cfg.fields.length===0">
+          <p class="has-text-grey">This module has no configurable settings.</p>
+        </template>
         <template x-for="f in cfg.fields" :key="f.key">
           <div class="field">
             <label class="label" x-text="f.title||f.key"></label>
-            <div class="control"><input class="input" :type="f.secret?'password':'text'" x-model="cfg.values[f.key]"></div>
+            <div class="control"><input class="input" :type="f.secret?'password':'text'" x-model="cfg.values[f.key]">
+            </div>
           </div>
         </template>
       </section>
@@ -357,7 +425,9 @@
   <div class="modal" :class="act.open && 'is-active'">
     <div class="modal-background" @click="act.open=false"></div>
     <div class="modal-card">
-      <header class="modal-card-head"><p class="modal-card-title" x-text="act.module+' '+act.action"></p></header>
+      <header class="modal-card-head">
+        <p class="modal-card-title" x-text="act.module+' '+act.action"></p>
+      </header>
       <section class="modal-card-body">
         <div class="notification is-warning is-light" x-show="act.destructive">
           This is a destructive action — it will be queued for approval before it runs.
@@ -374,7 +444,8 @@
         <p class="help is-danger" x-show="act.error" x-text="act.error"></p>
       </section>
       <footer class="modal-card-foot">
-        <button class="button" :class="act.destructive ? 'is-danger' : 'is-primary'" @click="submitAction()">Run</button>
+        <button class="button" :class="act.destructive ? 'is-danger' : 'is-primary'"
+          @click="submitAction()">Run</button>
         <button class="button" @click="act.open=false">Cancel</button>
       </footer>
     </div>
@@ -384,34 +455,53 @@
   <div class="modal" :class="taskOpen && 'is-active'">
     <div class="modal-background" @click="taskOpen=false"></div>
     <div class="modal-card">
-      <header class="modal-card-head"><p class="modal-card-title">Add Task</p></header>
+      <header class="modal-card-head">
+        <p class="modal-card-title">Add Task</p>
+      </header>
       <section class="modal-card-body">
-        <div class="field"><label class="label">Name</label><div class="control"><input class="input" x-model="newTask.name" placeholder="weekly updates"></div></div>
-        <div class="field"><label class="label">Schedule (cron)</label><div class="control"><input class="input" x-model="newTask.schedule" placeholder="0 3 * * 0"></div></div>
+        <div class="field"><label class="label">Name</label>
+          <div class="control"><input class="input" x-model="newTask.name" placeholder="weekly updates"></div>
+        </div>
+        <div class="field"><label class="label">Schedule (cron)</label>
+          <div class="control"><input class="input" x-model="newTask.schedule" placeholder="0 3 * * 0"></div>
+        </div>
         <div class="columns">
-          <div class="column field"><label class="label">Module</label><div class="control"><input class="input" x-model="newTask.module" placeholder="qup"></div></div>
-          <div class="column field"><label class="label">Action</label><div class="control"><input class="input" x-model="newTask.action" placeholder="apply"></div></div>
+          <div class="column field"><label class="label">Module</label>
+            <div class="control"><input class="input" x-model="newTask.module" placeholder="qup"></div>
+          </div>
+          <div class="column field"><label class="label">Action</label>
+            <div class="control"><input class="input" x-model="newTask.action" placeholder="apply"></div>
+          </div>
         </div>
         <div class="field">
           <label class="label">Target hosts</label>
           <template x-for="h in hosts" :key="h.id">
-            <label class="checkbox mr-3"><input type="checkbox" :value="h.id" @change="toggleTaskHost(h.id)"> <span x-text="h.name"></span></label>
+            <label class="checkbox mr-3"><input type="checkbox" :value="h.id" @change="toggleTaskHost(h.id)"> <span
+                x-text="h.name"></span></label>
           </template>
         </div>
         <div class="columns">
           <div class="column field">
             <label class="label">Misfire</label>
-            <div class="control"><div class="select is-fullwidth"><select x-model="newTask.misfire">
-              <option value="skip">skip</option><option value="catchup">catchup</option><option value="retry">retry</option>
-            </select></div></div>
+            <div class="control">
+              <div class="select is-fullwidth"><select x-model="newTask.misfire">
+                  <option value="skip">skip</option>
+                  <option value="catchup">catchup</option>
+                  <option value="retry">retry</option>
+                </select></div>
+            </div>
           </div>
-          <div class="column field"><label class="label">Inter-host delay (s)</label><div class="control"><input class="input" type="number" x-model.number="newTask.interHostDelaySeconds"></div></div>
+          <div class="column field"><label class="label">Inter-host delay (s)</label>
+            <div class="control"><input class="input" type="number" x-model.number="newTask.interHostDelaySeconds">
+            </div>
+          </div>
         </div>
         <label class="checkbox mr-4"><input type="checkbox" x-model="newTask.enabled"> Enabled</label>
         <label class="checkbox"><input type="checkbox" x-model="newTask.allowDestructive"> Allow destructive</label>
       </section>
       <footer class="modal-card-foot">
-        <button class="button is-primary" @click="submitTask()" :disabled="!newTask.name || !newTask.schedule || !newTask.module || !newTask.action">Create</button>
+        <button class="button is-primary" @click="submitTask()"
+          :disabled="!newTask.name || !newTask.schedule || !newTask.module || !newTask.action">Create</button>
         <button class="button" @click="taskOpen=false">Cancel</button>
       </footer>
     </div>
@@ -421,7 +511,9 @@
   <div class="modal" :class="logView.open && 'is-active'">
     <div class="modal-background" @click="closeLogs()"></div>
     <div class="modal-card">
-      <header class="modal-card-head"><p class="modal-card-title" x-text="'Logs: '+logView.title"></p></header>
+      <header class="modal-card-head">
+        <p class="modal-card-title" x-text="'Logs: '+logView.title"></p>
+      </header>
       <section class="modal-card-body">
         <pre style="max-height:360px;overflow:auto" x-text="logView.lines.join('\n')"></pre>
       </section>
@@ -451,7 +543,9 @@
   <div class="modal" :class="addHostOpen && 'is-active'">
     <div class="modal-background" @click="addHostOpen=false"></div>
     <div class="modal-card">
-      <header class="modal-card-head"><p class="modal-card-title">Add Host</p></header>
+      <header class="modal-card-head">
+        <p class="modal-card-title">Add Host</p>
+      </header>
       <section class="modal-card-body">
         <div class="field">
           <label class="label">Name</label>
@@ -463,7 +557,7 @@
         </div>
         <div class="field">
           <label class="label">SSH User</label>
-          <div class="control"><input class="input" x-model="newHost.sshUser" placeholder="admin"></div>
+          <div class="control"><input class="input" x-model="newHost.sshUser" placeholder=""></div>
         </div>
         <div class="field">
           <label class="label">SSH Password <span class="has-text-grey is-size-7">(optional; not stored)</span></label>
@@ -482,17 +576,28 @@
   <div class="modal" :class="uninstall.open && 'is-active'">
     <div class="modal-background" @click="uninstall.open=false"></div>
     <div class="modal-card">
-      <header class="modal-card-head"><p class="modal-card-title" x-text="'Uninstall '+uninstall.hostName"></p></header>
+      <header class="modal-card-head">
+        <p class="modal-card-title" x-text="'Uninstall '+uninstall.hostName"></p>
+      </header>
       <section class="modal-card-body">
-        <p class="mb-3">This stops and removes the associate from the host, revokes its certificate, and deletes the host record.</p>
+        <p class="mb-3">This stops and removes the associate from the host, revokes its certificate, and deletes the
+          host record.</p>
         <template x-if="uninstall.online">
-          <p class="notification is-info is-light">The host is online — it will tear itself down over the existing connection. No SSH needed.</p>
+          <p class="notification is-info is-light">The host is online — it will tear itself down over the existing
+            connection. No SSH needed.</p>
         </template>
         <template x-if="!uninstall.online">
           <div>
-            <p class="notification is-warning is-light">The host is offline. Provide SSH credentials to remove the associate over SSH, or leave blank to drop the host record only (the associate stays installed but its cert is revoked).</p>
-            <div class="field"><label class="label">SSH User</label><div class="control"><input class="input" x-model="uninstall.sshUser"></div></div>
-            <div class="field"><label class="label">SSH Password <span class="has-text-grey is-size-7">(not stored)</span></label><div class="control"><input class="input" type="password" x-model="uninstall.sshPassword"></div></div>
+            <p class="notification is-warning is-light">The host is offline. Provide SSH credentials to remove the
+              associate over SSH, or leave blank to drop the host record only (the associate stays installed but its
+              cert is revoked).</p>
+            <div class="field"><label class="label">SSH User</label>
+              <div class="control"><input class="input" x-model="uninstall.sshUser"></div>
+            </div>
+            <div class="field"><label class="label">SSH Password <span class="has-text-grey is-size-7">(not
+                  stored)</span></label>
+              <div class="control"><input class="input" type="password" x-model="uninstall.sshPassword"></div>
+            </div>
           </div>
         </template>
       </section>
@@ -520,9 +625,10 @@
         newTask: { name: '', schedule: '', module: '', action: '', hostIds: [], misfire: 'skip', interHostDelaySeconds: 0, enabled: true, allowDestructive: false },
         job: { open: false, state: '', progress: 0, log: [] },
         logView: { open: false, title: '', lines: [], es: null },
+        ready: false,
         needsLogin: false,
         authUser: '',
-        login: { username: 'admin', password: '' },
+        login: { username: '', password: '' },
         loginError: '',
         settings: { logLevel: 'info', defaultTimezone: '' },
         tokens: [],
@@ -536,10 +642,18 @@
 
         async init() {
           try {
-            const s = await (await fetch('/api/v1/auth/session')).json();
-            this.authUser = s.authRequired ? s.username : '';
+            const r = await fetch('/api/v1/auth/session');
+            if (!r.ok) { this.needsLogin = true; return; }
+            const s = await r.json();
+            this.authUser = s.authRequired ? (s.username || '') : '';
             if (s.authRequired && !s.authenticated) { this.needsLogin = true; return; }
-          } catch (e) { console.error(e); }
+          } catch (e) {
+            console.error(e);
+            this.needsLogin = true;
+            return;
+          } finally {
+            this.ready = true;
+          }
           this.start();
         },
         start() {
@@ -550,11 +664,13 @@
         async doLogin() {
           const r = await fetch('/api/v1/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(this.login) });
           if (!r.ok) { this.loginError = 'Invalid credentials'; return; }
+          const data = await r.json().catch(() => ({}));
+          this.authUser = data.username || this.login.username;
           this.loginError = ''; this.login.password = ''; this.needsLogin = false; this.start();
         },
         async logout() {
           await fetch('/api/v1/auth/logout', { method: 'POST' });
-          this.needsLogin = true;
+          this.authUser = ''; this.needsLogin = true;
         },
         async refresh() {
           try {
@@ -644,10 +760,12 @@
           if (jobId) this.watchJob(jobId);
         },
         statusClass(s) {
-          return { online: 'is-success', offline: 'is-danger', enrolling: 'is-warning',
-                   error: 'is-danger', succeeded: 'is-success', failed: 'is-danger',
-                   running: 'is-info', partial: 'is-warning', pending: 'is-warning',
-                   stopped: 'is-danger' }[s] || 'is-light';
+          return {
+            online: 'is-success', offline: 'is-danger', enrolling: 'is-warning',
+            error: 'is-danger', succeeded: 'is-success', failed: 'is-danger',
+            running: 'is-info', partial: 'is-warning', pending: 'is-warning',
+            stopped: 'is-danger'
+          }[s] || 'is-light';
         },
         capabilities(m) {
           const c = m.detection && m.detection.capabilities || {};
@@ -699,8 +817,10 @@
           if (!r.ok) { this.job = { open: true, state: 'failed', progress: 0, log: ['dispatch failed'] }; return; }
           const out = await r.json();
           if (out.approvalId) {
-            this.job = { open: true, state: 'pending', progress: 0,
-              log: ['This action requires approval. Confirm it in the “Pending approvals” banner at the top of the page.'] };
+            this.job = {
+              open: true, state: 'pending', progress: 0,
+              log: ['This action requires approval. Confirm it in the “Pending approvals” banner at the top of the page.']
+            };
             await this.refresh();
             return;
           }
@@ -742,4 +862,5 @@
     }
   </script>
 </body>
+
 </html>

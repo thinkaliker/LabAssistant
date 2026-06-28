@@ -109,6 +109,18 @@ Unset fields keep their defaults, and the associate mTLS port (`grpc_addr`, `:84
 independent, so enrolled hosts are unaffected. Deploying by hand instead of via the script? Just
 create that file yourself — a missing config means all defaults.
 
+### Rebuilding after code changes
+
+The dashboard HTML/JS and generated protobuf are embedded into the manager binary, so any change
+to Go code *or* the dashboard requires a rebuild and restart:
+
+```bash
+cd ~/LabAssistant
+go build -o bin/manager ./cmd/manager
+pkill -f 'bin/manager serve'   # stop the running manager
+./bin/manager serve            # restart (reads $LABASSISTANT_HOME)
+```
+
 Open the dashboard at `http://<vm>:8080` (or whichever `http_addr` you set). To enroll a host without the SSH flow, mint a bundle
 with `./bin/manager enroll -name <host>` (see [BUILD.md](BUILD.md)).
 
