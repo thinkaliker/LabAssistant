@@ -96,7 +96,20 @@ cd ~/LabAssistant
 ./bin/manager serve       # dashboard on :8080, associate mTLS on :8443
 ```
 
-Open the dashboard at `http://<vm>:8080`. To enroll a host without the SSH flow, mint a bundle
+The deploy script installs a starter config at `$LABASSISTANT_HOME/config/config.toml` (copied
+from [`config.sample.toml`](config.sample.toml); with the default home that's
+`~/.labassistant/config/config.toml`). To serve the dashboard on a different port — e.g. when 8080
+is already in use — edit `http_addr` there before `serve`:
+
+```toml
+http_addr = ":9090"
+```
+
+Unset fields keep their defaults, and the associate mTLS port (`grpc_addr`, `:8443`) is
+independent, so enrolled hosts are unaffected. Deploying by hand instead of via the script? Just
+create that file yourself — a missing config means all defaults.
+
+Open the dashboard at `http://<vm>:8080` (or whichever `http_addr` you set). To enroll a host without the SSH flow, mint a bundle
 with `./bin/manager enroll -name <host>` (see [BUILD.md](BUILD.md)).
 
 ## Workflow

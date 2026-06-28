@@ -23,6 +23,7 @@ GO_VERSION="1.26.0"      # version to install if Go is missing/too old
 CHECKOUT="${HOME}/LabAssistant"
 BRANCH="main"
 LA_HOME="${HOME}/.labassistant"
+PROFILE="${HOME}/.profile"
 
 log()  { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m==>\033[0m %s\n' "$*" >&2; }
@@ -85,7 +86,6 @@ if [[ "$NEED_GO" -eq 1 ]]; then
   rm -f "/tmp/${TARBALL}"
   export PATH="/usr/local/go/bin:${PATH}"
   # Persist PATH for future shells.
-  PROFILE="${HOME}/.profile"
   if ! grep -q '/usr/local/go/bin' "$PROFILE" 2>/dev/null; then
     echo 'export PATH=$PATH:/usr/local/go/bin' >> "$PROFILE"
     log "Added /usr/local/go/bin to $PROFILE"
@@ -113,8 +113,26 @@ go build -o bin/manager ./cmd/manager
 log "Built $CHECKOUT/bin/manager"
 
 # --- 5. prepare the data home ------------------------------------------------
-mkdir -p "$LA_HOME"
+mkdir -p "$LA_HOME/config"
 log "Manager home: $LA_HOME"
+
+# Persist LABASSISTANT_HOME for future shells so the manager finds this home.
+if ! grep -q 'LABASSISTANT_HOME' "$PROFILE" 2>/dev/null; then
+  echo "export LABASSISTANT_HOME=\"$LA_HOME\"" >> "$PROFILE"
+  log "Added LABASSISTANT_HOME to $PROFILE"
+fi
+
+# Install the sample config on first deploy; never clobber an existing one.
+CONFIG_DST="$LA_HOME/config/config.toml"
+CONFIG_SRC="$CHECKOUT/config.sample.toml"
+if [[ -f "$CONFIG_DST" ]]; then
+  log "Config already present at $CONFIG_DST — leaving it as-is"
+elif [[ -f "$CONFIG_SRC" ]]; then
+  cp "$CONFIG_SRC" "$CONFIG_DST"
+  log "Installed sample config to $CONFIG_DST (edit http_addr to change the dashboard port)"
+else
+  warn "Sample config $CONFIG_SRC not found — skipping config install"
+fi
 
 # --- 6. next steps -----------------------------------------------------------
 cat <<EOF
@@ -123,8 +141,9 @@ $(log "Done.")
 
   Manager binary : $CHECKOUT/bin/manager
   Manager home   : $LA_HOME
+  Config file    : $CONFIG_DST
 
-Next steps:
+LABASSISTANT_HOME was added to $PROFILE for future shells. For this one:
 
   export LABASSISTANT_HOME="$LA_HOME"
   cd "$CHECKOUT"
@@ -135,5 +154,6 @@ Next steps:
   # 2. run the manager (dashboard on :8080, associate mTLS on :8443)
   ./bin/manager serve
 
-Open the dashboard at http://<this-vm>:8080
+To change the dashboard port, edit http_addr in $CONFIG_DST before serving.
+Open the dashboard at http://<this-vm>:8080  (or whichever http_addr you set)
 EOF

@@ -1,0 +1,32 @@
+# LabAssistant manager configuration (sample).
+#
+# Copy this to $LABASSISTANT_HOME/config/config.toml and uncomment the fields you
+# want to change. Anything left commented keeps its built-in default (see
+# manager/config/config.go for the authoritative list). The deploy script installs
+# this file for you on a fresh home and never overwrites an existing config.toml.
+#
+# Note: the dashboard login (set with `manager setpass`) and the live log level
+# (set from the dashboard) live in data/settings.json, not here.
+
+# --- network -----------------------------------------------------------------
+
+# Dashboard + REST API listen address. Change this if :8080 is already in use,
+# e.g. http_addr = ":9090". Only the dashboard moves; the associate port below
+# is independent, so enrolled hosts keep working.
+http_addr = ":8080"
+
+# Associate mTLS stream listen address (where associates dial in).
+#grpc_addr = ":8443"
+
+# --- enrollment --------------------------------------------------------------
+# How the quartermaster installs associates and what each enrollment bundle dials.
+#[enroll]
+#mode          = "local"            # "local" (dev: child process) or "ssh"
+#associate_bin = ""                 # path to the associate binary to deploy
+#helper_bin    = ""                 # path to the privileged helper binary
+#manager_addr  = "localhost:8443"   # address associates dial back (host:port)
+#server_name   = "localhost"        # manager TLS server name (must match its cert)
+
+# --- audit -------------------------------------------------------------------
+#[audit]
+#max = 1000                         # number of most-recent audit entries kept queryable
