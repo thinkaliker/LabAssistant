@@ -22,6 +22,17 @@ func actionElevated(m module.Module, action string) bool {
 	return false
 }
 
+// actionReadOnly reports whether the named action is declared read-only (safe to run
+// concurrently with the serialized mutating action).
+func actionReadOnly(m module.Module, action string) bool {
+	for _, a := range m.Manifest().Actions {
+		if a.Name == action {
+			return a.ReadOnly
+		}
+	}
+	return false
+}
+
 const associateVersion = "0.1.0"
 
 // hello builds the initial frame advertising every module's manifest + detection.
@@ -68,6 +79,8 @@ func (s *session) handle(msg *pb.ManagerMessage) {
 		s.onLogRequest(p.LogRequest)
 	case *pb.ManagerMessage_RotateCert:
 		s.onRotateCert(p.RotateCert)
+	case *pb.ManagerMessage_Uninstall:
+		s.a.selfUninstall(p.Uninstall.GetReason())
 	}
 }
 
@@ -134,6 +147,13 @@ func (s *session) onCommand(cmd *pb.Command) {
 	s.mu.Unlock()
 
 	s.send(ack(cmd.GetJobId(), true, ""))
+
+	// Read-only actions run immediately and concurrently; mutating actions go through the
+	// single serialized worker so they never race (one in-flight mutation per host).
+	if m, ok := s.a.modules[cmd.GetModule()]; ok && actionReadOnly(m, cmd.GetAction()) {
+		go s.runCommand(cmd)
+		return
+	}
 	select {
 	case s.cmds <- cmd:
 	case <-s.ctx.Done():
@@ -282,6 +302,7 @@ func actionSpecs(in []module.ActionSpec) []*pb.ActionSpec {
 			Destructive:    a.Destructive,
 			DefaultTimeout: durationpb.New(a.DefaultTimeout),
 			Streams:        a.Streams,
+			ReadOnly:       a.ReadOnly,
 		})
 	}
 	return out

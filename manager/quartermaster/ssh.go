@@ -16,28 +16,30 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// SSHInstaller installs the associate on a remote host over SSH: it uploads the associate
-// binary and enrollment bundle via SFTP and starts the agent. Host keys are verified
+// SSHInstaller installs and removes the associate on a remote host over SSH. On install it
+// detects the host OS/arch and init system, uploads the matching associate binary and the
+// enrollment bundle via SFTP, and registers a service. Host keys are verified
 // trust-on-first-use (see hostKeyCallback).
+//
+// AssociateBin / HelperBin may contain {os} and {arch} placeholders (e.g.
+// "/srv/bin/associate-{os}-{arch}") so the installer can pick the build matching the
+// detected host platform.
 type SSHInstaller struct {
-	AssociateBin   string // local path to the associate binary to upload
-	HelperBin      string // optional local path to the associatehelper binary
-	RemoteDir      string // remote install directory (default: labassistant)
+	AssociateBin   string // local path or {os}/{arch} template for the associate binary
+	HelperBin      string // optional local path or template for the associatehelper binary
+	RemoteDir      string // remote staging directory (default: labassistant)
 	Port           int    // SSH port (default 22)
 	KnownHostsPath string // path to the TOFU known-hosts file
 }
 
-// Install connects over SSH, uploads the agent and bundle, and starts it.
-func (s SSHInstaller) Install(ctx context.Context, p InstallParams, emit func(string)) error {
+const installDir = "/opt/labassistant"
+
+// dial opens an SSH connection to the host using TOFU host-key verification.
+func (s SSHInstaller) dial(p InstallParams) (*ssh.Client, error) {
 	port := s.Port
 	if port == 0 {
 		port = 22
 	}
-	remoteDir := s.RemoteDir
-	if remoteDir == "" {
-		remoteDir = "labassistant"
-	}
-
 	cfg := &ssh.ClientConfig{
 		User:            p.SSHUser,
 		HostKeyCallback: s.hostKeyCallback(),
@@ -47,17 +49,37 @@ func (s SSHInstaller) Install(ctx context.Context, p InstallParams, emit func(st
 		cfg.Auth = append(cfg.Auth, ssh.Password(p.SSHPassword))
 	}
 	if len(cfg.Auth) == 0 {
-		return fmt.Errorf("no SSH auth method (provide a password)")
+		return nil, fmt.Errorf("no SSH auth method (provide a password)")
 	}
-
 	addr := net.JoinHostPort(p.IP, strconv.Itoa(port))
-	emit("ssh dial " + addr)
 	client, err := ssh.Dial("tcp", addr, cfg)
 	if err != nil {
-		return fmt.Errorf("ssh dial: %w", err)
+		return nil, fmt.Errorf("ssh dial %s: %w", addr, err)
+	}
+	return client, nil
+}
+
+// Install connects over SSH, uploads the agent and bundle, and starts the service.
+func (s SSHInstaller) Install(ctx context.Context, p InstallParams, emit func(string)) error {
+	remoteDir := s.RemoteDir
+	if remoteDir == "" {
+		remoteDir = "labassistant"
+	}
+
+	emit("ssh dial " + p.IP)
+	client, err := s.dial(p)
+	if err != nil {
+		return err
 	}
 	defer client.Close()
 
+	goos, goarch := detectPlatform(client, emit)
+	initSys := detectInit(client)
+	if initSys == "" {
+		return fmt.Errorf("no supported service manager found on host (need systemd or openrc)")
+	}
+
+	associateBin := resolveBinary(s.AssociateBin, goos, goarch)
 	sc, err := sftp.NewClient(client)
 	if err != nil {
 		return fmt.Errorf("sftp: %w", err)
@@ -67,13 +89,14 @@ func (s SSHInstaller) Install(ctx context.Context, p InstallParams, emit func(st
 	if err := sc.MkdirAll(remoteDir); err != nil {
 		return fmt.Errorf("mkdir %s: %w", remoteDir, err)
 	}
-	emit("uploading associate binary")
-	if err := uploadFile(sc, s.AssociateBin, path.Join(remoteDir, "associate"), 0o755); err != nil {
+	emit("uploading associate binary (" + associateBin + ")")
+	if err := uploadFile(sc, associateBin, path.Join(remoteDir, "associate"), 0o755); err != nil {
 		return err
 	}
 	helperArg := ""
 	if s.HelperBin != "" {
-		if err := uploadFile(sc, s.HelperBin, path.Join(remoteDir, "associatehelper"), 0o755); err != nil {
+		helperBin := resolveBinary(s.HelperBin, goos, goarch)
+		if err := uploadFile(sc, helperBin, path.Join(remoteDir, "associatehelper"), 0o755); err != nil {
 			return err
 		}
 		helperArg = " --helper " + installDir + "/associatehelper --sudo"
@@ -87,20 +110,104 @@ func (s SSHInstaller) Install(ctx context.Context, p InstallParams, emit func(st
 		return err
 	}
 
-	emit("installing systemd service")
-	if err := sshRun(client, installScript(remoteDir, helperArg)); err != nil {
+	emit("installing " + initSys + " service")
+	if err := sshRun(client, installScript(remoteDir, helperArg, initSys)); err != nil {
 		return fmt.Errorf("install service: %w", err)
 	}
 	return nil
 }
 
-const installDir = "/opt/labassistant"
+// Uninstall connects over SSH and removes the associate (stops + disables the service and
+// deletes the install directory). Used as the fallback teardown when a host is offline and
+// cannot self-uninstall over the stream.
+func (s SSHInstaller) Uninstall(ctx context.Context, p InstallParams, emit func(string)) error {
+	emit("ssh dial " + p.IP)
+	client, err := s.dial(p)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
 
-// installScript moves the staged files into installDir and installs a systemd unit that
-// restarts the associate on failure and across reboots. It requires passwordless sudo for
-// the SSH user (typical for a homelab control account).
-func installScript(stageDir, helperArg string) string {
+	initSys := detectInit(client)
+	emit("removing associate service")
+	if err := sshRun(client, uninstallScript(initSys)); err != nil {
+		return fmt.Errorf("uninstall: %w", err)
+	}
+	emit("associate removed from host")
+	return nil
+}
+
+// resolveBinary substitutes {os}/{arch} placeholders in a binary path template.
+func resolveBinary(tmpl, goos, goarch string) string {
+	return strings.NewReplacer("{os}", goos, "{arch}", goarch).Replace(tmpl)
+}
+
+// detectPlatform maps the host's `uname` output to Go's GOOS/GOARCH. Defaults to
+// linux/amd64 when detection fails.
+func detectPlatform(client *ssh.Client, emit func(string)) (goos, goarch string) {
+	goos, goarch = "linux", "amd64"
+	if s, err := sshOutput(client, "uname -s"); err == nil {
+		switch strings.ToLower(s) {
+		case "linux":
+			goos = "linux"
+		case "darwin":
+			goos = "darwin"
+		case "freebsd":
+			goos = "freebsd"
+		}
+	}
+	if m, err := sshOutput(client, "uname -m"); err == nil {
+		switch m {
+		case "x86_64", "amd64":
+			goarch = "amd64"
+		case "aarch64", "arm64":
+			goarch = "arm64"
+		case "armv7l", "armv6l", "arm":
+			goarch = "arm"
+		case "i386", "i686":
+			goarch = "386"
+		}
+	}
+	emit(fmt.Sprintf("detected host platform %s/%s", goos, goarch))
+	return goos, goarch
+}
+
+// detectInit reports the host's service manager: "systemd", "openrc", or "" if neither.
+func detectInit(client *ssh.Client) string {
+	if out, _ := sshOutput(client, "command -v systemctl || true"); out != "" {
+		return "systemd"
+	}
+	if out, _ := sshOutput(client, "command -v rc-update || true"); out != "" {
+		return "openrc"
+	}
+	return ""
+}
+
+const unitName = "labassistant-associate"
+
+// installScript stages files into installDir and registers a service for the detected init
+// system. It requires passwordless sudo for the SSH user (typical for a homelab control
+// account).
+func installScript(stageDir, helperArg, initSys string) string {
 	execStart := installDir + "/associate --bundle " + installDir + "/bundle.json" + helperArg
+	stage := []string{
+		"set -e",
+		"sudo mkdir -p " + installDir,
+		fmt.Sprintf("sudo cp %s/associate %s/", stageDir, installDir),
+		fmt.Sprintf("[ -f %s/associatehelper ] && sudo cp %s/associatehelper %s/ || true", stageDir, stageDir, installDir),
+		fmt.Sprintf("sudo cp %s/bundle.json %s/ && sudo chmod 600 %s/bundle.json", stageDir, installDir, installDir),
+	}
+	var reg []string
+	if initSys == "openrc" {
+		reg = openrcRegister(execStart)
+	} else {
+		reg = systemdRegister(execStart)
+	}
+	tail := []string{"rm -rf " + stageDir}
+	return strings.Join(append(append(stage, reg...), tail...), "\n")
+}
+
+func systemdRegister(execStart string) []string {
 	unit := "[Unit]\n" +
 		"Description=LabAssistant associate\n" +
 		"After=network-online.target\nWants=network-online.target\n\n" +
@@ -109,17 +216,64 @@ func installScript(stageDir, helperArg string) string {
 		"WorkingDirectory=" + installDir + "\n" +
 		"Restart=always\nRestartSec=5\n\n" +
 		"[Install]\nWantedBy=multi-user.target\n"
-	return strings.Join([]string{
-		"set -e",
-		"sudo mkdir -p " + installDir,
-		fmt.Sprintf("sudo cp %s/associate %s/", stageDir, installDir),
-		fmt.Sprintf("[ -f %s/associatehelper ] && sudo cp %s/associatehelper %s/ || true", stageDir, stageDir, installDir),
-		fmt.Sprintf("sudo cp %s/bundle.json %s/ && sudo chmod 600 %s/bundle.json", stageDir, installDir, installDir),
-		"sudo tee /etc/systemd/system/labassistant-associate.service >/dev/null <<'UNIT'\n" + unit + "UNIT",
+	return []string{
+		"sudo tee /etc/systemd/system/" + unitName + ".service >/dev/null <<'UNIT'\n" + unit + "UNIT",
 		"sudo systemctl daemon-reload",
-		"sudo systemctl enable --now labassistant-associate",
-		"rm -rf " + stageDir,
-	}, "\n")
+		"sudo systemctl enable --now " + unitName,
+	}
+}
+
+func openrcRegister(execStart string) []string {
+	// command_args excludes the binary itself (the first token of execStart).
+	bin, args := splitExec(execStart)
+	script := "#!/sbin/openrc-run\n" +
+		"description=\"LabAssistant associate\"\n" +
+		"command=\"" + bin + "\"\n" +
+		"command_args=\"" + args + "\"\n" +
+		"command_background=true\n" +
+		"directory=\"" + installDir + "\"\n" +
+		"pidfile=\"/run/" + unitName + ".pid\"\n" +
+		"output_log=\"/var/log/" + unitName + ".log\"\n" +
+		"error_log=\"/var/log/" + unitName + ".log\"\n" +
+		"depend() { need net; }\n"
+	return []string{
+		"sudo tee /etc/init.d/" + unitName + " >/dev/null <<'UNIT'\n" + script + "UNIT",
+		"sudo chmod +x /etc/init.d/" + unitName,
+		"sudo rc-update add " + unitName + " default",
+		"sudo rc-service " + unitName + " restart",
+	}
+}
+
+// uninstallScript stops and removes the associate service and its files for the given init
+// system. initSys may be "" (host unreachable for detection) in which case both managers
+// are attempted best-effort.
+func uninstallScript(initSys string) string {
+	lines := []string{"set +e"}
+	if initSys == "" || initSys == "systemd" {
+		lines = append(lines,
+			"sudo systemctl disable --now "+unitName+" 2>/dev/null",
+			"sudo rm -f /etc/systemd/system/"+unitName+".service",
+			"sudo systemctl daemon-reload 2>/dev/null",
+		)
+	}
+	if initSys == "" || initSys == "openrc" {
+		lines = append(lines,
+			"sudo rc-service "+unitName+" stop 2>/dev/null",
+			"sudo rc-update del "+unitName+" default 2>/dev/null",
+			"sudo rm -f /etc/init.d/"+unitName,
+		)
+	}
+	lines = append(lines, "sudo rm -rf "+installDir, "true")
+	return strings.Join(lines, "\n")
+}
+
+// splitExec splits an ExecStart line into its binary and the remaining argument string.
+func splitExec(execStart string) (bin, args string) {
+	parts := strings.SplitN(strings.TrimSpace(execStart), " ", 2)
+	if len(parts) == 2 {
+		return parts[0], parts[1]
+	}
+	return parts[0], ""
 }
 
 func sshRun(client *ssh.Client, script string) error {
@@ -129,6 +283,17 @@ func sshRun(client *ssh.Client, script string) error {
 	}
 	defer sess.Close()
 	return sess.Run("bash -c " + shellQuote(script))
+}
+
+// sshOutput runs a command and returns its trimmed stdout.
+func sshOutput(client *ssh.Client, cmd string) (string, error) {
+	sess, err := client.NewSession()
+	if err != nil {
+		return "", err
+	}
+	defer sess.Close()
+	out, err := sess.Output(cmd)
+	return strings.TrimSpace(string(out)), err
 }
 
 func uploadFile(sc *sftp.Client, localPath, remotePath string, mode os.FileMode) error {

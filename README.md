@@ -75,18 +75,8 @@ Modules are abilities that each associate is able to perform on each host. Modul
 
 Known items not yet designed into the components above.
 
-### Core build
-
-- Implement the manager, one associate, and the `qup` module end-to-end against the [API.md](API.md) contract to validate the dial-home mTLS stream, the command/queue/idempotency path, and the action → job → approval → audit flow.
-- Internal event bus in the manager so the audit log, the dashboard live feed, webhooks, and Home Assistant are all subscribers rather than special-cased code.
-- Job model: manager-issued command IDs + acks so a dropped/reconnected stream never double-applies a long-running action.
-
 ### Associate / modules
 
-- Avoid command-queue head-of-line blocking: let read-only actions run alongside the single serialized mutating action.
-- Per-module, per-host config + secrets storage (secrets kept out of the json file, like certs).
-- Multi-arch / multi-OS associate installer (match host architecture; support service managers beyond systemd).
-- Expand coverage over time: qup → more distros; duo → swarm/podman.
 - Modules are compiled into the associate for v1; design toward external-binary modules later (the contract is already shaped for it).
 
 ### Scheduler
@@ -97,7 +87,6 @@ Known items not yet designed into the components above.
 
 ### Security
 
-- SSH host-key verification (trust-on-first-use) during enrollment — it is the trust anchor for the mTLS bootstrap.
 - Gate read access to the audit log (entries can reference sensitive operations).
 
 ### Future work (post-v1)
@@ -106,3 +95,5 @@ Known items not yet designed into the components above.
 - ntfy integration
 - Webhooks for external notification.
 - Home Assistant integration.
+- Expand coverage over time: qup → more distros; duo → swarm/podman.
+- multiple managers on different hosts can connect to an associate, but only one can perform operations at a time

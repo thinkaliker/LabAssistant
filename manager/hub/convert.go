@@ -34,6 +34,7 @@ func actionSpecs(in []*pb.ActionSpec) []module.ActionSpec {
 			Destructive:    a.GetDestructive(),
 			DefaultTimeout: a.GetDefaultTimeout().AsDuration(),
 			Streams:        a.GetStreams(),
+			ReadOnly:       a.GetReadOnly(),
 		})
 	}
 	return out

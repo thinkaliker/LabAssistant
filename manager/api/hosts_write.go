@@ -89,6 +89,35 @@ func (d Deps) rotateCert(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// uninstallRequest carries optional SSH credentials for the offline teardown fallback.
+// They are transient (used only for the SSH bootstrap) and never persisted.
+type uninstallRequest struct {
+	SSHUser     string `json:"sshUser"`
+	SSHPassword string `json:"sshPassword"`
+}
+
+// uninstallHost tears down the associate on a host (over the stream when online, SSH
+// otherwise), revokes its cert, and removes the host record. Returns a progress job id.
+func (d Deps) uninstallHost(w http.ResponseWriter, r *http.Request) {
+	var req uninstallRequest
+	if r.ContentLength != 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", "invalid JSON")
+			return
+		}
+	}
+	jobID, err := d.QM.Uninstall(quartermaster.UninstallRequest{
+		HostID:      r.PathValue("id"),
+		SSHUser:     req.SSHUser,
+		SSHPassword: req.SSHPassword,
+	})
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "not_found", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"jobId": jobID})
+}
+
 // deleteHost removes a host and revokes its client certificate.
 func (d Deps) deleteHost(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")

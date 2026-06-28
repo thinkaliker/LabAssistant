@@ -46,9 +46,9 @@ func (m *Module) Manifest() module.Manifest {
 		Actions: []module.ActionSpec{
 			{Name: "reboot", Description: "Reboot the host.", Privilege: module.PrivilegeElevated, Destructive: true, DefaultTimeout: time.Minute, Streams: true},
 			{Name: "restart-service", Description: "Restart a system service.", ParamsSchema: svcParams, Privilege: module.PrivilegeElevated, DefaultTimeout: time.Minute, Streams: true},
-			{Name: "uptime", Description: "Show host uptime.", Privilege: module.PrivilegeNone, DefaultTimeout: 15 * time.Second},
-			{Name: "disk-usage", Description: "Show disk usage.", Privilege: module.PrivilegeNone, DefaultTimeout: 15 * time.Second},
-			{Name: "list-interfaces", Description: "List network interfaces.", Privilege: module.PrivilegeNone, DefaultTimeout: 15 * time.Second},
+			{Name: "uptime", Description: "Show host uptime.", Privilege: module.PrivilegeNone, DefaultTimeout: 15 * time.Second, ReadOnly: true},
+			{Name: "disk-usage", Description: "Show disk usage.", Privilege: module.PrivilegeNone, DefaultTimeout: 15 * time.Second, ReadOnly: true},
+			{Name: "list-interfaces", Description: "List network interfaces.", Privilege: module.PrivilegeNone, DefaultTimeout: 15 * time.Second, ReadOnly: true},
 		},
 	}
 }

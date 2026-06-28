@@ -67,6 +67,10 @@ type ActionSpec struct {
 	DefaultTimeout time.Duration `json:"defaultTimeout"`
 	// Streams is true when the action emits Events during execution.
 	Streams bool `json:"streams"`
+	// ReadOnly marks an action that does not mutate host state. The associate runs
+	// read-only actions concurrently, while mutating actions (the default) are serialized
+	// one-at-a-time per host so package-manager/compose operations never race.
+	ReadOnly bool `json:"readOnly,omitempty"`
 }
 
 // Detection reports a module's applicability to a host and any detected capabilities.

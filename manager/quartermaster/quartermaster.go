@@ -5,6 +5,7 @@ package quartermaster
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -32,6 +33,12 @@ type Installer interface {
 	Install(ctx context.Context, p InstallParams, emit func(string)) error
 }
 
+// Uninstaller removes the associate from a host. Installers that support SSH/local teardown
+// implement it; the quartermaster uses it as the offline fallback for uninstall.
+type Uninstaller interface {
+	Uninstall(ctx context.Context, p InstallParams, emit func(string)) error
+}
+
 // EnrollRequest describes a host to add.
 type EnrollRequest struct {
 	Name        string
@@ -50,6 +57,24 @@ type Quartermaster struct {
 	installer   Installer
 	managerAddr string
 	serverName  string
+
+	connected       func(string) bool  // hub liveness check (set via SetStream)
+	streamUninstall func(string) error // hub self-uninstall command (set via SetStream)
+}
+
+// SetStream wires the hub functions the quartermaster uses for uninstall: connected reports
+// whether a host's associate is live, streamUninstall sends the self-uninstall command.
+func (q *Quartermaster) SetStream(connected func(string) bool, streamUninstall func(string) error) {
+	q.connected = connected
+	q.streamUninstall = streamUninstall
+}
+
+// UninstallRequest describes a host to remove. SSH credentials are used only for the
+// offline teardown fallback and are never persisted.
+type UninstallRequest struct {
+	HostID      string
+	SSHUser     string
+	SSHPassword string
 }
 
 // New builds a Quartermaster.
@@ -76,6 +101,59 @@ func (q *Quartermaster) Enroll(req EnrollRequest) (hostID, jobID string, err err
 		map[string]string{"name": req.Name, "ip": req.IP})
 	go q.run(context.Background(), hostID, req, job.ID)
 	return hostID, job.ID, nil
+}
+
+// Uninstall removes a host: it tears down the associate (self-uninstall over the stream
+// when online, SSH otherwise), revokes the client cert, and drops the host record. Returns
+// the progress job id.
+func (q *Quartermaster) Uninstall(req UninstallRequest) (jobID string, err error) {
+	host, ok := q.store.Get(req.HostID)
+	if !ok {
+		return "", fmt.Errorf("host not found")
+	}
+	job := q.jobs.Create(host.ID, "quartermaster", "uninstall", nil)
+	go q.runUninstall(context.Background(), host, req, job.ID)
+	return job.ID, nil
+}
+
+func (q *Quartermaster) runUninstall(ctx context.Context, host state.Host, req UninstallRequest, jobID string) {
+	emit := func(msg string) { q.jobs.AddEvent(jobID, jobs.Event{Kind: "log", Message: msg}) }
+
+	var teardownErr error
+	switch {
+	case q.connected != nil && q.connected(host.ID) && q.streamUninstall != nil:
+		emit("host online; sending self-uninstall over stream")
+		if teardownErr = q.streamUninstall(host.ID); teardownErr == nil {
+			emit("associate is tearing itself down")
+		}
+	default:
+		if u, ok := q.installer.(Uninstaller); ok {
+			emit("host offline; removing associate over SSH")
+			teardownErr = u.Uninstall(ctx, InstallParams{
+				HostID: host.ID, IP: host.IP, SSHUser: req.SSHUser, SSHPassword: req.SSHPassword,
+			}, emit)
+		} else {
+			emit("no remote teardown path available; removing host record only")
+		}
+	}
+
+	// Remove the host and revoke its cert regardless of teardown outcome — the operator
+	// asked to remove it. A failed teardown leaves an orphaned (cert-revoked) associate the
+	// operator can clean up later over SSH.
+	if host.CertSerial != "" {
+		q.ca.Revoke(host.CertSerial)
+		q.aud.Record("cert_revoked", host.ID, "user", "client certificate revoked", nil)
+	}
+	_ = q.store.Remove(host.ID)
+	q.aud.Record("host_removed", host.ID, "user", "host uninstalled", nil)
+
+	if teardownErr != nil {
+		emit("warning: remote teardown failed: " + teardownErr.Error())
+		q.jobs.SetResult(jobID, module.JobSucceeded, nil, "host removed; remote teardown error: "+teardownErr.Error())
+		return
+	}
+	emit("host removed")
+	q.jobs.SetResult(jobID, module.JobSucceeded, nil, "")
 }
 
 func (q *Quartermaster) run(ctx context.Context, hostID string, req EnrollRequest, jobID string) {

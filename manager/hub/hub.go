@@ -72,6 +72,13 @@ func (h *Hub) RotateCert(hostID string, certPEM, keyPEM []byte) error {
 	}})
 }
 
+// Uninstall tells a connected associate to remove itself from the host and exit.
+func (h *Hub) Uninstall(hostID string) error {
+	return h.sendTo(hostID, &pb.ManagerMessage{Payload: &pb.ManagerMessage_Uninstall{
+		Uninstall: &pb.Uninstall{Reason: "removed by operator"},
+	}})
+}
+
 func (h *Hub) sendTo(hostID string, msg *pb.ManagerMessage) error {
 	h.mu.Lock()
 	c, ok := h.conns[hostID]

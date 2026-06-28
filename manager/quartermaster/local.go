@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"syscall"
 )
 
 // LocalInstaller is a development installer: instead of SSHing to a remote host, it writes
@@ -44,10 +46,31 @@ func (l LocalInstaller) Install(ctx context.Context, p InstallParams, emit func(
 		logFile.Close()
 		return err
 	}
-	emit("started local associate (pid " + strconv.Itoa(cmd.Process.Pid) + ")")
+	pid := cmd.Process.Pid
+	_ = os.WriteFile(filepath.Join(dir, "associate.pid"), []byte(strconv.Itoa(pid)), 0o600)
+	emit("started local associate (pid " + strconv.Itoa(pid) + ")")
 	go func() {
 		_ = cmd.Wait()
 		logFile.Close()
 	}()
+	return nil
+}
+
+// Uninstall stops a local associate child and removes its working directory. Used as the
+// offline-teardown fallback in development.
+func (l LocalInstaller) Uninstall(ctx context.Context, p InstallParams, emit func(string)) error {
+	dir := filepath.Join(l.WorkDir, p.HostID)
+	if b, err := os.ReadFile(filepath.Join(dir, "associate.pid")); err == nil {
+		if pid, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil {
+			if proc, err := os.FindProcess(pid); err == nil {
+				_ = proc.Signal(syscall.SIGTERM)
+				emit("stopped local associate (pid " + strconv.Itoa(pid) + ")")
+			}
+		}
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		return err
+	}
+	emit("removed local associate working directory")
 	return nil
 }

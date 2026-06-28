@@ -38,6 +38,7 @@ message ManagerMessage {
     LogStreamRequest log_request = 4;
     StatusRequest status_request = 5;
     RotateCert rotate_cert = 6;
+    Uninstall uninstall = 7;
   }
 }
 
@@ -46,6 +47,13 @@ message ManagerMessage {
 message RotateCert {
   bytes cert_pem = 1;
   bytes key_pem = 2;
+}
+
+// Uninstall tells the associate to remove itself from the host (stop and disable its
+// service, delete its files) and exit. The manager then revokes the cert and drops the
+// host record. This is the dial-home teardown path (no inbound SSH required).
+message Uninstall {
+  string reason = 1;
 }
 
 // ---- Handshake ----
@@ -166,6 +174,7 @@ message ActionSpec {
   bool destructive = 6;
   google.protobuf.Duration default_timeout = 7;
   bool streams = 8;
+  bool read_only = 9;                // safe to run concurrently with the serialized mutating action
 }
 
 message Detection {

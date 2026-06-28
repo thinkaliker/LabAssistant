@@ -50,6 +50,7 @@ func Router(d Deps) http.Handler {
 	mux.HandleFunc("PUT /api/v1/hosts/{id}", d.editHost)
 	mux.HandleFunc("DELETE /api/v1/hosts/{id}", d.deleteHost)
 	mux.HandleFunc("POST /api/v1/hosts/{id}/rotate-cert", d.rotateCert)
+	mux.HandleFunc("POST /api/v1/hosts/{id}/uninstall", d.uninstallHost)
 	mux.HandleFunc("GET /api/v1/hosts/{id}/status", d.getHost)
 	mux.HandleFunc("GET /api/v1/hosts/{id}/modules", d.getModules)
 	mux.HandleFunc("POST /api/v1/hosts/{id}/modules/{name}/actions/{action}", d.runAction)

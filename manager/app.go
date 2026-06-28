@@ -98,6 +98,7 @@ func NewApp(layout paths.Layout, cfg config.Config) (*App, error) {
 	qm := quartermaster.New(authority, store, jr, aud, installer, cfg.Enroll.ManagerAddr, cfg.Enroll.ServerName)
 
 	h := hub.New(store, jr)
+	qm.SetStream(h.Connected, h.Uninstall)
 	runner := actions.NewRunner(store, jr, h, ev, aud)
 	sched, err := scheduler.Load(
 		layout.TasksFile(),
