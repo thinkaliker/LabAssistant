@@ -37,7 +37,35 @@ type Associate struct {
 	bundlePath string // where to persist a rotated cert
 	modules    map[string]module.Module
 	order      []string
-	helper     []string // command prefix for elevated actions; empty = run in-process
+
+	helperPath string // path to the privileged helper binary; empty = run elevated actions in-process
+	useSudo    bool   // invoke the helper via sudo
+
+	sudoMu     sync.Mutex
+	sudoPass   string    // last accepted sudo password, cached to avoid re-prompting every action
+	sudoExpiry time.Time // when the cached password lapses (mirrors sudo's own timestamp)
+}
+
+// sudoCacheTTL bounds how long an accepted sudo password is reused before the operator is
+// prompted again, mirroring sudo's default credential timestamp.
+const sudoCacheTTL = 5 * time.Minute
+
+// cachedSudo returns the cached sudo password if still valid, else "".
+func (a *Associate) cachedSudo() string {
+	a.sudoMu.Lock()
+	defer a.sudoMu.Unlock()
+	if a.sudoPass == "" || time.Now().After(a.sudoExpiry) {
+		return ""
+	}
+	return a.sudoPass
+}
+
+// cacheSudo records a password that sudo just accepted, refreshing its TTL.
+func (a *Associate) cacheSudo(pw string) {
+	a.sudoMu.Lock()
+	a.sudoPass = pw
+	a.sudoExpiry = time.Now().Add(sudoCacheTTL)
+	a.sudoMu.Unlock()
 }
 
 // SetBundlePath sets where the associate persists a rotated certificate.
@@ -62,9 +90,31 @@ func (a *Associate) applyRotatedCert(certPEM, keyPEM []byte) error {
 	return nil
 }
 
-// SetHelper configures the command used to run elevated actions (e.g. ["sudo",
-// "/usr/local/bin/associatehelper"]). When unset, elevated actions run in-process.
-func (a *Associate) SetHelper(cmd []string) { a.helper = cmd }
+// SetHelper configures the privileged helper used for elevated actions. path is the
+// associatehelper binary (empty leaves elevated actions running in-process); useSudo
+// runs it via sudo.
+func (a *Associate) SetHelper(path string, useSudo bool) {
+	a.helperPath = path
+	a.useSudo = useSudo
+}
+
+// helperCommand builds the argv for one elevated invocation, or nil when no helper is
+// configured (the caller then runs the action in-process). When sudo is in use, a non-empty
+// password selects `sudo -S` (password read from the first line of stdin) and an empty one
+// selects `sudo -n` — the non-interactive attempt that fails fast when passwordless sudo is
+// not configured, which is how we detect that a password is needed.
+func (a *Associate) helperCommand(password string) []string {
+	if a.helperPath == "" {
+		return nil
+	}
+	if !a.useSudo {
+		return []string{a.helperPath}
+	}
+	if password != "" {
+		return []string{"sudo", "-S", a.helperPath}
+	}
+	return []string{"sudo", "-n", a.helperPath}
+}
 
 // New creates an associate from its enrollment bundle and compiled-in modules.
 func New(b bundle.Bundle, mods ...module.Module) *Associate {

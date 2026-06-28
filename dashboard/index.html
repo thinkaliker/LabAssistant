@@ -70,6 +70,27 @@
         </div>
       </template>
 
+      <!-- Sudo password prompts (visible on every page) -->
+      <template x-if="sudoPrompts.length > 0">
+        <div class="notification is-danger is-light">
+          <p class="has-text-weight-semibold mb-2">Sudo password required</p>
+          <template x-for="sp in sudoPrompts" :key="sp.id">
+            <div class="level is-mobile">
+              <div class="level-left">
+                <div class="level-item" x-text="`${sp.module} ${sp.action}`"></div>
+                <div class="level-item is-size-7" x-text="hostName(sp.hostId)"></div>
+              </div>
+              <div class="level-right">
+                <div class="level-item buttons are-small">
+                  <button class="button is-primary" @click="openSudo(sp)">Provide password</button>
+                  <button class="button is-light" @click="cancelSudo(sp.id)">Cancel</button>
+                </div>
+              </div>
+            </div>
+          </template>
+        </div>
+      </template>
+
       <!-- Overview -->
       <div x-show="page==='overview'">
         <h1 class="title">Overview</h1>
@@ -372,7 +393,6 @@
           <div class="column is-5-tablet is-4-desktop is-3-widescreen">
             <div class="box">
               <h1 class="title is-4 has-text-centered mb-1">LabAssistant</h1>
-              <p class="subtitle is-6 has-text-centered has-text-grey">Sign in to continue</p>
               <div class="field">
                 <label class="label">Username</label>
                 <div class="control"><input class="input" x-model="login.username" autofocus @keydown.enter="doLogin()">
@@ -447,6 +467,34 @@
         <button class="button" :class="act.destructive ? 'is-danger' : 'is-primary'"
           @click="submitAction()">Run</button>
         <button class="button" @click="act.open=false">Cancel</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Sudo password modal -->
+  <div class="modal" :class="sudoModal.open && 'is-active'">
+    <div class="modal-background" @click="sudoModal.open=false"></div>
+    <div class="modal-card">
+      <header class="modal-card-head">
+        <p class="modal-card-title">Sudo password</p>
+      </header>
+      <section class="modal-card-body">
+        <p class="mb-3">
+          Enter the sudo password for <strong x-text="hostName(sudoModal.hostId)"></strong> to run
+          <strong x-text="`${sudoModal.module} ${sudoModal.action}`"></strong>.
+          It is sent to the host over the encrypted stream, used once, and never stored.
+        </p>
+        <div class="field">
+          <div class="control">
+            <input class="input" type="password" x-model="sudoModal.password" autocomplete="off" x-ref="sudoInput"
+              @keydown.enter="submitSudo()">
+          </div>
+        </div>
+        <p class="help is-danger" x-show="sudoModal.error" x-text="sudoModal.error"></p>
+      </section>
+      <footer class="modal-card-foot">
+        <button class="button is-primary" @click="submitSudo()">Submit</button>
+        <button class="button" @click="sudoModal.open=false">Cancel</button>
       </footer>
     </div>
   </div>

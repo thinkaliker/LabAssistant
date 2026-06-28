@@ -61,6 +61,9 @@ func (s SSHInstaller) dial(p InstallParams) (*ssh.Client, error) {
 
 // Install connects over SSH, uploads the agent and bundle, and starts the service.
 func (s SSHInstaller) Install(ctx context.Context, p InstallParams, emit func(string)) error {
+	if s.AssociateBin == "" {
+		return fmt.Errorf("no associate binary configured (set enroll.associate_bin in config.toml)")
+	}
 	remoteDir := s.RemoteDir
 	if remoteDir == "" {
 		remoteDir = "labassistant"
@@ -80,6 +83,9 @@ func (s SSHInstaller) Install(ctx context.Context, p InstallParams, emit func(st
 	}
 
 	associateBin := resolveBinary(s.AssociateBin, goos, goarch)
+	if _, err := os.Stat(associateBin); err != nil {
+		return fmt.Errorf("associate binary %q not found: %w", associateBin, err)
+	}
 	sc, err := sftp.NewClient(client)
 	if err != nil {
 		return fmt.Errorf("sftp: %w", err)

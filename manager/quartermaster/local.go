@@ -2,6 +2,7 @@ package quartermaster
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,6 +22,12 @@ type LocalInstaller struct {
 
 // Install writes the bundle and starts a local associate.
 func (l LocalInstaller) Install(ctx context.Context, p InstallParams, emit func(string)) error {
+	if l.AssociateBin == "" {
+		return fmt.Errorf("no associate binary configured (set enroll.associate_bin in config.toml)")
+	}
+	if _, err := os.Stat(l.AssociateBin); err != nil {
+		return fmt.Errorf("associate binary %q not found: %w", l.AssociateBin, err)
+	}
 	dir := filepath.Join(l.WorkDir, p.HostID)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
@@ -33,7 +40,9 @@ func (l LocalInstaller) Install(ctx context.Context, p InstallParams, emit func(
 
 	args := []string{"--bundle", bundlePath}
 	if l.HelperBin != "" {
-		args = append(args, "--helper", l.HelperBin)
+		// Match the SSH installer: run elevated actions through sudo so the manager's sudo
+		// password prompt flow applies (passwordless sudo still works via `sudo -n`).
+		args = append(args, "--helper", l.HelperBin, "--sudo")
 	}
 	cmd := exec.Command(l.AssociateBin, args...)
 	logFile, err := os.Create(filepath.Join(dir, "associate.log"))

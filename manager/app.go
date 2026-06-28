@@ -31,6 +31,7 @@ import (
 	"github.com/thinkaliker/labassistant/manager/scheduler"
 	"github.com/thinkaliker/labassistant/manager/settings"
 	"github.com/thinkaliker/labassistant/manager/state"
+	"github.com/thinkaliker/labassistant/module"
 	pb "github.com/thinkaliker/labassistant/proto/v1"
 )
 
@@ -74,12 +75,6 @@ func NewApp(layout paths.Layout, cfg config.Config) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	jr.SetResultHook(func(j jobs.View) {
-		aud.Record("job_"+j.State, j.HostID, "manager",
-			fmt.Sprintf("%s %s %s", j.Module, j.Action, j.State),
-			map[string]string{"jobId": j.ID})
-	})
-
 	var installer quartermaster.Installer
 	switch cfg.Enroll.Mode {
 	case "ssh":
@@ -100,6 +95,16 @@ func NewApp(layout paths.Layout, cfg config.Config) (*App, error) {
 	h := hub.New(store, jr)
 	qm.SetStream(h.Connected, h.Uninstall)
 	runner := actions.NewRunner(store, jr, h, ev, aud)
+	jr.SetResultHook(func(j jobs.View) {
+		aud.Record("job_"+j.State, j.HostID, "manager",
+			fmt.Sprintf("%s %s %s", j.Module, j.Action, j.State),
+			map[string]string{"jobId": j.ID})
+		// An elevated action that needs a sudo password pauses here: surface a prompt the
+		// dashboard can answer, then re-dispatch with the supplied password.
+		if j.State == module.JobNeedsSudoPassword.String() {
+			runner.SudoRequired(j.ID, j.HostID, j.Module, j.Action, j.Params)
+		}
+	})
 	sched, err := scheduler.Load(
 		layout.TasksFile(),
 		func(hostID, moduleName, action string, params json.RawMessage) error {

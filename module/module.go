@@ -154,6 +154,9 @@ const (
 	JobSucceeded
 	JobFailed
 	JobTimedOut
+	// JobNeedsSudoPassword means an elevated action could not run because sudo requires a
+	// password. The manager surfaces a prompt and re-dispatches with the supplied password.
+	JobNeedsSudoPassword
 )
 
 func (s JobState) String() string {
@@ -168,6 +171,8 @@ func (s JobState) String() string {
 		return "failed"
 	case JobTimedOut:
 		return "timed_out"
+	case JobNeedsSudoPassword:
+		return "needs_sudo_password"
 	default:
 		return "unknown"
 	}

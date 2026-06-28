@@ -127,12 +127,13 @@ func (EventKind) EnumDescriptor() ([]byte, []int) {
 type JobState int32
 
 const (
-	JobState_JOB_STATE_UNSPECIFIED JobState = 0
-	JobState_JOB_STATE_QUEUED      JobState = 1
-	JobState_JOB_STATE_RUNNING     JobState = 2
-	JobState_JOB_STATE_SUCCEEDED   JobState = 3
-	JobState_JOB_STATE_FAILED      JobState = 4
-	JobState_JOB_STATE_TIMED_OUT   JobState = 5
+	JobState_JOB_STATE_UNSPECIFIED         JobState = 0
+	JobState_JOB_STATE_QUEUED              JobState = 1
+	JobState_JOB_STATE_RUNNING             JobState = 2
+	JobState_JOB_STATE_SUCCEEDED           JobState = 3
+	JobState_JOB_STATE_FAILED              JobState = 4
+	JobState_JOB_STATE_TIMED_OUT           JobState = 5
+	JobState_JOB_STATE_NEEDS_SUDO_PASSWORD JobState = 6 // elevated action could not run: sudo needs a password
 )
 
 // Enum value maps for JobState.
@@ -144,14 +145,16 @@ var (
 		3: "JOB_STATE_SUCCEEDED",
 		4: "JOB_STATE_FAILED",
 		5: "JOB_STATE_TIMED_OUT",
+		6: "JOB_STATE_NEEDS_SUDO_PASSWORD",
 	}
 	JobState_value = map[string]int32{
-		"JOB_STATE_UNSPECIFIED": 0,
-		"JOB_STATE_QUEUED":      1,
-		"JOB_STATE_RUNNING":     2,
-		"JOB_STATE_SUCCEEDED":   3,
-		"JOB_STATE_FAILED":      4,
-		"JOB_STATE_TIMED_OUT":   5,
+		"JOB_STATE_UNSPECIFIED":         0,
+		"JOB_STATE_QUEUED":              1,
+		"JOB_STATE_RUNNING":             2,
+		"JOB_STATE_SUCCEEDED":           3,
+		"JOB_STATE_FAILED":              4,
+		"JOB_STATE_TIMED_OUT":           5,
+		"JOB_STATE_NEEDS_SUDO_PASSWORD": 6,
 	}
 )
 
@@ -753,6 +756,7 @@ type Command struct {
 	Action        string                 `protobuf:"bytes,3,opt,name=action,proto3" json:"action,omitempty"`
 	Params        []byte                 `protobuf:"bytes,4,opt,name=params,proto3" json:"params,omitempty"` // JSON, validated against ActionSpec.params_schema
 	Timeout       *durationpb.Duration   `protobuf:"bytes,5,opt,name=timeout,proto3" json:"timeout,omitempty"`
+	SudoPassword  string                 `protobuf:"bytes,6,opt,name=sudo_password,json=sudoPassword,proto3" json:"sudo_password,omitempty"` // one-time password for `sudo -S` on an elevated action; never persisted or logged
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -820,6 +824,13 @@ func (x *Command) GetTimeout() *durationpb.Duration {
 		return x.Timeout
 	}
 	return nil
+}
+
+func (x *Command) GetSudoPassword() string {
+	if x != nil {
+		return x.SudoPassword
+	}
+	return ""
 }
 
 type CancelJob struct {
@@ -1776,13 +1787,14 @@ const file_v1_labassistant_proto_rawDesc = "" +
 	"\x10protocol_version\x18\x02 \x01(\rR\x0fprotocolVersion\x12\x18\n" +
 	"\amessage\x18\x03 \x01(\tR\amessage\x12;\n" +
 	"\vserver_time\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"serverTime\"\x9d\x01\n" +
+	"serverTime\"\xc2\x01\n" +
 	"\aCommand\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x16\n" +
 	"\x06module\x18\x02 \x01(\tR\x06module\x12\x16\n" +
 	"\x06action\x18\x03 \x01(\tR\x06action\x12\x16\n" +
 	"\x06params\x18\x04 \x01(\fR\x06params\x123\n" +
-	"\atimeout\x18\x05 \x01(\v2\x19.google.protobuf.DurationR\atimeout\"\"\n" +
+	"\atimeout\x18\x05 \x01(\v2\x19.google.protobuf.DurationR\atimeout\x12#\n" +
+	"\rsudo_password\x18\x06 \x01(\tR\fsudoPassword\"\"\n" +
 	"\tCancelJob\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\"s\n" +
 	"\x10LogStreamRequest\x12\x1b\n" +
@@ -1870,14 +1882,15 @@ const file_v1_labassistant_proto_rawDesc = "" +
 	"\x16EVENT_KIND_UNSPECIFIED\x10\x00\x12\x12\n" +
 	"\x0eEVENT_KIND_LOG\x10\x01\x12\x17\n" +
 	"\x13EVENT_KIND_PROGRESS\x10\x02\x12\x14\n" +
-	"\x10EVENT_KIND_STATE\x10\x03*\x9a\x01\n" +
+	"\x10EVENT_KIND_STATE\x10\x03*\xbd\x01\n" +
 	"\bJobState\x12\x19\n" +
 	"\x15JOB_STATE_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10JOB_STATE_QUEUED\x10\x01\x12\x15\n" +
 	"\x11JOB_STATE_RUNNING\x10\x02\x12\x17\n" +
 	"\x13JOB_STATE_SUCCEEDED\x10\x03\x12\x14\n" +
 	"\x10JOB_STATE_FAILED\x10\x04\x12\x17\n" +
-	"\x13JOB_STATE_TIMED_OUT\x10\x052c\n" +
+	"\x13JOB_STATE_TIMED_OUT\x10\x05\x12!\n" +
+	"\x1dJOB_STATE_NEEDS_SUDO_PASSWORD\x10\x062c\n" +
 	"\x0eManagerService\x12Q\n" +
 	"\aConnect\x12!.labassistant.v1.AssociateMessage\x1a\x1f.labassistant.v1.ManagerMessage(\x010\x01B=Z;github.com/thinkaliker/labassistant/proto/v1;labassistantv1b\x06proto3"
 

@@ -81,6 +81,7 @@ message Command {
   string action = 3;
   bytes params = 4;                  // JSON, validated against ActionSpec.params_schema
   google.protobuf.Duration timeout = 5;
+  string sudo_password = 6;          // one-time password for `sudo -S` on an elevated action; never persisted or logged
 }
 
 message CancelJob {
@@ -204,4 +205,5 @@ enum JobState {
   JOB_STATE_SUCCEEDED = 3;
   JOB_STATE_FAILED = 4;
   JOB_STATE_TIMED_OUT = 5;
+  JOB_STATE_NEEDS_SUDO_PASSWORD = 6;  // elevated action could not run: sudo needs a password
 }

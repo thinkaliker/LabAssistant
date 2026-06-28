@@ -105,6 +105,8 @@ func jobStateFromProto(s pb.JobState) module.JobState {
 		return module.JobFailed
 	case pb.JobState_JOB_STATE_TIMED_OUT:
 		return module.JobTimedOut
+	case pb.JobState_JOB_STATE_NEEDS_SUDO_PASSWORD:
+		return module.JobNeedsSudoPassword
 	default:
 		return module.JobQueued
 	}

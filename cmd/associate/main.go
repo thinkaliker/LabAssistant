@@ -38,11 +38,7 @@ func run() error {
 	a := associate.New(b, modules.Default()...)
 	a.SetBundlePath(*bundlePath)
 	if *helper != "" {
-		cmd := []string{*helper}
-		if *useSudo {
-			cmd = []string{"sudo", *helper}
-		}
-		a.SetHelper(cmd)
+		a.SetHelper(*helper, *useSudo)
 	}
 	slog.Info("associate starting", "host", b.HostID, "manager", b.ManagerAddr, "helper", *helper)
 

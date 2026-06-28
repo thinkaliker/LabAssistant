@@ -2,6 +2,7 @@ package associate
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -198,13 +199,26 @@ func (s *session) runCommand(cmd *pb.Command) {
 		res module.Result
 		err error
 	)
-	if actionElevated(m, cmd.GetAction()) && len(s.a.helper) > 0 {
-		res, err = elevated.Run(ctx, s.a.helper, elevated.Request{
+	if actionElevated(m, cmd.GetAction()) && s.a.helperPath != "" {
+		// Use the password the manager supplied for this command, otherwise a still-valid
+		// cached one; empty means the passwordless (`sudo -n`) attempt.
+		password := cmd.GetSudoPassword()
+		if password == "" && s.a.useSudo {
+			password = s.a.cachedSudo()
+		}
+		res, err = elevated.Run(ctx, s.a.helperCommand(password), password, elevated.Request{
 			JobID:  cmd.GetJobId(),
 			Module: cmd.GetModule(),
 			Action: cmd.GetAction(),
 			Params: cmd.GetParams(),
 		}, emit)
+		if errors.Is(err, elevated.ErrSudoPassword) {
+			s.send(jobResult(cmd.GetJobId(), module.JobNeedsSudoPassword, nil, "sudo password required"))
+			return
+		}
+		if err == nil && password != "" {
+			s.a.cacheSudo(password)
+		}
 	} else {
 		if actionElevated(m, cmd.GetAction()) {
 			slog.Warn("running elevated action in-process (no helper configured)",
@@ -336,6 +350,8 @@ func jobStateProto(s module.JobState) pb.JobState {
 		return pb.JobState_JOB_STATE_FAILED
 	case module.JobTimedOut:
 		return pb.JobState_JOB_STATE_TIMED_OUT
+	case module.JobNeedsSudoPassword:
+		return pb.JobState_JOB_STATE_NEEDS_SUDO_PASSWORD
 	default:
 		return pb.JobState_JOB_STATE_QUEUED
 	}

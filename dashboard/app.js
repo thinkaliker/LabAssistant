@@ -9,6 +9,8 @@ function app() {
     services: { stacks: [] },
     tasks: [],
     approvals: [],
+    sudoPrompts: [],
+    sudoModal: { open: false, id: '', hostId: '', module: '', action: '', password: '', error: '' },
     audit: [],
     expanded: null,
     addHostOpen: false,
@@ -71,6 +73,7 @@ function app() {
         this.services = await (await fetch('/api/v1/services')).json();
         this.tasks = await (await fetch('/api/v1/tasks')).json();
         this.approvals = await (await fetch('/api/v1/approvals')).json();
+        this.sudoPrompts = await (await fetch('/api/v1/sudo')).json();
         const ar = await fetch('/api/v1/audit');
         if (ar.ok) { this.audit = await ar.json(); this.auditError = ''; }
         else { this.audit = []; this.auditError = ar.status === 403 ? 'Audit access not permitted for this credential.' : 'Failed to load audit log.'; }
@@ -136,6 +139,29 @@ function app() {
       await fetch(`/api/v1/approvals/${id}/reject`, { method: 'POST' });
       this.refresh();
     },
+    openSudo(p) {
+      this.sudoModal = { open: true, id: p.id, hostId: p.hostId, module: p.module, action: p.action, password: '', error: '' };
+      this.$nextTick(() => this.$refs.sudoInput && this.$refs.sudoInput.focus());
+    },
+    async submitSudo() {
+      const r = await fetch(`/api/v1/sudo/${this.sudoModal.id}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: this.sudoModal.password }),
+      });
+      if (!r.ok) {
+        this.sudoModal.error = r.status === 404 ? 'This prompt is no longer pending.' : 'Failed to submit password.';
+        return;
+      }
+      const { jobId } = await r.json().catch(() => ({}));
+      this.sudoModal = { open: false, id: '', hostId: '', module: '', action: '', password: '', error: '' };
+      this.refresh();
+      if (jobId) this.watchJob(jobId);
+    },
+    async cancelSudo(id) {
+      await fetch(`/api/v1/sudo/${id}/cancel`, { method: 'POST' });
+      if (this.sudoModal.id === id) this.sudoModal.open = false;
+      this.refresh();
+    },
     toggle(id) { this.expanded = this.expanded === id ? null : id; },
     openUninstall(h) {
       this.uninstall = { open: true, hostId: h.id, hostName: h.name, online: h.status === 'online', sshUser: h.sshUser || '', sshPassword: '' };
@@ -172,7 +198,7 @@ function app() {
         if (ev.kind === 'progress') this.job.progress = ev.progress;
         if (ev.kind === 'state') {
           this.job.state = ev.state;
-          if (['succeeded', 'failed', 'timed_out'].includes(ev.state)) { es.close(); this.refresh(); }
+          if (['succeeded', 'failed', 'timed_out', 'needs_sudo_password'].includes(ev.state)) { es.close(); this.refresh(); }
         }
       };
     },
