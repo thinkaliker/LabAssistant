@@ -1,0 +1,27 @@
+[Unit]
+# LabAssistant manager — dashboard + REST API + associate mTLS hub.
+#
+# This is a TEMPLATE. The @PLACEHOLDERS@ are filled in by `scripts/manage.sh
+# install-service` (which deploy.sh runs) before the rendered unit is written to
+# /etc/systemd/system/labassistant-manager.service. Edit the template here, then
+# run `manage.sh install-service` to re-render and reload.
+Description=LabAssistant manager (dashboard + associate mTLS hub)
+Documentation=https://github.com/thinkaliker/LabAssistant
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+Group=@GROUP@
+WorkingDirectory=@CHECKOUT@
+Environment=LABASSISTANT_HOME=@LA_HOME@
+ExecStart=@CHECKOUT@/bin/manager serve
+Restart=on-failure
+RestartSec=3
+# Logs go to the journal: journalctl -u labassistant-manager -f
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

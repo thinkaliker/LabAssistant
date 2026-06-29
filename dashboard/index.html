@@ -14,6 +14,15 @@
       display: none !important
     }
 
+    /* Widen the main content area: use nearly the full viewport with a small side gutter
+       instead of Bulma's narrow centered breakpoint-based max-widths. */
+    .container {
+      max-width: none;
+      width: 100%;
+      padding-left: 1.5rem;
+      padding-right: 1.5rem;
+    }
+
     .CodeMirror {
       height: 60vh;
       border: 1px solid var(--bulma-border);
