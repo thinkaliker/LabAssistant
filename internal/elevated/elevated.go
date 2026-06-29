@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -39,16 +40,36 @@ type Frame struct {
 	Result *module.Result `json:"result,omitempty"`
 }
 
-// Run spawns the helper command, sends req, forwards events to emit, and returns the
-// terminal result. command is a prefix such as ["sudo","-n","/usr/local/bin/associatehelper"].
-// When password is non-empty (command uses `sudo -S`) it is written as the first line of
-// stdin for sudo to consume; the rest of stdin carries the request to the helper. If sudo
-// cannot authenticate, Run returns ErrSudoPassword.
+// Run spawns the helper command, sends req, forwards events to emit, and returns the terminal
+// result. command is a prefix such as ["sudo","-n","/usr/local/bin/associatehelper"].
+//
+// The request is passed to the helper via a temp file (--request), NOT on stdin: modern sudo
+// runs the helper under a pty (use_pty), whose line discipline corrupts a request piped on the
+// shared stdin (the helper then fails to decode it and exits non-zero). stdin is reserved for
+// the sudo password: when password is non-empty (command uses `sudo -S`) it is written as the
+// first line for sudo to consume. If sudo cannot authenticate, Run returns ErrSudoPassword.
 func Run(ctx context.Context, command []string, password string, req Request, emit func(module.Event)) (module.Result, error) {
 	if len(command) == 0 {
 		return module.Result{}, errors.New("no helper command configured")
 	}
-	cmd := exec.CommandContext(ctx, command[0], command[1:]...)
+
+	// Write the request to a 0600 temp file the helper reads via --request. The password is
+	// never written here — it stays on stdin only.
+	reqFile, err := os.CreateTemp("", "la-helper-req-*.json")
+	if err != nil {
+		return module.Result{}, err
+	}
+	defer os.Remove(reqFile.Name())
+	if err := json.NewEncoder(reqFile).Encode(req); err != nil {
+		reqFile.Close()
+		return module.Result{}, err
+	}
+	if err := reqFile.Close(); err != nil {
+		return module.Result{}, err
+	}
+
+	args := append(append([]string{}, command...), "--request", reqFile.Name())
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return module.Result{}, err
@@ -63,12 +84,11 @@ func Run(ctx context.Context, command []string, password string, req Request, em
 		return module.Result{}, err
 	}
 
-	// Writes are best-effort: a `sudo -n` that needs a password exits before reading stdin,
-	// so these can fail with a broken pipe — the real cause surfaces from stderr below.
+	// Best-effort: a `sudo -n` that needs a password exits before reading stdin, so this can
+	// fail with a broken pipe — the real cause surfaces from stderr below.
 	if password != "" {
 		_, _ = io.WriteString(stdin, password+"\n")
 	}
-	_ = json.NewEncoder(stdin).Encode(req)
 	_ = stdin.Close()
 
 	var result module.Result

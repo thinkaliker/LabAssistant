@@ -37,6 +37,16 @@ type LogStreamer interface {
 	StreamLogs(ctx context.Context, params json.RawMessage, emit func(line []byte)) error
 }
 
+// ResultIngestor is an optional interface for modules whose in-process Status depends on the
+// outcome of an action that may have executed in the privileged helper — a separate process
+// whose in-memory state the associate never sees. After an action succeeds, the associate
+// feeds its terminal Result back to the module's own instance so Status can reflect it (e.g.
+// duo remembering which images have updates after check-updates). data is the action's
+// Result.Data; the module decides which actions are relevant.
+type ResultIngestor interface {
+	IngestResult(action string, data json.RawMessage)
+}
+
 // Manifest is the static, data-only description of a module.
 type Manifest struct {
 	Name        string       `json:"name"`

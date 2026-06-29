@@ -20,6 +20,8 @@ type svcService struct {
 	Status          string `json:"status"`
 	Image           string `json:"image"`
 	UpdateAvailable bool   `json:"updateAvailable"`
+	CurrentDigest   string `json:"currentDigest,omitempty"`
+	LatestDigest    string `json:"latestDigest,omitempty"`
 	HasLogs         bool   `json:"hasLogs"`
 }
 

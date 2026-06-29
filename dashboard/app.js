@@ -2,11 +2,16 @@
 // (non-deferred) script before the deferred Alpine bundle, so app() is defined by the time
 // Alpine initializes x-data="app()".
 function app() {
+  // CodeMirror instance for the compose editor, kept OUT of Alpine's reactive state so its
+  // internal objects aren't wrapped in reactive proxies (which breaks the editor).
+  let composeCM = null;
   return {
     page: 'overview',
     overview: {},
     hosts: [],
     services: { stacks: [] },
+    updates: { os: [], containers: [] },
+    compose: { open: false, hostId: '', stack: '', path: '', multiFile: false, loading: false, busy: false, error: '', status: '' },
     tasks: [],
     approvals: [],
     sudoPrompts: [],
@@ -18,6 +23,7 @@ function app() {
     newHost: { name: '', ip: '', sshUser: '', sshPassword: '', tailscale: false },
     newTask: { name: '', schedule: '', module: '', action: '', hostIds: [], misfire: 'skip', interHostDelaySeconds: 0, enabled: true, allowDestructive: false },
     job: { open: false, state: '', progress: 0, log: [] },
+    jobPanelHeight: 0, // px override for the docked job panel (0 = CSS default of 33vh)
     logView: { open: false, title: '', lines: [], es: null },
     ready: false,
     needsLogin: false,
@@ -71,6 +77,7 @@ function app() {
         this.overview = await (await fetch('/api/v1/overview')).json();
         this.hosts = await (await fetch('/api/v1/hosts')).json();
         this.services = await (await fetch('/api/v1/services')).json();
+        this.updates = await (await fetch('/api/v1/updates')).json();
         this.tasks = await (await fetch('/api/v1/tasks')).json();
         this.approvals = await (await fetch('/api/v1/approvals')).json();
         this.sudoPrompts = await (await fetch('/api/v1/sudo')).json();
@@ -152,10 +159,14 @@ function app() {
         this.sudoModal.error = r.status === 404 ? 'This prompt is no longer pending.' : 'Failed to submit password.';
         return;
       }
+      const action = this.sudoModal.action;
       const { jobId } = await r.json().catch(() => ({}));
       this.sudoModal = { open: false, id: '', hostId: '', module: '', action: '', password: '', error: '' };
       this.refresh();
-      if (jobId) this.watchJob(jobId);
+      if (!jobId) return;
+      // A re-dispatched compose read feeds the editor instead of the generic job modal.
+      if (action === 'read-compose') { this.openComposeFromJob(await this.awaitJob(jobId)); }
+      else this.watchJob(jobId);
     },
     async cancelSudo(id) {
       await fetch(`/api/v1/sudo/${id}/cancel`, { method: 'POST' });
@@ -190,17 +201,54 @@ function app() {
       return Object.entries(c).map(([k, v]) => `${k}=${v}`).join(' ');
     },
     watchJob(jobId) {
-      this.job = { open: true, state: 'running', progress: 0, log: [] };
+      // Start with the modal CLOSED and open it lazily on the first real signal (a log line,
+      // progress, or a meaningful terminal state). A job that immediately hands off to the
+      // sudo-password banner produces no such signal, so the modal never flashes open/closed.
+      this.job = { open: false, state: 'running', progress: 0, log: [] };
       const es = new EventSource(`/api/v1/jobs/${jobId}/events`);
       es.onmessage = (e) => {
         const ev = JSON.parse(e.data).payload;
-        if (ev.kind === 'log') this.job.log.push(ev.message);
-        if (ev.kind === 'progress') this.job.progress = ev.progress;
+        if (ev.kind === 'log' && ev.message) {
+          // Stick to the bottom only if the user is already there, so scrolling up to read
+          // history isn't yanked away by new output.
+          const el = this.$refs.jobLog;
+          const atBottom = !el || el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+          this.job.log.push(ev.message);
+          this.job.open = true;
+          if (atBottom) this.$nextTick(() => { const e = this.$refs.jobLog; if (e) e.scrollTop = e.scrollHeight; });
+        }
+        if (ev.kind === 'progress') { this.job.progress = ev.progress; this.job.open = true; }
         if (ev.kind === 'state') {
           this.job.state = ev.state;
-          if (['succeeded', 'failed', 'timed_out', 'needs_sudo_password'].includes(ev.state)) { es.close(); this.refresh(); }
+          if (['succeeded', 'failed', 'timed_out', 'needs_sudo_password'].includes(ev.state)) {
+            es.close();
+            this.refresh();
+            // A sudo prompt or a clean output-less success hands off elsewhere — keep the modal
+            // closed. Anything else (a failure, or a success with output) is worth showing.
+            this.job.open = !(ev.state === 'needs_sudo_password' || (ev.state === 'succeeded' && this.job.log.length === 0));
+          }
         }
       };
+    },
+    // startJobResize drags the panel's top edge to grow/shrink the docked job output. Pointer
+    // events cover mouse + touch; height is clamped between a sensible floor and ~92vh.
+    startJobResize(e) {
+      e.preventDefault();
+      const startY = e.clientY;
+      const panel = this.$refs.jobPanel;
+      const startH = panel ? panel.getBoundingClientRect().height : 0;
+      const min = 176, max = window.innerHeight * 0.92;
+      const onMove = (ev) => {
+        this.jobPanelHeight = Math.max(min, Math.min(max, startH + (startY - ev.clientY)));
+      };
+      const onUp = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        document.body.style.userSelect = '';
+      };
+      document.body.style.userSelect = 'none';
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
     },
     // startAction inspects the action's params schema: param-less actions dispatch
     // immediately, otherwise a schema-driven form collects the params first.
@@ -235,11 +283,10 @@ function app() {
       if (!r.ok) { this.job = { open: true, state: 'failed', progress: 0, log: ['dispatch failed'] }; return; }
       const out = await r.json();
       if (out.approvalId) {
-        this.job = {
-          open: true, state: 'pending', progress: 0,
-          log: ['This action requires approval. Confirm it in the “Pending approvals” banner at the top of the page.']
-        };
+        // No modal — the queued action surfaces in the "Pending approvals" banner. Refresh so
+        // it appears, then scroll it into view so the user sees it without a popup.
         await this.refresh();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
         return;
       }
       if (out.jobId) this.watchJob(out.jobId);
@@ -247,6 +294,135 @@ function app() {
     svcAction(stack, service, action) {
       const params = service ? { stack: stack.name, service } : { stack: stack.name };
       this.runAction(stack.hostId, 'duo', action, params);
+    },
+    hostOnline(id) {
+      const h = this.hosts.find(x => x.id === id);
+      return !!h && h.status === 'online';
+    },
+    // dispatchSilent fires an action without opening the job modal; returns {jobId|approvalId} or null.
+    async dispatchSilent(hostId, mod, action, params) {
+      const opts = { method: 'POST' };
+      if (params) { opts.headers = { 'Content-Type': 'application/json' }; opts.body = JSON.stringify(params); }
+      const r = await fetch(`/api/v1/hosts/${hostId}/modules/${mod}/actions/${action}`, opts);
+      if (!r.ok) return null;
+      return r.json().catch(() => null);
+    },
+    // awaitJob polls a job until it reaches a terminal state, returning the snapshot (or null).
+    async awaitJob(jobId, timeoutMs = 30000) {
+      const terminal = ['succeeded', 'failed', 'timed_out', 'needs_sudo_password'];
+      const start = Date.now();
+      while (Date.now() - start < timeoutMs) {
+        const r = await fetch(`/api/v1/jobs/${jobId}`);
+        if (r.ok) {
+          const j = await r.json();
+          if (terminal.includes(j.state)) return j;
+        }
+        await new Promise(res => setTimeout(res, 300));
+      }
+      return null;
+    },
+    // ---- compose editor ----
+    // editCompose reads the file first and only opens the side panel once that succeeds. If the
+    // read needs a sudo password, the sudo banner appears and submitSudo() routes the retry's
+    // result back through openComposeFromJob().
+    async editCompose(st) {
+      try {
+        const out = await this.dispatchSilent(st.hostId, 'duo', 'read-compose', { stack: st.name });
+        if (!out || !out.jobId) { alert('Could not start compose read.'); return; }
+        const job = await this.awaitJob(out.jobId);
+        if (job && job.state === 'needs_sudo_password') { this.refresh(); return; }
+        this.openComposeFromJob(job);
+      } catch (e) { console.error(e); alert('Error loading compose file.'); }
+    },
+    openComposeFromJob(job) {
+      if (!job || job.state !== 'succeeded' || !job.result) {
+        alert('Failed to read compose file: ' + ((job && job.error) || 'unknown error'));
+        return;
+      }
+      const res = typeof job.result === 'string' ? JSON.parse(job.result) : job.result;
+      let stack = res.stack || '';
+      try { const p = typeof job.params === 'string' ? JSON.parse(job.params) : job.params; if (p && p.stack) stack = p.stack; } catch (e) { /* keep res.stack */ }
+      if (composeCM) { composeCM.toTextArea(); composeCM = null; }
+      this.compose = { open: true, hostId: job.hostId, stack, path: res.path || '', multiFile: !!res.multiFile, loading: false, busy: false, error: '', status: '' };
+      if (this.compose.multiFile) return;
+      this.$nextTick(() => this.mountEditor(res.content || ''));
+    },
+    mountEditor(content) {
+      const ta = this.$refs.composeEditor;
+      if (!ta) return;
+      ta.value = content;
+      if (!window.CodeMirror) { // fallback: plain textarea with basic tab handling
+        ta.style.cssText = 'width:100%;height:60vh;font-family:monospace';
+        ta.onkeydown = (e) => {
+          if (e.key === 'Tab') { e.preventDefault(); const s = ta.selectionStart, en = ta.selectionEnd; ta.value = ta.value.slice(0, s) + '  ' + ta.value.slice(en); ta.selectionStart = ta.selectionEnd = s + 2; }
+        };
+        return;
+      }
+      composeCM = CodeMirror.fromTextArea(ta, {
+        mode: 'yaml',
+        lineNumbers: true,
+        indentUnit: 2,
+        tabSize: 2,
+        indentWithTabs: false,
+        gutters: ['CodeMirror-lint-markers'],
+        lint: true,
+        extraKeys: {
+          Tab: (cm) => { if (cm.somethingSelected()) cm.indentSelection('add'); else cm.replaceSelection('  ', 'end'); },
+          'Shift-Tab': (cm) => cm.indentSelection('subtract'),
+        },
+      });
+      composeCM.setSize(null, '60vh');
+      setTimeout(() => composeCM && composeCM.refresh(), 50);
+    },
+    editorValue() {
+      if (composeCM) return composeCM.getValue();
+      const ta = this.$refs.composeEditor;
+      return ta ? ta.value : '';
+    },
+    async writeCompose(content) {
+      const out = await this.dispatchSilent(this.compose.hostId, 'duo', 'write-compose', { stack: this.compose.stack, content });
+      if (!out || !out.jobId) { this.compose.error = 'Could not start save.'; return false; }
+      const job = await this.awaitJob(out.jobId);
+      if (job && job.state === 'needs_sudo_password') { this.compose.error = 'Sudo password required — provide it in the banner above, then save again.'; this.refresh(); return false; }
+      if (!job || job.state !== 'succeeded') { this.compose.error = (job && job.error) || 'Save failed (see validation message).'; return false; }
+      return true;
+    },
+    async saveCompose() {
+      this.compose.error = ''; this.compose.status = ''; this.compose.busy = true;
+      const ok = await this.writeCompose(this.editorValue());
+      this.compose.busy = false;
+      if (ok) { this.compose.status = 'Saved.'; this.refresh(); }
+    },
+    async saveAndRedeploy() {
+      this.compose.error = ''; this.compose.status = ''; this.compose.busy = true;
+      const ok = await this.writeCompose(this.editorValue());
+      this.compose.busy = false;
+      if (!ok) return;
+      this.compose.status = 'Saved. Redeploy queued — confirm it in the approvals banner.';
+      await this.runAction(this.compose.hostId, 'duo', 'deploy', { stack: this.compose.stack });
+    },
+    closeCompose() {
+      if (composeCM) { composeCM.toTextArea(); composeCM = null; }
+      this.compose = { open: false, hostId: '', stack: '', path: '', multiFile: false, loading: false, busy: false, error: '', status: '' };
+    },
+    // ---- updates ----
+    shortDigest(d) {
+      if (!d) return '';
+      const h = String(d).replace(/^sha256:/, '');
+      return h.length > 12 ? h.slice(0, 12) : h;
+    },
+    checkHost(hostId) {
+      const h = this.hosts.find(x => x.id === hostId);
+      if (!h) return;
+      const mods = (h.modules || []).map(m => m.name);
+      if (mods.includes('qup')) this.dispatchSilent(hostId, 'qup', 'check-updates');
+      if (mods.includes('duo')) this.dispatchSilent(hostId, 'duo', 'check-updates');
+    },
+    checkAllUpdates() {
+      for (const h of this.hosts) if (h.status === 'online') this.checkHost(h.id);
+    },
+    updateService(c) {
+      this.runAction(c.hostId, 'duo', 'update', { stack: c.stack, service: c.service });
     },
     openLogs(stack, service) {
       this.closeLogs();

@@ -6,10 +6,74 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>LabAssistant</title>
   <link rel="stylesheet" href="/vendor/bulma-1.0.4.min.css">
+  <link rel="stylesheet" href="/vendor/codemirror/codemirror.min.css">
+  <link rel="stylesheet" href="/vendor/codemirror/lint.min.css">
   <script defer src="/vendor/alpine-3.14.9.min.js"></script>
   <style>
     [x-cloak] {
       display: none !important
+    }
+
+    .CodeMirror {
+      height: 60vh;
+      border: 1px solid #dbdbdb;
+      border-radius: 4px;
+      font-size: 0.85rem;
+    }
+
+    /* Job output: a panel docked to the lower third of the viewport instead of a modal. */
+    .job-panel {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 33vh;
+      min-height: 11rem;
+      z-index: 30;
+      background: #fff;
+      border-top: 1px solid #dbdbdb;
+      box-shadow: 0 -2px 12px rgba(10, 10, 10, 0.12);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .job-panel-resize {
+      flex: 0 0 auto;
+      height: 8px;
+      cursor: ns-resize;
+      background: #f0f0f0;
+      border-bottom: 1px solid #ededed;
+      touch-action: none;
+    }
+
+    .job-panel-resize:hover {
+      background: #e4e4e4;
+    }
+
+    .job-panel-head {
+      display: flex;
+      align-items: center;
+      padding: 0.6rem 1rem;
+      border-bottom: 1px solid #ededed;
+    }
+
+    .job-panel-head .delete {
+      margin-left: auto;
+    }
+
+    .job-panel-body {
+      flex: 1 1 auto;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      padding: 0.75rem 1rem 1rem;
+    }
+
+    .job-panel-log {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow: auto;
+      margin: 0;
     }
   </style>
 </head>
@@ -28,6 +92,8 @@
           @click="page='hosts'">Hosts</a>
         <a class="navbar-item" :class="page==='services' && 'is-active has-text-weight-semibold'"
           @click="page='services'">Services</a>
+        <a class="navbar-item" :class="page==='updates' && 'is-active has-text-weight-semibold'"
+          @click="page='updates'">Updates</a>
         <a class="navbar-item" :class="page==='scheduler' && 'is-active has-text-weight-semibold'"
           @click="page='scheduler'">Scheduler</a>
         <a class="navbar-item" :class="page==='audit' && 'is-active has-text-weight-semibold'"
@@ -154,24 +220,20 @@
               </template>
               <template x-for="m in (h.modules||[])" :key="m.name">
                 <div class="box has-background-light">
-                  <div class="level is-mobile">
+                  <div class="level is-mobile mb-2">
                     <div class="level-left">
                       <div class="level-item has-text-weight-semibold" x-text="m.name"></div>
                       <div class="level-item is-size-7 has-text-grey" x-text="'v'+m.version"></div>
                       <div class="level-item is-size-7" x-text="capabilities(m)"></div>
                     </div>
-                    <div class="level-right">
-                      <template x-for="a in (m.actions||[])" :key="a.name">
-                        <div class="level-item">
-                          <button class="button is-small" :class="a.destructive ? 'is-danger' : 'is-link'"
-                            :disabled="h.status!=='online'" @click="startAction(h.id, m.name, a)"
-                            x-text="`${m.name} ${a.name}`"></button>
-                        </div>
-                      </template>
-                      <div class="level-item">
-                        <button class="button is-small" @click="openConfig(h.id, m)">⚙ config</button>
-                      </div>
-                    </div>
+                  </div>
+                  <div class="buttons are-small">
+                    <template x-for="a in (m.actions||[])" :key="a.name">
+                      <button class="button is-small" :class="a.destructive ? 'is-danger' : 'is-link'"
+                        :disabled="h.status!=='online'" @click="startAction(h.id, m.name, a)"
+                        x-text="`${m.name} ${a.name}`"></button>
+                    </template>
+                    <button class="button is-small" @click="openConfig(h.id, m)">⚙ config</button>
                   </div>
                 </div>
               </template>
@@ -186,49 +248,172 @@
       <!-- Services -->
       <div x-show="page==='services'">
         <h1 class="title">Services</h1>
-        <template x-if="services.stacks.length===0">
-          <p class="has-text-grey">No compose stacks reported. Add a host which contains a docker compose stack first.
-          </p>
+        <div class="columns">
+          <!-- Stack list (shrinks when the compose editor is open) -->
+          <div class="column" :class="compose.open ? 'is-7' : 'is-12'">
+            <template x-if="services.stacks.length===0">
+              <p class="has-text-grey">No compose stacks reported. Add a host which contains a docker compose stack
+                first.</p>
+            </template>
+            <template x-for="st in services.stacks" :key="st.hostId+'/'+st.name">
+              <div class="box">
+                <div class="level is-mobile">
+                  <div class="level-left">
+                    <div class="level-item"><span class="tag" :class="statusClass(st.status)" x-text="st.status"></span>
+                    </div>
+                    <div class="level-item has-text-weight-semibold" x-text="st.name"></div>
+                    <div class="level-item is-size-7 has-text-grey" x-text="st.hostName"></div>
+                  </div>
+                  <div class="level-right">
+                    <div class="level-item buttons are-small">
+                      <button class="button is-link is-light" @click="editCompose(st)">edit compose</button>
+                      <button class="button is-success" @click="svcAction(st,'','start')">start</button>
+                      <button class="button is-danger" @click="svcAction(st,'','stop')">stop</button>
+                      <button class="button is-warning" @click="svcAction(st,'','restart')">restart</button>
+                    </div>
+                  </div>
+                </div>
+                <table class="table is-fullwidth is-narrow">
+                  <tbody>
+                    <template x-for="sv in st.services" :key="sv.name">
+                      <tr>
+                        <td><span class="tag" :class="statusClass(sv.status)" x-text="sv.status"></span></td>
+                        <td class="has-text-weight-semibold" x-text="sv.name"></td>
+                        <td class="is-size-7 has-text-grey" x-text="sv.image"></td>
+                        <td><span class="tag is-info is-light" x-show="sv.updateAvailable">update</span></td>
+                        <td class="has-text-right">
+                          <div class="buttons are-small is-right">
+                            <button class="button is-success" @click="svcAction(st,sv.name,'start')">start</button>
+                            <button class="button is-danger" @click="svcAction(st,sv.name,'stop')">stop</button>
+                            <button class="button is-warning" @click="svcAction(st,sv.name,'restart')">restart</button>
+                            <button class="button" x-show="sv.hasLogs" @click="openLogs(st,sv.name)">logs</button>
+                          </div>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </template>
+          </div>
+
+          <!-- Compose editor panel (right side) -->
+          <div class="column is-5" x-show="compose.open" x-cloak>
+            <div class="box" style="position:sticky; top:5rem;">
+              <div class="level is-mobile mb-1">
+                <div class="level-left">
+                  <div class="level-item has-text-weight-semibold" x-text="'Edit compose: '+compose.stack"></div>
+                </div>
+                <div class="level-right">
+                  <div class="level-item"><button class="delete" @click="closeCompose()"></button></div>
+                </div>
+              </div>
+              <p class="is-size-7 has-text-grey mb-2" x-text="compose.path || ''"></p>
+              <template x-if="compose.multiFile">
+                <div class="notification is-warning is-light is-size-7 py-2">This stack is built from multiple compose
+                  files; editing is disabled to avoid clobbering them.</div>
+              </template>
+              <div x-show="!compose.multiFile">
+                <textarea x-ref="composeEditor"></textarea>
+              </div>
+              <p class="help is-danger mt-2" x-show="compose.error" x-text="compose.error"></p>
+              <p class="help is-success mt-2" x-show="compose.status" x-text="compose.status"></p>
+              <div class="buttons mt-3">
+                <button class="button is-primary" :disabled="compose.loading || compose.multiFile || compose.busy"
+                  @click="saveCompose()">Save</button>
+                <button class="button is-warning" :disabled="compose.loading || compose.multiFile || compose.busy"
+                  @click="saveAndRedeploy()">Save &amp; redeploy</button>
+                <button class="button" @click="closeCompose()">Close</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Updates -->
+      <div x-show="page==='updates'">
+        <div class="level">
+          <div class="level-left">
+            <h1 class="title">Updates</h1>
+          </div>
+          <div class="level-right">
+            <button class="button is-link is-light" @click="checkAllUpdates()">Check all hosts</button>
+          </div>
+        </div>
+
+        <h2 class="subtitle mb-2">Host packages</h2>
+        <template x-if="updates.os.length===0">
+          <p class="has-text-grey">No hosts reporting package updates.</p>
         </template>
-        <template x-for="st in services.stacks" :key="st.hostId+'/'+st.name">
+        <template x-for="o in updates.os" :key="o.hostId">
           <div class="box">
             <div class="level is-mobile">
               <div class="level-left">
-                <div class="level-item"><span class="tag" :class="statusClass(st.status)" x-text="st.status"></span>
-                </div>
-                <div class="level-item has-text-weight-semibold" x-text="st.name"></div>
-                <div class="level-item is-size-7 has-text-grey" x-text="st.hostName"></div>
+                <div class="level-item has-text-weight-semibold" x-text="o.hostName"></div>
+                <div class="level-item"><span class="tag"
+                    :class="o.count>0 ? 'is-warning' : 'is-success'" x-text="o.count+' updates'"></span></div>
+                <div class="level-item is-size-7 has-text-grey" x-text="o.mode"></div>
               </div>
               <div class="level-right">
                 <div class="level-item buttons are-small">
-                  <button class="button is-success" @click="svcAction(st,'','start')">start</button>
-                  <button class="button is-danger" @click="svcAction(st,'','stop')">stop</button>
-                  <button class="button is-warning" @click="svcAction(st,'','restart')">restart</button>
+                  <button class="button" :disabled="!hostOnline(o.hostId)"
+                    @click="checkHost(o.hostId)">check for updates</button>
+                  <button class="button is-warning" :disabled="o.count===0 || !hostOnline(o.hostId)"
+                    @click="runAction(o.hostId,'qup','apply')">apply updates</button>
                 </div>
               </div>
             </div>
-            <table class="table is-fullwidth is-narrow">
-              <tbody>
-                <template x-for="sv in st.services" :key="sv.name">
-                  <tr>
-                    <td><span class="tag" :class="statusClass(sv.status)" x-text="sv.status"></span></td>
-                    <td class="has-text-weight-semibold" x-text="sv.name"></td>
-                    <td class="is-size-7 has-text-grey" x-text="sv.image"></td>
-                    <td><span class="tag is-info is-light" x-show="sv.updateAvailable">update</span></td>
-                    <td class="has-text-right">
-                      <div class="buttons are-small is-right">
-                        <button class="button is-success" @click="svcAction(st,sv.name,'start')">start</button>
-                        <button class="button is-danger" @click="svcAction(st,sv.name,'stop')">stop</button>
-                        <button class="button is-warning" @click="svcAction(st,sv.name,'restart')">restart</button>
-                        <button class="button" x-show="sv.hasLogs" @click="openLogs(st,sv.name)">logs</button>
-                      </div>
-                    </td>
-                  </tr>
-                </template>
-              </tbody>
-            </table>
+            <template x-if="o.packages && o.packages.length">
+              <div style="max-height:18rem;overflow:auto">
+                <table class="table is-fullwidth is-narrow is-size-7 mb-0">
+                  <tbody>
+                    <template x-for="pkg in o.packages" :key="pkg.name">
+                      <tr>
+                        <td class="has-text-weight-semibold" x-text="pkg.name"></td>
+                        <td class="is-family-monospace has-text-grey" x-text="pkg.current || '—'"></td>
+                        <td class="has-text-grey">→</td>
+                        <td class="is-family-monospace" x-text="pkg.candidate || ''"></td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </template>
           </div>
         </template>
+
+        <h2 class="subtitle mt-5 mb-2">Container images</h2>
+        <template x-if="updates.containers.length===0">
+          <p class="has-text-grey">No container image updates found. Run a check to refresh.</p>
+        </template>
+        <table class="table is-fullwidth is-narrow" x-show="updates.containers.length>0">
+          <thead>
+            <tr>
+              <th>Host</th>
+              <th>Stack</th>
+              <th>Service</th>
+              <th>Image</th>
+              <th>Change</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="c in updates.containers" :key="c.hostId+'/'+c.stack+'/'+c.service">
+              <tr>
+                <td class="is-size-7" x-text="c.hostName"></td>
+                <td x-text="c.stack"></td>
+                <td class="has-text-weight-semibold" x-text="c.service"></td>
+                <td class="is-size-7 has-text-grey" x-text="c.image"></td>
+                <td class="is-size-7 is-family-monospace">
+                  <span x-show="c.current" x-text="shortDigest(c.current)+' → '+shortDigest(c.latest)"></span>
+                  <span class="has-text-grey" x-show="!c.current">—</span>
+                </td>
+                <td class="has-text-right"><button class="button is-small is-warning" :disabled="!hostOnline(c.hostId)"
+                    @click="updateService(c)">update</button></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
       </div>
 
       <!-- Scheduler -->
@@ -569,21 +754,19 @@
     </div>
   </div>
 
-  <!-- Job progress modal -->
-  <div class="modal" :class="job.open && 'is-active'">
-    <div class="modal-background" @click="job.open=false"></div>
-    <div class="modal-card">
-      <header class="modal-card-head">
-        <p class="modal-card-title">Job</p>
-        <span class="tag" :class="statusClass(job.state)" x-text="job.state"></span>
-      </header>
-      <section class="modal-card-body">
-        <progress class="progress is-link" :value="job.progress" max="1" x-show="job.state==='running'"></progress>
-        <pre style="max-height:300px;overflow:auto" x-text="job.log.join('\n')"></pre>
-      </section>
-      <footer class="modal-card-foot">
-        <button class="button" @click="job.open=false">Close</button>
-      </footer>
+  <!-- Job output: a panel docked to the lower third of the viewport (not a modal, so the page
+       behind stays usable). Drag the top edge to resize; output autoscrolls to the latest line. -->
+  <div class="job-panel" x-ref="jobPanel" x-show="job.open" x-cloak x-transition.opacity
+       :style="jobPanelHeight ? ('height:' + jobPanelHeight + 'px') : ''">
+    <div class="job-panel-resize" @pointerdown="startJobResize($event)" title="Drag to resize"></div>
+    <header class="job-panel-head">
+      <span class="has-text-weight-semibold">Job</span>
+      <span class="tag ml-2" :class="statusClass(job.state)" x-text="job.state"></span>
+      <button class="delete" @click="job.open=false" aria-label="close"></button>
+    </header>
+    <div class="job-panel-body">
+      <progress class="progress is-link mb-2" :value="job.progress" max="1" x-show="job.state==='running'"></progress>
+      <pre class="job-panel-log" x-ref="jobLog" x-text="job.log.join('\n')"></pre>
     </div>
   </div>
 
@@ -656,6 +839,13 @@
     </div>
   </div>
 
+  <!-- CodeMirror (YAML editing + linting) for the compose editor; loaded before app.js so the
+       CodeMirror/jsyaml globals exist when the editor opens. -->
+  <script src="/vendor/codemirror/codemirror.min.js"></script>
+  <script src="/vendor/codemirror/yaml.min.js"></script>
+  <script src="/vendor/codemirror/lint.min.js"></script>
+  <script src="/vendor/js-yaml.min.js"></script>
+  <script src="/vendor/codemirror/yaml-lint.min.js"></script>
   <script src="/app.js"></script>
 </body>
 

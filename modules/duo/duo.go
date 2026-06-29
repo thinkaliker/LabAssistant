@@ -22,8 +22,20 @@ import (
 type Module struct {
 	useDocker bool
 
-	mu     sync.Mutex
-	stacks []*Stack // simulated state (used only when docker is absent)
+	mu      sync.Mutex
+	stacks  []*Stack               // simulated state (used only when docker is absent)
+	updates map[string]imageUpdate // image -> digests, populated by check-updates
+}
+
+// imageUpdate records the digest a local image was pulled at and the digest the registry now
+// serves for the same tag. An update is available when both are known and differ.
+type imageUpdate struct {
+	Current string `json:"current"` // local RepoDigest
+	Latest  string `json:"latest"`  // registry digest
+}
+
+func (u imageUpdate) hasUpdate() bool {
+	return u.Current != "" && u.Latest != "" && u.Current != u.Latest
 }
 
 // Stack is a compose project and its services.
@@ -40,12 +52,14 @@ type Service struct {
 	Status          string `json:"status"`
 	Image           string `json:"image"`
 	UpdateAvailable bool   `json:"updateAvailable"`
+	CurrentDigest   string `json:"currentDigest,omitempty"`
+	LatestDigest    string `json:"latestDigest,omitempty"`
 	HasLogs         bool   `json:"hasLogs"`
 }
 
 // New returns a duo module, using real docker when the CLI is available.
 func New() *Module {
-	m := &Module{}
+	m := &Module{updates: map[string]imageUpdate{}}
 	if _, err := exec.LookPath("docker"); err == nil {
 		m.useDocker = true
 		return m
@@ -64,6 +78,8 @@ func New() *Module {
 
 func (m *Module) Manifest() module.Manifest {
 	params := json.RawMessage(`{"type":"object","properties":{"stack":{"type":"string"},"service":{"type":"string"}},"required":["stack"]}`)
+	optStack := json.RawMessage(`{"type":"object","properties":{"stack":{"type":"string"}}}`)
+	composeParams := json.RawMessage(`{"type":"object","properties":{"stack":{"type":"string"},"content":{"type":"string"}},"required":["stack","content"]}`)
 	mk := func(name, desc string) module.ActionSpec {
 		return module.ActionSpec{
 			Name: name, Description: desc, ParamsSchema: params,
@@ -85,6 +101,49 @@ func (m *Module) Manifest() module.Manifest {
 				Privilege:      module.PrivilegeElevated,
 				Destructive:    true,
 				DefaultTimeout: 5 * time.Minute,
+				Streams:        true,
+			},
+			{
+				Name:           "read-compose",
+				Description:    "Read a stack's compose file.",
+				ParamsSchema:   params,
+				Privilege:      module.PrivilegeElevated,
+				ReadOnly:       true,
+				DefaultTimeout: 30 * time.Second,
+			},
+			{
+				Name:           "write-compose",
+				Description:    "Overwrite a stack's compose file (keeps a .bak and validates).",
+				ParamsSchema:   composeParams,
+				Privilege:      module.PrivilegeElevated,
+				DefaultTimeout: 2 * time.Minute,
+				Streams:        true,
+			},
+			{
+				Name:           "deploy",
+				Description:    "Apply a stack's compose file (docker compose up -d).",
+				ParamsSchema:   params,
+				Privilege:      module.PrivilegeElevated,
+				Destructive:    true,
+				DefaultTimeout: 5 * time.Minute,
+				Streams:        true,
+			},
+			{
+				Name:           "check-updates",
+				Description:    "Check for newer container images without pulling.",
+				ParamsSchema:   optStack,
+				Privilege:      module.PrivilegeElevated,
+				ReadOnly:       true,
+				DefaultTimeout: 5 * time.Minute,
+				Streams:        true,
+			},
+			{
+				Name:           "update",
+				Description:    "Pull newer images and recreate (destructive).",
+				ParamsSchema:   params,
+				Privilege:      module.PrivilegeElevated,
+				Destructive:    true,
+				DefaultTimeout: 10 * time.Minute,
 				Streams:        true,
 			},
 		},
@@ -124,6 +183,7 @@ func (m *Module) Status(ctx context.Context) (module.Status, error) {
 type actionParams struct {
 	Stack   string `json:"stack"`
 	Service string `json:"service"`
+	Content string `json:"content"`
 }
 
 func (m *Module) Execute(ctx context.Context, req module.ActionRequest, emit func(module.Event)) (module.Result, error) {
@@ -143,16 +203,44 @@ func (m *Module) executeSimulated(ctx context.Context, req module.ActionRequest,
 			return module.Result{State: module.JobFailed, Error: "invalid params: " + err.Error()}, nil
 		}
 	}
+
+	switch req.Action {
+	case "read-compose":
+		if p.Stack == "" {
+			return module.Result{State: module.JobFailed, Error: "stack is required"}, nil
+		}
+		content := fmt.Sprintf("# simulated compose for %s\nservices:\n  app:\n    image: example/%s:latest\n", p.Stack, p.Stack)
+		data, _ := json.Marshal(map[string]any{
+			"stack": p.Stack, "path": "/srv/" + p.Stack + "/compose.yaml",
+			"content": content, "truncated": false, "multiFile": false,
+		})
+		return module.Result{State: module.JobSucceeded, Data: data}, nil
+	case "write-compose":
+		if p.Stack == "" {
+			return module.Result{State: module.JobFailed, Error: "stack is required"}, nil
+		}
+		return simulate(ctx, emit, "writing compose for "+p.Stack, "wrote compose (simulated)")
+	case "check-updates":
+		emit(module.Event{Kind: module.EventState, State: module.JobRunning})
+		emit(module.Event{Kind: module.EventLog, Message: "checked for image updates (simulated)"})
+		emit(module.Event{Kind: module.EventState, State: module.JobSucceeded})
+		return module.Result{State: module.JobSucceeded}, nil
+	case "update":
+		if p.Stack == "" {
+			return module.Result{State: module.JobFailed, Error: "stack is required"}, nil
+		}
+		m.clearSimUpdate(p)
+		return simulate(ctx, emit, "pulling and recreating "+simTarget(p), "updated (simulated)")
+	}
+
+	// start / stop / restart / deploy operate on the simulated stack state.
 	if p.Stack == "" {
 		return module.Result{State: module.JobFailed, Error: "stack is required"}, nil
 	}
-	target := "stack " + p.Stack
-	if p.Service != "" {
-		target = fmt.Sprintf("service %s/%s", p.Stack, p.Service)
-	}
+	target := simTarget(p)
 	var desired string
 	switch req.Action {
-	case "start", "restart":
+	case "start", "restart", "deploy":
 		desired = "running"
 	case "stop":
 		desired = "stopped"
@@ -172,6 +260,65 @@ func (m *Module) executeSimulated(ctx context.Context, req module.ActionRequest,
 	emit(module.Event{Kind: module.EventLog, Message: target + " is now " + desired})
 	emit(module.Event{Kind: module.EventState, State: module.JobSucceeded})
 	return module.Result{State: module.JobSucceeded}, nil
+}
+
+// IngestResult applies the result of an action that ran in the privileged helper to this
+// module instance so Status reflects it. check-updates carries the per-image update map;
+// update carries the images it cleared.
+func (m *Module) IngestResult(action string, data json.RawMessage) {
+	if len(data) == 0 {
+		return
+	}
+	switch action {
+	case "check-updates":
+		var d struct {
+			Images map[string]imageUpdate `json:"images"`
+		}
+		if json.Unmarshal(data, &d) != nil {
+			return
+		}
+		m.mu.Lock()
+		for img, iu := range d.Images {
+			m.updates[img] = iu
+		}
+		m.mu.Unlock()
+	case "update":
+		var d struct {
+			Cleared []string `json:"cleared"`
+		}
+		if json.Unmarshal(data, &d) != nil {
+			return
+		}
+		m.mu.Lock()
+		for _, img := range d.Cleared {
+			delete(m.updates, img)
+		}
+		m.mu.Unlock()
+	}
+}
+
+// simTarget describes a stack or stack/service for log messages.
+func simTarget(p actionParams) string {
+	if p.Service != "" {
+		return fmt.Sprintf("service %s/%s", p.Stack, p.Service)
+	}
+	return "stack " + p.Stack
+}
+
+// clearSimUpdate flips updateAvailable off on the simulated target after an update.
+func (m *Module) clearSimUpdate(p actionParams) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, s := range m.stacks {
+		if s.Name != p.Stack {
+			continue
+		}
+		for _, svc := range s.Services {
+			if p.Service == "" || svc.Name == p.Service {
+				svc.UpdateAvailable = false
+			}
+		}
+	}
 }
 
 // apply mutates the simulated state; returns false if nothing matched.

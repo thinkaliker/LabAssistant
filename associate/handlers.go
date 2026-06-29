@@ -232,6 +232,13 @@ func (s *session) runCommand(cmd *pb.Command) {
 	}
 	s.send(jobResult(cmd.GetJobId(), res.State, res.Data, res.Error))
 
+	// Elevated actions run in a separate helper process, so any in-memory state they built
+	// (e.g. duo's update-check results) lives in that process, not here. Feed the result back
+	// to this module instance so the Status re-publish below can reflect it.
+	if ing, ok := m.(module.ResultIngestor); ok && res.State == module.JobSucceeded {
+		ing.IngestResult(cmd.GetAction(), res.Data)
+	}
+
 	// Re-publish the module's status so the manager reflects any change the action made.
 	// For real modules this re-queries external state (docker/apt) regardless of whether
 	// the action ran in-process or in the privileged helper.

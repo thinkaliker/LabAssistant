@@ -6,11 +6,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 
 	"github.com/thinkaliker/labassistant/module"
 )
+
+// maxComposeBytes caps the compose file content returned by read-compose.
+const maxComposeBytes = 1 << 20 // 1 MiB
 
 // dctr is one container as reported by `docker ps --format json`.
 type dctr struct {
@@ -36,6 +40,13 @@ func (m *Module) dockerStatus(ctx context.Context) (module.Status, error) {
 	if err != nil {
 		return module.Status{}, err
 	}
+	m.mu.Lock()
+	updates := make(map[string]imageUpdate, len(m.updates))
+	for k, v := range m.updates {
+		updates[k] = v
+	}
+	m.mu.Unlock()
+
 	byStack := map[string]*Stack{}
 	var order []string
 	running, total := 0, 0
@@ -60,7 +71,13 @@ func (m *Module) dockerStatus(ctx context.Context) (module.Status, error) {
 		if svc == "" {
 			svc = c.Names
 		}
-		st.Services = append(st.Services, &Service{Name: svc, Status: status, Image: c.Image, HasLogs: true})
+		iu := updates[c.Image]
+		st.Services = append(st.Services, &Service{
+			Name: svc, Status: status, Image: c.Image,
+			UpdateAvailable: iu.hasUpdate(),
+			CurrentDigest:   iu.Current, LatestDigest: iu.Latest,
+			HasLogs: true,
+		})
 	}
 	stacks := make([]*Stack, 0, len(order))
 	for _, name := range order {
@@ -73,25 +90,40 @@ func (m *Module) dockerStatus(ctx context.Context) (module.Status, error) {
 }
 
 func (m *Module) executeDocker(ctx context.Context, req module.ActionRequest, emit func(module.Event)) (module.Result, error) {
+	var p actionParams
+	if len(req.Params) > 0 {
+		_ = json.Unmarshal(req.Params, &p)
+	}
+
+	// These manage their own event/result lifecycle (read returns data, the rest stream).
+	switch req.Action {
+	case "read-compose":
+		return m.readCompose(ctx, p)
+	case "write-compose":
+		return m.writeCompose(ctx, p, emit)
+	case "check-updates":
+		return m.checkUpdates(ctx, p, emit)
+	}
+
 	emit(module.Event{Kind: module.EventState, State: module.JobRunning})
 
-	if req.Action == "prune" {
+	switch req.Action {
+	case "prune":
 		if err := streamDocker(ctx, emit, "system", "prune", "-f"); err != nil {
 			return module.Result{State: module.JobFailed, Error: err.Error()}, nil
 		}
 		emit(module.Event{Kind: module.EventState, State: module.JobSucceeded})
 		return module.Result{State: module.JobSucceeded}, nil
-	}
-
-	switch req.Action {
+	case "deploy":
+		return m.deploy(ctx, p, emit)
+	case "update":
+		return m.update(ctx, p, emit)
 	case "start", "stop", "restart":
+		// handled below
 	default:
 		return module.Result{State: module.JobFailed, Error: "unknown action: " + req.Action}, nil
 	}
-	var p actionParams
-	if len(req.Params) > 0 {
-		_ = json.Unmarshal(req.Params, &p)
-	}
+
 	if p.Stack == "" {
 		return module.Result{State: module.JobFailed, Error: "stack is required"}, nil
 	}
@@ -108,6 +140,247 @@ func (m *Module) executeDocker(ctx context.Context, req module.ActionRequest, em
 	}
 	emit(module.Event{Kind: module.EventState, State: module.JobSucceeded})
 	return module.Result{State: module.JobSucceeded}, nil
+}
+
+// composePath resolves a stack's compose file path from the compose project labels. multiFile
+// is true when the project was created from several compose files (comma-separated), in which
+// case callers must not blindly overwrite. Querying the label directly (rather than the JSON
+// label blob) keeps comma-containing values intact.
+func (m *Module) composePath(ctx context.Context, stack string) (path string, multiFile bool, err error) {
+	if stack == "" {
+		return "", false, fmt.Errorf("stack is required")
+	}
+	out, err := exec.CommandContext(ctx, "docker", "ps", "-a",
+		"--filter", "label=com.docker.compose.project="+stack,
+		"--format", `{{.Label "com.docker.compose.project.config_files"}}`).Output()
+	if err != nil {
+		return "", false, fmt.Errorf("docker ps: %w", err)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line = strings.TrimSpace(line); line == "" {
+			continue
+		}
+		parts := strings.Split(line, ",")
+		return strings.TrimSpace(parts[0]), len(parts) > 1, nil
+	}
+	return "", false, fmt.Errorf("no compose file recorded for stack %q", stack)
+}
+
+// readCompose returns a stack's compose file content in Result.Data.
+func (m *Module) readCompose(ctx context.Context, p actionParams) (module.Result, error) {
+	path, multi, err := m.composePath(ctx, p.Stack)
+	if err != nil {
+		return module.Result{State: module.JobFailed, Error: err.Error()}, nil
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return module.Result{State: module.JobFailed, Error: fmt.Sprintf("read %s: %v", path, err)}, nil
+	}
+	truncated := false
+	if len(b) > maxComposeBytes {
+		b, truncated = b[:maxComposeBytes], true
+	}
+	data, _ := json.Marshal(map[string]any{
+		"stack": p.Stack, "path": path, "content": string(b),
+		"truncated": truncated, "multiFile": multi,
+	})
+	return module.Result{State: module.JobSucceeded, Data: data}, nil
+}
+
+// writeCompose overwrites a stack's compose file, keeping a .bak and validating the result with
+// `docker compose config`. On a validation failure the backup is restored and the action fails.
+func (m *Module) writeCompose(ctx context.Context, p actionParams, emit func(module.Event)) (module.Result, error) {
+	emit(module.Event{Kind: module.EventState, State: module.JobRunning})
+	path, multi, err := m.composePath(ctx, p.Stack)
+	if err != nil {
+		return module.Result{State: module.JobFailed, Error: err.Error()}, nil
+	}
+	if multi {
+		return module.Result{State: module.JobFailed, Error: "stack uses multiple compose files; refusing to overwrite"}, nil
+	}
+	mode := os.FileMode(0o644)
+	if fi, serr := os.Stat(path); serr == nil {
+		mode = fi.Mode().Perm()
+	}
+	if cur, rerr := os.ReadFile(path); rerr == nil {
+		if werr := os.WriteFile(path+".bak", cur, mode); werr != nil {
+			return module.Result{State: module.JobFailed, Error: fmt.Sprintf("write backup: %v", werr)}, nil
+		}
+		emit(module.Event{Kind: module.EventLog, Message: "backed up to " + path + ".bak"})
+	}
+	if err := os.WriteFile(path, []byte(p.Content), mode); err != nil {
+		return module.Result{State: module.JobFailed, Error: fmt.Sprintf("write %s: %v", path, err)}, nil
+	}
+	emit(module.Event{Kind: module.EventLog, Message: "wrote " + path})
+
+	if out, verr := exec.CommandContext(ctx, "docker", "compose", "-f", path, "config", "-q").CombinedOutput(); verr != nil {
+		msg := strings.TrimSpace(string(out))
+		emit(module.Event{Kind: module.EventLog, Message: "validation failed: " + msg})
+		if cur, rerr := os.ReadFile(path + ".bak"); rerr == nil {
+			_ = os.WriteFile(path, cur, mode)
+			emit(module.Event{Kind: module.EventLog, Message: "restored from backup"})
+		}
+		return module.Result{State: module.JobFailed, Error: "compose validation failed: " + msg}, nil
+	}
+	emit(module.Event{Kind: module.EventLog, Message: "compose file is valid"})
+	emit(module.Event{Kind: module.EventState, State: module.JobSucceeded})
+	return module.Result{State: module.JobSucceeded}, nil
+}
+
+// deploy applies a stack's compose file with `docker compose up -d`.
+func (m *Module) deploy(ctx context.Context, p actionParams, emit func(module.Event)) (module.Result, error) {
+	path, _, err := m.composePath(ctx, p.Stack)
+	if err != nil {
+		return module.Result{State: module.JobFailed, Error: err.Error()}, nil
+	}
+	args := []string{"compose", "-f", path, "up", "-d"}
+	if p.Service != "" {
+		args = append(args, p.Service)
+	}
+	if err := streamDocker(ctx, emit, args...); err != nil {
+		return module.Result{State: module.JobFailed, Error: err.Error()}, nil
+	}
+	emit(module.Event{Kind: module.EventState, State: module.JobSucceeded})
+	return module.Result{State: module.JobSucceeded}, nil
+}
+
+// update pulls newer images and recreates containers for a stack or one service.
+func (m *Module) update(ctx context.Context, p actionParams, emit func(module.Event)) (module.Result, error) {
+	path, _, err := m.composePath(ctx, p.Stack)
+	if err != nil {
+		return module.Result{State: module.JobFailed, Error: err.Error()}, nil
+	}
+	pull := []string{"compose", "-f", path, "pull"}
+	up := []string{"compose", "-f", path, "up", "-d"}
+	if p.Service != "" {
+		pull = append(pull, p.Service)
+		up = append(up, p.Service)
+	}
+	if err := streamDocker(ctx, emit, pull...); err != nil {
+		return module.Result{State: module.JobFailed, Error: err.Error()}, nil
+	}
+	if err := streamDocker(ctx, emit, up...); err != nil {
+		return module.Result{State: module.JobFailed, Error: err.Error()}, nil
+	}
+	cleared := m.clearUpdates(ctx, p.Stack, p.Service)
+	emit(module.Event{Kind: module.EventState, State: module.JobSucceeded})
+	data, _ := json.Marshal(map[string]any{"cleared": cleared})
+	return module.Result{State: module.JobSucceeded, Data: data}, nil
+}
+
+// checkUpdates compares each compose service image against its registry and records which have
+// a newer image available. It never installs anything. Images it cannot compare are left
+// unflagged (reported as "unknown") so there are no false positives.
+func (m *Module) checkUpdates(ctx context.Context, p actionParams, emit func(module.Event)) (module.Result, error) {
+	emit(module.Event{Kind: module.EventState, State: module.JobRunning})
+	ctrs, err := dockerContainers(ctx)
+	if err != nil {
+		return module.Result{State: module.JobFailed, Error: err.Error()}, nil
+	}
+	seen := map[string]bool{}
+	var images []string
+	for _, c := range ctrs {
+		if c.label("com.docker.compose.project") == "" {
+			continue
+		}
+		if p.Stack != "" && c.label("com.docker.compose.project") != p.Stack {
+			continue
+		}
+		if c.Image == "" || seen[c.Image] {
+			continue
+		}
+		seen[c.Image] = true
+		images = append(images, c.Image)
+	}
+
+	results := map[string]imageUpdate{}
+	updated := 0
+	for _, img := range images {
+		local := localRepoDigest(ctx, img)
+		remote := remoteDigest(ctx, img)
+		if local == "" || remote == "" {
+			emit(module.Event{Kind: module.EventLog, Message: img + ": unknown (could not compare)"})
+			continue
+		}
+		iu := imageUpdate{Current: local, Latest: remote}
+		results[img] = iu
+		if iu.hasUpdate() {
+			updated++
+			emit(module.Event{Kind: module.EventLog, Message: fmt.Sprintf("%s: update available (%s -> %s)", img, shortDigest(local), shortDigest(remote))})
+		} else {
+			emit(module.Event{Kind: module.EventLog, Message: img + ": up to date"})
+		}
+	}
+
+	m.mu.Lock()
+	for img, iu := range results {
+		m.updates[img] = iu
+	}
+	m.mu.Unlock()
+
+	emit(module.Event{Kind: module.EventLog, Message: fmt.Sprintf("%d image(s) with updates", updated)})
+	emit(module.Event{Kind: module.EventState, State: module.JobSucceeded})
+	data, _ := json.Marshal(map[string]any{"images": results, "checked": len(images), "updates": updated})
+	return module.Result{State: module.JobSucceeded, Data: data}, nil
+}
+
+// clearUpdates drops the update flag for a stack's (or one service's) images after an update
+// and returns the images it cleared (so the associate's instance can clear them too).
+func (m *Module) clearUpdates(ctx context.Context, stack, service string) []string {
+	ctrs, err := dockerContainers(ctx)
+	if err != nil {
+		return nil
+	}
+	var cleared []string
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, c := range ctrs {
+		if c.label("com.docker.compose.project") != stack {
+			continue
+		}
+		if service != "" && c.label("com.docker.compose.service") != service {
+			continue
+		}
+		delete(m.updates, c.Image)
+		cleared = append(cleared, c.Image)
+	}
+	return cleared
+}
+
+// shortDigest abbreviates a "sha256:<hex>" digest to a readable prefix for logs.
+func shortDigest(d string) string {
+	d = strings.TrimPrefix(d, "sha256:")
+	if len(d) > 12 {
+		return d[:12]
+	}
+	return d
+}
+
+// localRepoDigest returns the sha256 digest the local image was pulled at, or "".
+func localRepoDigest(ctx context.Context, img string) string {
+	out, err := exec.CommandContext(ctx, "docker", "image", "inspect", img,
+		"--format", "{{range .RepoDigests}}{{.}}\n{{end}}").Output()
+	if err != nil {
+		return ""
+	}
+	for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if _, digest, ok := strings.Cut(strings.TrimSpace(l), "@"); ok {
+			return digest
+		}
+	}
+	return ""
+}
+
+// remoteDigest returns the sha256 digest the registry currently serves for img's tag, or "".
+// It uses `docker buildx imagetools inspect`, which yields the top-level (index) digest that
+// matches what `docker image inspect` records in RepoDigests.
+func remoteDigest(ctx context.Context, img string) string {
+	out, err := exec.CommandContext(ctx, "docker", "buildx", "imagetools", "inspect", img,
+		"--format", "{{.Manifest.Digest}}").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func (m *Module) dockerStreamLogs(ctx context.Context, params json.RawMessage, emit func([]byte)) error {
