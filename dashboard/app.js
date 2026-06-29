@@ -17,6 +17,8 @@ function app() {
     sudoPrompts: [],
     sudoModal: { open: false, id: '', hostId: '', module: '', action: '', password: '', error: '' },
     audit: [],
+    auditPage: 1,
+    auditPageSize: 25,
     expanded: null,
     addHostOpen: false,
     taskOpen: false,
@@ -82,11 +84,17 @@ function app() {
         this.approvals = await (await fetch('/api/v1/approvals')).json();
         this.sudoPrompts = await (await fetch('/api/v1/sudo')).json();
         const ar = await fetch('/api/v1/audit');
-        if (ar.ok) { this.audit = await ar.json(); this.auditError = ''; }
+        if (ar.ok) { this.audit = await ar.json(); this.auditError = ''; if (this.auditPage > this.auditPages()) this.auditPage = this.auditPages(); }
         else { this.audit = []; this.auditError = ar.status === 403 ? 'Audit access not permitted for this credential.' : 'Failed to load audit log.'; }
         this.settings = await (await fetch('/api/v1/settings')).json();
         this.tokens = await (await fetch('/api/v1/auth/tokens')).json();
       } catch (e) { console.error(e); }
+    },
+    // ---- audit pagination (client-side over the fetched newest-first entries) ----
+    auditPages() { return Math.max(1, Math.ceil(this.audit.length / this.auditPageSize)); },
+    auditPageSlice() {
+      const start = (this.auditPage - 1) * this.auditPageSize;
+      return this.audit.slice(start, start + this.auditPageSize);
     },
     async saveSettings() {
       await fetch('/api/v1/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(this.settings) });
