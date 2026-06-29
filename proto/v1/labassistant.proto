@@ -111,6 +111,8 @@ message HostHealth {
   double mem_percent = 2;
   uint64 uptime_seconds = 3;
   repeated DiskUsage disks = 4;
+  uint64 mem_used_bytes = 5;
+  uint64 mem_total_bytes = 6;
 }
 
 message DiskUsage {

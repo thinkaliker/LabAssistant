@@ -95,7 +95,8 @@ func (d Deps) overview(w http.ResponseWriter, r *http.Request) {
 	var online, offline, enrolling, errc int
 	var cpuSum, memSum float64
 	var healthN int
-	var updates int
+	var updates, servicesRunning int
+	var memUsedBytes uint64
 	for _, h := range hosts {
 		switch h.Status {
 		case state.StatusOnline:
@@ -110,9 +111,11 @@ func (d Deps) overview(w http.ResponseWriter, r *http.Request) {
 		if h.Health != nil {
 			cpuSum += h.Health.CPUPercent
 			memSum += h.Health.MemPercent
+			memUsedBytes += h.Health.MemUsedBytes
 			healthN++
 		}
 		updates += countUpdates(h)
+		servicesRunning += countRunningServices(h)
 	}
 	resCPU, resMem := 0.0, 0.0
 	if healthN > 0 {
@@ -124,8 +127,11 @@ func (d Deps) overview(w http.ResponseWriter, r *http.Request) {
 			"total": len(hosts), "online": online, "offline": offline,
 			"enrolling": enrolling, "error": errc,
 		},
-		"updates":   map[string]int{"packages": updates},
-		"resources": map[string]float64{"cpuPercent": resCPU, "memPercent": resMem},
+		"updates":  map[string]int{"packages": updates},
+		"services": map[string]int{"running": servicesRunning},
+		"resources": map[string]any{
+			"cpuPercent": resCPU, "memPercent": resMem, "memUsedBytes": memUsedBytes,
+		},
 	})
 }
 
@@ -197,6 +203,28 @@ func countUpdates(h state.Host) int {
 		}
 	}
 	return total
+}
+
+// countRunningServices totals the compose services reporting "running" across a host's duo stacks.
+func countRunningServices(h state.Host) int {
+	running := 0
+	for _, m := range h.Modules {
+		if m.Name != "duo" || len(m.Status) == 0 {
+			continue
+		}
+		var ds duoStatus
+		if json.Unmarshal(m.Status, &ds) != nil {
+			continue
+		}
+		for _, s := range ds.Stacks {
+			for _, sv := range s.Services {
+				if sv.Status == "running" {
+					running++
+				}
+			}
+		}
+	}
+	return running
 }
 
 func round1(f float64) float64 { return float64(int(f*10+0.5)) / 10 }

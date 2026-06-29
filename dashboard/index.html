@@ -16,9 +16,58 @@
 
     .CodeMirror {
       height: 60vh;
-      border: 1px solid #dbdbdb;
+      border: 1px solid var(--bulma-border);
       border-radius: 4px;
       font-size: 0.85rem;
+      /* Theme-aware editor colors (light defaults ~ CodeMirror's default theme; the dark-mode
+         blocks below re-point these vars). */
+      background: var(--cm-bg, #fff);
+      color: var(--cm-text, #000);
+    }
+
+    .CodeMirror-gutters {
+      background: var(--cm-gutter-bg, #f7f7f7);
+      border-right: 1px solid var(--bulma-border-weak);
+    }
+
+    .CodeMirror-linenumber {
+      color: var(--cm-gutter-text, #999);
+    }
+
+    .CodeMirror-cursor {
+      border-left: 1px solid var(--cm-text, #000);
+    }
+
+    .CodeMirror-selected {
+      background: var(--cm-selection, #d7d4f0) !important;
+    }
+
+    .CodeMirror-activeline-background {
+      background: var(--cm-active, transparent);
+    }
+
+    .cm-s-default .cm-comment {
+      color: var(--cm-comment, #a50);
+    }
+
+    .cm-s-default .cm-atom {
+      color: var(--cm-key, #219);
+    }
+
+    .cm-s-default .cm-string {
+      color: var(--cm-string, #a11);
+    }
+
+    .cm-s-default .cm-number {
+      color: var(--cm-number, #164);
+    }
+
+    .cm-s-default .cm-keyword {
+      color: var(--cm-keyword, #708);
+    }
+
+    .cm-s-default .cm-meta {
+      color: var(--cm-meta, #555);
     }
 
     /* Job output: a panel docked to the lower third of the viewport instead of a modal. */
@@ -30,8 +79,8 @@
       height: 33vh;
       min-height: 11rem;
       z-index: 30;
-      background: #fff;
-      border-top: 1px solid #dbdbdb;
+      background: var(--bulma-scheme-main);
+      border-top: 1px solid var(--bulma-border);
       box-shadow: 0 -2px 12px rgba(10, 10, 10, 0.12);
       display: flex;
       flex-direction: column;
@@ -41,20 +90,20 @@
       flex: 0 0 auto;
       height: 8px;
       cursor: ns-resize;
-      background: #f0f0f0;
-      border-bottom: 1px solid #ededed;
+      background: var(--bulma-scheme-main-ter);
+      border-bottom: 1px solid var(--bulma-border-weak);
       touch-action: none;
     }
 
     .job-panel-resize:hover {
-      background: #e4e4e4;
+      background: var(--bulma-border);
     }
 
     .job-panel-head {
       display: flex;
       align-items: center;
       padding: 0.6rem 1rem;
-      border-bottom: 1px solid #ededed;
+      border-bottom: 1px solid var(--bulma-border-weak);
     }
 
     .job-panel-head .delete {
@@ -75,6 +124,65 @@
       overflow: auto;
       margin: 0;
     }
+
+    /* Dark-mode support. The dashboard leans on Bulma's "light" palette (is-light tags/heroes/
+       buttons and has-background-light panels), which all derive from the --bulma-light-* HSL
+       components. Bulma keeps those pale (~96% lightness) even under a dark scheme, so they render
+       as white patches. Re-point them at the theme-aware scheme tokens so light surfaces become
+       subtle dark elevated surfaces with light text. */
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bulma-light-h: var(--bulma-scheme-h);
+        --bulma-light-s: var(--bulma-scheme-s);
+        --bulma-light-l: var(--bulma-scheme-main-ter-l);
+        --bulma-light-invert-l: var(--bulma-text-strong-l);
+        --cm-bg: #1b1d23;
+        --cm-text: #d4d7dd;
+        --cm-gutter-bg: #21232b;
+        --cm-gutter-text: #5c6370;
+        --cm-selection: #2c3140;
+        --cm-active: rgba(255, 255, 255, 0.04);
+        --cm-comment: #7f848e;
+        --cm-key: #61afef;
+        --cm-string: #98c379;
+        --cm-number: #d19a66;
+        --cm-keyword: #c678dd;
+        --cm-meta: #56b6c2;
+      }
+
+      /* "is-light" buttons (e.g. is-link is-light) take their background lightness from the generic
+         --bulma-light-l we darken above, leaving them at ~13% — a dim chip indistinguishable from the
+         ~9% page — with dark *-light-invert text (dark-on-dark). Instead render them as bright solid
+         colored buttons in dark mode: a vivid background at the color's full lightness + light text. */
+      :root:not([data-theme="light"]) .button.is-light {
+        --bulma-button-background-l: 48%;
+        --bulma-button-color-l: var(--bulma-text-strong-l);
+      }
+    }
+
+    [data-theme="dark"] {
+      --bulma-light-h: var(--bulma-scheme-h);
+      --bulma-light-s: var(--bulma-scheme-s);
+      --bulma-light-l: var(--bulma-scheme-main-ter-l);
+      --bulma-light-invert-l: var(--bulma-text-strong-l);
+      --cm-bg: #1b1d23;
+      --cm-text: #d4d7dd;
+      --cm-gutter-bg: #21232b;
+      --cm-gutter-text: #5c6370;
+      --cm-selection: #2c3140;
+      --cm-active: rgba(255, 255, 255, 0.04);
+      --cm-comment: #7f848e;
+      --cm-key: #61afef;
+      --cm-string: #98c379;
+      --cm-number: #d19a66;
+      --cm-keyword: #c678dd;
+      --cm-meta: #56b6c2;
+    }
+
+    [data-theme="dark"] .button.is-light {
+      --bulma-button-background-l: 48%;
+      --bulma-button-color-l: var(--bulma-text-strong-l);
+    }
   </style>
 </head>
 
@@ -83,27 +191,34 @@
   <nav class="navbar is-dark is-fixed-top" role="navigation" x-show="ready && !needsLogin" x-cloak>
     <div class="navbar-brand">
       <span class="navbar-item has-text-weight-bold is-size-5">LabAssistant</span>
+      <a role="button" class="navbar-burger" :class="navOpen && 'is-active'" aria-label="menu"
+        :aria-expanded="navOpen" @click="navOpen=!navOpen">
+        <span aria-hidden="true"></span>
+        <span aria-hidden="true"></span>
+        <span aria-hidden="true"></span>
+        <span aria-hidden="true"></span>
+      </a>
     </div>
-    <div class="navbar-menu is-active">
+    <div class="navbar-menu" :class="navOpen && 'is-active'">
       <div class="navbar-start">
         <a class="navbar-item" :class="page==='overview' && 'is-active has-text-weight-semibold'"
-          @click="page='overview'">Overview</a>
+          @click="page='overview'; navOpen=false">Overview</a>
         <a class="navbar-item" :class="page==='hosts' && 'is-active has-text-weight-semibold'"
-          @click="page='hosts'">Hosts</a>
+          @click="page='hosts'; navOpen=false">Hosts</a>
         <a class="navbar-item" :class="page==='services' && 'is-active has-text-weight-semibold'"
-          @click="page='services'">Services</a>
+          @click="page='services'; navOpen=false">Services</a>
         <a class="navbar-item" :class="page==='updates' && 'is-active has-text-weight-semibold'"
-          @click="page='updates'">Updates</a>
+          @click="page='updates'; navOpen=false">Updates</a>
         <a class="navbar-item" :class="page==='scheduler' && 'is-active has-text-weight-semibold'"
-          @click="page='scheduler'">Scheduler</a>
+          @click="page='scheduler'; navOpen=false">Scheduler</a>
         <a class="navbar-item" :class="page==='audit' && 'is-active has-text-weight-semibold'"
-          @click="page='audit'">Audit</a>
+          @click="page='audit'; navOpen=false">Audit</a>
       </div>
       <div class="navbar-end">
         <div class="navbar-item">
           <div class="buttons">
-            <button class="button is-primary" @click="addHostOpen=true">Add Host</button>
-            <button class="button is-dark" title="Settings" @click="page='settings'">&#9881;</button>
+            <button class="button is-primary" @click="addHostOpen=true; navOpen=false">Add Host</button>
+            <button class="button is-dark" title="Settings" @click="page='settings'; navOpen=false">&#9881;</button>
             <button class="button is-dark" title="Log out" x-show="authUser" @click="logout()">⎋</button>
           </div>
         </div>
@@ -162,29 +277,31 @@
         <h1 class="title">Overview</h1>
         <div class="columns">
           <div class="column">
-            <div class="box has-text-centered">
+            <div class="box has-text-centered" style="height:100%">
               <p class="heading">Nodes</p>
               <p class="title" x-text="`${overview.hosts?.online ?? 0}/${overview.hosts?.total ?? 0}`"></p>
               <p class="is-size-7 has-text-grey">online / total</p>
             </div>
           </div>
           <div class="column">
-            <div class="box has-text-centered">
+            <div class="box has-text-centered" style="height:100%">
+              <p class="heading">Services Running</p>
+              <p class="title" x-text="overview.services?.running ?? 0"></p>
+              <p class="is-size-7 has-text-grey">containers up</p>
+            </div>
+          </div>
+          <div class="column">
+            <div class="box has-text-centered" style="height:100%">
+              <p class="heading">RAM Used</p>
+              <p class="title" x-text="humanBytes(overview.resources?.memUsedBytes ?? 0)"></p>
+              <p class="is-size-7 has-text-grey">across all hosts</p>
+            </div>
+          </div>
+          <div class="column">
+            <div class="box has-text-centered" style="height:100%">
               <p class="heading">Updates Available</p>
               <p class="title" x-text="overview.updates?.packages ?? 0"></p>
               <p class="is-size-7 has-text-grey">packages</p>
-            </div>
-          </div>
-          <div class="column">
-            <div class="box has-text-centered">
-              <p class="heading">CPU</p>
-              <p class="title" x-text="`${overview.resources?.cpuPercent ?? 0}%`"></p>
-            </div>
-          </div>
-          <div class="column">
-            <div class="box has-text-centered">
-              <p class="heading">Memory</p>
-              <p class="title" x-text="`${overview.resources?.memPercent ?? 0}%`"></p>
             </div>
           </div>
         </div>
@@ -215,6 +332,37 @@
             </div>
 
             <div x-show="expanded===h.id" class="mt-3">
+              <!-- Host vitals: CPU, memory (used/free/%), and per-mount disk (used/free/total). -->
+              <template x-if="h.health">
+                <div class="box has-background-light mb-3">
+                  <div class="columns is-mobile is-multiline mb-1">
+                    <div class="column is-narrow">
+                      <p class="heading mb-1">CPU</p>
+                      <p x-text="`${h.health.cpuPercent||0}%`"></p>
+                    </div>
+                    <div class="column is-narrow">
+                      <p class="heading mb-1">Memory</p>
+                      <p x-text="`${humanBytes(h.health.memUsedBytes)} used · ${humanBytes((h.health.memTotalBytes||0)-(h.health.memUsedBytes||0))} free · ${h.health.memPercent||0}%`"></p>
+                    </div>
+                    <div class="column is-narrow" x-show="h.health.uptimeSeconds">
+                      <p class="heading mb-1">Uptime</p>
+                      <p x-text="humanUptime(h.health.uptimeSeconds)"></p>
+                    </div>
+                  </div>
+                  <template x-if="h.health.disks && h.health.disks.length">
+                    <div>
+                      <p class="heading mb-1">Disk</p>
+                      <template x-for="d in h.health.disks" :key="d.mount">
+                        <p class="is-size-7">
+                          <span class="has-text-weight-semibold" x-text="d.mount"></span>
+                          <span class="ml-2"
+                            x-text="`${humanBytes(d.usedBytes)} used · ${humanBytes((d.totalBytes||0)-(d.usedBytes||0))} free · ${humanBytes(d.totalBytes)} total (${pct(d.usedBytes, d.totalBytes)}%)`"></span>
+                        </p>
+                      </template>
+                    </div>
+                  </template>
+                </div>
+              </template>
               <template x-if="!h.modules || h.modules.length===0">
                 <p class="has-text-grey is-size-7">No modules reported (host offline?).</p>
               </template>

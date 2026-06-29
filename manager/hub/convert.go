@@ -69,6 +69,8 @@ func healthFromProto(h *pb.HostHealth) state.Health {
 	return state.Health{
 		CPUPercent:    h.GetCpuPercent(),
 		MemPercent:    h.GetMemPercent(),
+		MemUsedBytes:  h.GetMemUsedBytes(),
+		MemTotalBytes: h.GetMemTotalBytes(),
 		UptimeSeconds: h.GetUptimeSeconds(),
 		Disks:         disks,
 	}

@@ -22,6 +22,8 @@ func gatherHealth() *pb.HostHealth {
 	}
 	if vm, err := mem.VirtualMemory(); err == nil {
 		h.MemPercent = round1(vm.UsedPercent)
+		h.MemUsedBytes = vm.Used
+		h.MemTotalBytes = vm.Total
 	}
 	if up, err := host.Uptime(); err == nil {
 		h.UptimeSeconds = up

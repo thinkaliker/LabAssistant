@@ -7,6 +7,7 @@ function app() {
   let composeCM = null;
   return {
     page: 'overview',
+    navOpen: false, // mobile navbar-burger toggle (collapsed by default on narrow viewports)
     overview: {},
     hosts: [],
     services: { stacks: [] },
@@ -207,6 +208,29 @@ function app() {
     capabilities(m) {
       const c = m.detection && m.detection.capabilities || {};
       return Object.entries(c).map(([k, v]) => `${k}=${v}`).join(' ');
+    },
+    // humanBytes renders a byte count in binary units (KiB/MiB/GiB/...).
+    humanBytes(n) {
+      n = Number(n) || 0;
+      if (n < 1024) return `${n} B`;
+      const units = ['KiB', 'MiB', 'GiB', 'TiB', 'PiB'];
+      let i = -1;
+      do { n /= 1024; i++; } while (n >= 1024 && i < units.length - 1);
+      return `${n.toFixed(1)} ${units[i]}`;
+    },
+    // pct returns used/total as a whole-number percentage (0 when total is unknown).
+    pct(used, total) {
+      total = Number(total) || 0;
+      if (total <= 0) return 0;
+      return Math.round((Number(used) || 0) / total * 100);
+    },
+    // humanUptime renders seconds as a compact "Nd Nh Nm" duration.
+    humanUptime(s) {
+      s = Number(s) || 0;
+      const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+      if (d > 0) return `${d}d ${h}h`;
+      if (h > 0) return `${h}h ${m}m`;
+      return `${m}m`;
     },
     watchJob(jobId) {
       // Start with the modal CLOSED and open it lazily on the first real signal (a log line,

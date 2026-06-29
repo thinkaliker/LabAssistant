@@ -59,6 +59,8 @@ type persisted struct {
 type Health struct {
 	CPUPercent    float64 `json:"cpuPercent"`
 	MemPercent    float64 `json:"memPercent"`
+	MemUsedBytes  uint64  `json:"memUsedBytes"`
+	MemTotalBytes uint64  `json:"memTotalBytes"`
 	UptimeSeconds uint64  `json:"uptimeSeconds"`
 	Disks         []Disk  `json:"disks,omitempty"`
 }

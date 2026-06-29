@@ -1047,6 +1047,8 @@ type HostHealth struct {
 	MemPercent    float64                `protobuf:"fixed64,2,opt,name=mem_percent,json=memPercent,proto3" json:"mem_percent,omitempty"`
 	UptimeSeconds uint64                 `protobuf:"varint,3,opt,name=uptime_seconds,json=uptimeSeconds,proto3" json:"uptime_seconds,omitempty"`
 	Disks         []*DiskUsage           `protobuf:"bytes,4,rep,name=disks,proto3" json:"disks,omitempty"`
+	MemUsedBytes  uint64                 `protobuf:"varint,5,opt,name=mem_used_bytes,json=memUsedBytes,proto3" json:"mem_used_bytes,omitempty"`
+	MemTotalBytes uint64                 `protobuf:"varint,6,opt,name=mem_total_bytes,json=memTotalBytes,proto3" json:"mem_total_bytes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1107,6 +1109,20 @@ func (x *HostHealth) GetDisks() []*DiskUsage {
 		return x.Disks
 	}
 	return nil
+}
+
+func (x *HostHealth) GetMemUsedBytes() uint64 {
+	if x != nil {
+		return x.MemUsedBytes
+	}
+	return 0
+}
+
+func (x *HostHealth) GetMemTotalBytes() uint64 {
+	if x != nil {
+		return x.MemTotalBytes
+	}
+	return 0
 }
 
 type DiskUsage struct {
@@ -1806,7 +1822,7 @@ const file_v1_labassistant_proto_rawDesc = "" +
 	"\x06module\x18\x01 \x01(\tR\x06module\"u\n" +
 	"\tHeartbeat\x123\n" +
 	"\asent_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x06sentAt\x123\n" +
-	"\x06health\x18\x02 \x01(\v2\x1b.labassistant.v1.HostHealthR\x06health\"\xa7\x01\n" +
+	"\x06health\x18\x02 \x01(\v2\x1b.labassistant.v1.HostHealthR\x06health\"\xf5\x01\n" +
 	"\n" +
 	"HostHealth\x12\x1f\n" +
 	"\vcpu_percent\x18\x01 \x01(\x01R\n" +
@@ -1814,7 +1830,9 @@ const file_v1_labassistant_proto_rawDesc = "" +
 	"\vmem_percent\x18\x02 \x01(\x01R\n" +
 	"memPercent\x12%\n" +
 	"\x0euptime_seconds\x18\x03 \x01(\x04R\ruptimeSeconds\x120\n" +
-	"\x05disks\x18\x04 \x03(\v2\x1a.labassistant.v1.DiskUsageR\x05disks\"a\n" +
+	"\x05disks\x18\x04 \x03(\v2\x1a.labassistant.v1.DiskUsageR\x05disks\x12$\n" +
+	"\x0emem_used_bytes\x18\x05 \x01(\x04R\fmemUsedBytes\x12&\n" +
+	"\x0fmem_total_bytes\x18\x06 \x01(\x04R\rmemTotalBytes\"a\n" +
 	"\tDiskUsage\x12\x14\n" +
 	"\x05mount\x18\x01 \x01(\tR\x05mount\x12\x1f\n" +
 	"\vtotal_bytes\x18\x02 \x01(\x04R\n" +
