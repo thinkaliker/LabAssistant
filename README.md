@@ -76,7 +76,9 @@ More detail in [DESIGN.md](DESIGN.md#modules).
 ## Quick deploy (dev VM)
 
 To stand up a manager on a fresh Debian-based VM for development/testing, run the deploy script.
-It clones the repo, installs Go if needed, and builds the manager:
+It clones the repo, installs Go if needed, builds the manager, and installs the
+`labassistant-manager` systemd service (enabled on boot, but not started — you set the dashboard
+password first):
 
 ```bash
 # on the VM
@@ -85,16 +87,24 @@ bash deploy.sh
 ```
 
 Or from an existing checkout: `./scripts/deploy.sh`. Options: `--dir <checkout>`,
-`--branch <branch>`, `--home <data-home>`.
+`--branch <branch>`, `--home <data-home>`, `--no-service` (skip the systemd unit). The service
+runs as the invoking user; if `systemctl` isn't present the deploy skips it and you run the
+manager by hand.
 
 Then follow the printed next steps:
 
 ```bash
 export LABASSISTANT_HOME="$HOME/.labassistant"
 cd ~/LabAssistant
-./bin/manager setpass     # set the dashboard login password
-./bin/manager serve       # dashboard on :8080, associate mTLS on :8443
+./bin/manager setpass         # set the dashboard login password
+./scripts/manage.sh start     # start the service (already enabled on boot)
+./scripts/manage.sh status    # check it; `logs -f` to follow
 ```
+
+`manage.sh` wraps the whole lifecycle: `start`/`stop`/`restart`/`status`/`logs`,
+`enable`/`disable`, `install-service`/`uninstall-service`, and `build`/`update`. It calls
+`sudo systemctl` for you. (Deployed with `--no-service`? Run `./bin/manager serve` directly
+instead — dashboard on :8080, associate mTLS on :8443.)
 
 The deploy script installs a starter config at `$LABASSISTANT_HOME/config/config.toml` (copied
 from [`config.sample.toml`](config.sample.toml); with the default home that's
@@ -112,14 +122,19 @@ create that file yourself — a missing config means all defaults.
 ### Rebuilding after code changes
 
 The dashboard HTML/JS and generated protobuf are embedded into the manager binary, so any change
-to Go code *or* the dashboard requires a rebuild and restart:
+to Go code *or* the dashboard requires a rebuild and restart. With the systemd service installed,
+use `manage.sh`:
 
 ```bash
 cd ~/LabAssistant
-go build -o bin/manager ./cmd/manager
-pkill -f 'bin/manager serve'   # stop the running manager
-./bin/manager serve            # restart (reads $LABASSISTANT_HOME)
+./scripts/manage.sh build manager   # or `build all` for associate + helper too
+./scripts/manage.sh restart         # restart under systemd
+./scripts/manage.sh logs -f         # follow the journal
 ```
+
+To pull, rebuild, and restart in one step: `./scripts/manage.sh update`. Running by hand
+(`--no-service`) instead? `go build -o bin/manager ./cmd/manager`, then
+`pkill -f 'bin/manager serve'` and `./bin/manager serve`.
 
 Open the dashboard at `http://<vm>:8080` (or whichever `http_addr` you set). To enroll a host without the SSH flow, mint a bundle
 with `./bin/manager enroll -name <host>` (see [BUILD.md](BUILD.md)).
