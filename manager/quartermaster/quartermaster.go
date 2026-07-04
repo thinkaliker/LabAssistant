@@ -39,6 +39,13 @@ type Uninstaller interface {
 	Uninstall(ctx context.Context, p InstallParams, emit func(string)) error
 }
 
+// Reviver re-enables and starts an already-installed associate over SSH. Installers that
+// support it implement it; the quartermaster uses it to recover a host whose associate did
+// not come back after a reboot.
+type Reviver interface {
+	Revive(ctx context.Context, p InstallParams, emit func(string)) error
+}
+
 // EnrollRequest describes a host to add.
 type EnrollRequest struct {
 	Name        string
@@ -72,6 +79,14 @@ func (q *Quartermaster) SetStream(connected func(string) bool, streamUninstall f
 // UninstallRequest describes a host to remove. SSH credentials are used only for the
 // offline teardown fallback and are never persisted.
 type UninstallRequest struct {
+	HostID      string
+	SSHUser     string
+	SSHPassword string
+}
+
+// ReviveRequest describes a host whose associate should be re-enabled and started over SSH.
+// SSH credentials are transient and never persisted.
+type ReviveRequest struct {
 	HostID      string
 	SSHUser     string
 	SSHPassword string
@@ -114,6 +129,45 @@ func (q *Quartermaster) Uninstall(req UninstallRequest) (jobID string, err error
 	job := q.jobs.Create(host.ID, "quartermaster", "uninstall", nil)
 	go q.runUninstall(context.Background(), host, req, job.ID)
 	return job.ID, nil
+}
+
+// Revive re-enables and starts the already-installed associate on a host over SSH, to recover
+// it after a reboot left the service disabled or dead. Returns the progress job id.
+func (q *Quartermaster) Revive(req ReviveRequest) (jobID string, err error) {
+	host, ok := q.store.Get(req.HostID)
+	if !ok {
+		return "", fmt.Errorf("host not found")
+	}
+	r, ok := q.installer.(Reviver)
+	if !ok {
+		return "", fmt.Errorf("no SSH revive path available")
+	}
+	job := q.jobs.Create(host.ID, "quartermaster", "revive", nil)
+	go q.runRevive(context.Background(), host, req, r, job.ID)
+	return job.ID, nil
+}
+
+func (q *Quartermaster) runRevive(ctx context.Context, host state.Host, req ReviveRequest, r Reviver, jobID string) {
+	emit := func(msg string) { q.jobs.AddEvent(jobID, jobs.Event{Kind: "log", Message: msg}) }
+
+	if q.connected != nil && q.connected(host.ID) {
+		emit("host is already online; nothing to revive")
+		q.jobs.SetResult(jobID, module.JobSucceeded, nil, "")
+		return
+	}
+	emit("reviving associate on " + host.IP + " over SSH")
+	err := r.Revive(ctx, InstallParams{
+		HostID: host.ID, IP: host.IP, SSHUser: req.SSHUser, SSHPassword: req.SSHPassword,
+	}, emit)
+	if err != nil {
+		emit("error: " + err.Error())
+		q.jobs.SetResult(jobID, module.JobFailed, nil, err.Error())
+		q.aud.Record("host_revive_failed", host.ID, "user", "associate revive failed: "+err.Error(), nil)
+		return
+	}
+	emit("associate started; awaiting connection")
+	q.jobs.SetResult(jobID, module.JobSucceeded, nil, "")
+	q.aud.Record("host_revived", host.ID, "user", "associate revived over SSH", nil)
 }
 
 func (q *Quartermaster) runUninstall(ctx context.Context, host state.Host, req UninstallRequest, jobID string) {

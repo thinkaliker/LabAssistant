@@ -118,6 +118,35 @@ func (d Deps) uninstallHost(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]any{"jobId": jobID})
 }
 
+// reviveRequest carries the SSH credentials used to re-enable and start the associate.
+// They are transient (used only for the SSH bootstrap) and never persisted.
+type reviveRequest struct {
+	SSHUser     string `json:"sshUser"`
+	SSHPassword string `json:"sshPassword"`
+}
+
+// reviveHost re-enables and starts the already-installed associate on a host over SSH, to
+// recover it after a reboot left the service disabled or dead. Returns a progress job id.
+func (d Deps) reviveHost(w http.ResponseWriter, r *http.Request) {
+	var req reviveRequest
+	if r.ContentLength != 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", "invalid JSON")
+			return
+		}
+	}
+	jobID, err := d.QM.Revive(quartermaster.ReviveRequest{
+		HostID:      r.PathValue("id"),
+		SSHUser:     req.SSHUser,
+		SSHPassword: req.SSHPassword,
+	})
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "not_found", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"jobId": jobID})
+}
+
 // deleteHost removes a host and revokes its client certificate.
 func (d Deps) deleteHost(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")

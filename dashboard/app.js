@@ -42,6 +42,7 @@ function app() {
     cfg: { open: false, hostId: '', module: '', fields: [], values: {} },
     act: { open: false, hostId: '', module: '', action: '', destructive: false, fields: [], values: {}, error: '' },
     uninstall: { open: false, hostId: '', hostName: '', online: false, sshUser: '', sshPassword: '' },
+    revive: { open: false, hostId: '', hostName: '', sshUser: '', sshPassword: '' },
 
     async init() {
       try {
@@ -193,6 +194,20 @@ function app() {
       });
       this.uninstall.open = false;
       if (!r.ok) { alert('uninstall failed'); return; }
+      const { jobId } = await r.json();
+      await this.refresh();
+      if (jobId) this.watchJob(jobId);
+    },
+    openRevive(h) {
+      this.revive = { open: true, hostId: h.id, hostName: h.name, sshUser: h.sshUser || '', sshPassword: '' };
+    },
+    async submitRevive() {
+      const body = { sshUser: this.revive.sshUser, sshPassword: this.revive.sshPassword };
+      const r = await fetch(`/api/v1/hosts/${this.revive.hostId}/revive`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      });
+      this.revive.open = false;
+      if (!r.ok) { alert('revive failed'); return; }
       const { jobId } = await r.json();
       await this.refresh();
       if (jobId) this.watchJob(jobId);

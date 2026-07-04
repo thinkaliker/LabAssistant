@@ -37,7 +37,30 @@ func (l LocalInstaller) Install(ctx context.Context, p InstallParams, emit func(
 		return err
 	}
 	emit("wrote bundle to " + bundlePath)
+	return l.spawn(dir, bundlePath, emit)
+}
 
+// Revive re-starts a local associate child that has exited (the dev-mode analogue of
+// re-enabling and starting the systemd service). If the child is still running it is a
+// no-op. Requires an existing install (bundle on disk).
+func (l LocalInstaller) Revive(ctx context.Context, p InstallParams, emit func(string)) error {
+	dir := filepath.Join(l.WorkDir, p.HostID)
+	bundlePath := filepath.Join(dir, "bundle.json")
+	if _, err := os.Stat(bundlePath); err != nil {
+		return fmt.Errorf("associate is not installed locally (no bundle at %s)", bundlePath)
+	}
+	if b, err := os.ReadFile(filepath.Join(dir, "associate.pid")); err == nil {
+		if pid, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil && processAlive(pid) {
+			emit("local associate already running (pid " + strconv.Itoa(pid) + ")")
+			return nil
+		}
+	}
+	emit("local associate not running; restarting")
+	return l.spawn(dir, bundlePath, emit)
+}
+
+// spawn starts the associate as a detached child logging to associate.log and records its pid.
+func (l LocalInstaller) spawn(dir, bundlePath string, emit func(string)) error {
 	args := []string{"--bundle", bundlePath}
 	if l.HelperBin != "" {
 		// Match the SSH installer: run elevated actions through sudo so the manager's sudo
@@ -63,6 +86,15 @@ func (l LocalInstaller) Install(ctx context.Context, p InstallParams, emit func(
 		logFile.Close()
 	}()
 	return nil
+}
+
+// processAlive reports whether a process with the given pid exists (signal 0 probe).
+func processAlive(pid int) bool {
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	return proc.Signal(syscall.Signal(0)) == nil
 }
 
 // Uninstall stops a local associate child and removes its working directory. Used as the

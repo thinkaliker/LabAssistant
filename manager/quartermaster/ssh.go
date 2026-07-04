@@ -143,6 +143,60 @@ func (s SSHInstaller) Uninstall(ctx context.Context, p InstallParams, emit func(
 	return nil
 }
 
+// Revive connects over SSH and makes sure the already-installed associate service is enabled
+// and running: it (re-)enables it on boot and starts it if stopped. Used to recover a host
+// whose associate did not come back after a reboot (service disabled, or crashed and not
+// restarted). It does not upload binaries or a bundle — the install must already exist.
+func (s SSHInstaller) Revive(ctx context.Context, p InstallParams, emit func(string)) error {
+	emit("ssh dial " + p.IP)
+	client, err := s.dial(p)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	if out, _ := sshOutput(client, "[ -x "+installDir+"/associate ] && echo yes || true"); out != "yes" {
+		return fmt.Errorf("associate is not installed at %s (enroll the host first)", installDir)
+	}
+	initSys := detectInit(client)
+	if initSys == "" {
+		return fmt.Errorf("no supported service manager found on host (need systemd or openrc)")
+	}
+	emit("enabling and starting associate service (" + initSys + ")")
+	if err := sshRun(client, reviveScript(initSys)); err != nil {
+		return fmt.Errorf("revive: %w", err)
+	}
+	status, _ := sshOutput(client, statusCmd(initSys))
+	if status != "" {
+		emit("service status: " + status)
+	}
+	return nil
+}
+
+// reviveScript re-enables the associate on boot and starts it if it is not already running.
+func reviveScript(initSys string) string {
+	if initSys == "openrc" {
+		return strings.Join([]string{
+			"set -e",
+			"sudo rc-update add " + unitName + " default 2>/dev/null || true",
+			"sudo rc-service " + unitName + " start 2>/dev/null || sudo rc-service " + unitName + " restart",
+		}, "\n")
+	}
+	return strings.Join([]string{
+		"set -e",
+		"sudo systemctl enable " + unitName + " 2>/dev/null || true",
+		"sudo systemctl start " + unitName,
+	}, "\n")
+}
+
+// statusCmd returns a command that prints a one-line liveness summary for the service.
+func statusCmd(initSys string) string {
+	if initSys == "openrc" {
+		return "sudo rc-service " + unitName + " status 2>/dev/null | head -1 || true"
+	}
+	return "sudo systemctl is-active " + unitName + " 2>/dev/null || true"
+}
+
 // resolveBinary substitutes {os}/{arch} placeholders in a binary path template.
 func resolveBinary(tmpl, goos, goarch string) string {
 	return strings.NewReplacer("{os}", goos, "{arch}", goarch).Replace(tmpl)
