@@ -5,325 +5,26 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>LabAssistant</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="stylesheet" href="/stylesheet.css">
   <link rel="stylesheet" href="/vendor/bulma-1.0.4.min.css">
   <link rel="stylesheet" href="/vendor/codemirror/codemirror.min.css">
   <link rel="stylesheet" href="/vendor/codemirror/lint.min.css">
   <script defer src="/vendor/alpine-3.14.9.min.js"></script>
-  <style>
-    [x-cloak] {
-      display: none !important
-    }
-
-    /* Space out the confirm/cancel buttons in every modal footer. */
-    .modal-card-foot { gap: 0.75rem; }
-
-    /* Prevent a flash of unstyled modal markup before Bulma's stylesheet loads.
-       Bulma normally hides inactive modals; replicate that inline so it applies
-       on first paint. */
-    .modal:not(.is-active) {
-      display: none !important;
-    }
-
-    /* Widen the main content area: use nearly the full viewport with a small side gutter
-       instead of Bulma's narrow centered breakpoint-based max-widths. */
-    .container {
-      max-width: none;
-      width: 100%;
-      padding-left: 1.5rem;
-      padding-right: 1.5rem;
-    }
-
-    /* Compose editor: a half-width panel that fills the viewport height (sticky under the
-       navbar), with the CodeMirror area flexing to take all the leftover space. */
-    /* Widen the main content: near-edge margins instead of Bulma's centered container. */
-    .app-section {
-      padding-left: 0.75rem;
-      padding-right: 0.75rem;
-    }
-    .app-container.is-fluid {
-      padding-left: 0;
-      padding-right: 0;
-    }
-
-    .compose-panel {
-      position: sticky;
-      top: 5rem;
-      /* Use dynamic viewport height and clip overflow so the panel never pushes the page
-         past the bottom of the screen (its own header used to spill a bit below). */
-      height: calc(100dvh - 6rem);
-      max-height: calc(100dvh - 6rem);
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-    }
-    .compose-editor-wrap {
-      flex: 1 1 auto;
-      min-height: 0;
-    }
-    .compose-panel .CodeMirror {
-      height: 100%;
-    }
-
-    /* Below desktop width (large phones + tablets in portrait), drop the stack action buttons
-       onto their own second row and stack the per-service rows, instead of squishing them.
-       Desktop (>=1024px) keeps the single-row / full-table layout. */
-    @media screen and (max-width: 1023px) {
-      .svc-stack-head {
-        flex-wrap: wrap;
-      }
-      .svc-stack-head > .level-right {
-        width: 100%;
-        margin-top: 0.5rem;
-      }
-      .svc-stack-head > .level-right .buttons {
-        justify-content: flex-start;
-      }
-
-      /* The per-service table has 5 columns (status, name, image, update, actions) that squish
-         on a narrow screen. Collapse each row into a stacked card: status tag + service name on
-         the first line, then image, update badge, and the action buttons each on their own row. */
-      .svc-table tbody,
-      .svc-table tr,
-      .svc-table td {
-        display: block;
-      }
-      .svc-table tr {
-        padding: 0.5rem 0;
-        border-bottom: 1px solid var(--bulma-border-weak);
-      }
-      .svc-table tr:last-child {
-        border-bottom: 0;
-      }
-      .svc-table td {
-        border: 0;
-        padding: 0.15rem 0;
-      }
-      .svc-table td:nth-child(1),
-      .svc-table td:nth-child(2) {
-        display: inline-block;
-        vertical-align: middle;
-      }
-      .svc-table td:nth-child(2) {
-        margin-left: 0.5rem;
-      }
-      .svc-table td.has-text-right {
-        text-align: left !important;
-      }
-      .svc-table .buttons.is-right {
-        justify-content: flex-start;
-      }
-    }
-
-    .CodeMirror {
-      height: 60vh;
-      border: 1px solid var(--bulma-border);
-      border-radius: 4px;
-      font-size: 0.85rem;
-      /* Theme-aware editor colors (light defaults ~ CodeMirror's default theme; the dark-mode
-         blocks below re-point these vars). */
-      background: var(--cm-bg, #fff);
-      color: var(--cm-text, #000);
-    }
-
-    .CodeMirror-gutters {
-      background: var(--cm-gutter-bg, #f7f7f7);
-      border-right: 1px solid var(--bulma-border-weak);
-    }
-
-    .CodeMirror-linenumber {
-      color: var(--cm-gutter-text, #999);
-    }
-
-    .CodeMirror-cursor {
-      border-left: 1px solid var(--cm-text, #000);
-    }
-
-    .CodeMirror-selected {
-      background: var(--cm-selection, #d7d4f0) !important;
-    }
-
-    .CodeMirror-activeline-background {
-      background: var(--cm-active, transparent);
-    }
-
-    .cm-s-default .cm-comment {
-      color: var(--cm-comment, #a50);
-    }
-
-    .cm-s-default .cm-atom {
-      color: var(--cm-key, #219);
-    }
-
-    .cm-s-default .cm-string {
-      color: var(--cm-string, #a11);
-    }
-
-    .cm-s-default .cm-number {
-      color: var(--cm-number, #164);
-    }
-
-    .cm-s-default .cm-keyword {
-      color: var(--cm-keyword, #708);
-    }
-
-    .cm-s-default .cm-meta {
-      color: var(--cm-meta, #555);
-    }
-
-    /* Job output: a panel docked to the lower third of the viewport instead of a modal. */
-    .job-panel {
-      position: fixed;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      height: 33vh;
-      min-height: 11rem;
-      z-index: 30;
-      background: var(--bulma-scheme-main);
-      border-top: 1px solid var(--bulma-border);
-      box-shadow: 0 -2px 12px rgba(10, 10, 10, 0.12);
-      display: flex;
-      flex-direction: column;
-    }
-
-    .job-panel-resize {
-      flex: 0 0 auto;
-      height: 8px;
-      cursor: ns-resize;
-      background: var(--bulma-scheme-main-ter);
-      border-bottom: 1px solid var(--bulma-border-weak);
-      touch-action: none;
-    }
-
-    .job-panel-resize:hover {
-      background: var(--bulma-border);
-    }
-
-    .job-panel-head {
-      display: flex;
-      align-items: center;
-      padding: 0.6rem 1rem;
-      border-bottom: 1px solid var(--bulma-border-weak);
-    }
-
-    .job-panel-head .delete {
-      margin-left: auto;
-    }
-
-    /* Queue indicator: a scrollable row of job chips between the title and the close button. */
-    .job-queue {
-      display: flex;
-      align-items: center;
-      overflow-x: auto;
-      max-width: 60%;
-    }
-
-    .job-queue .tag {
-      max-width: 12rem;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    /* The chip whose log is currently on screen gets a ring so it stands out from the others. */
-    .job-queue .tag.is-current {
-      box-shadow: 0 0 0 2px var(--bulma-text-strong);
-    }
-
-    .job-panel-body {
-      flex: 1 1 auto;
-      min-height: 0;
-      display: flex;
-      flex-direction: column;
-      padding: 0.75rem 1rem 1rem;
-    }
-
-    .job-panel-log {
-      flex: 1 1 auto;
-      min-height: 0;
-      overflow: auto;
-      margin: 0;
-    }
-
-    /* Dark-mode support. The dashboard leans on Bulma's "light" palette (is-light tags/heroes/
-       buttons and has-background-light panels), which all derive from the --bulma-light-* HSL
-       components. Bulma keeps those pale (~96% lightness) even under a dark scheme, so they render
-       as white patches. Re-point them at the theme-aware scheme tokens so light surfaces become
-       subtle dark elevated surfaces with light text. */
-    @media (prefers-color-scheme: dark) {
-      :root:not([data-theme="light"]) {
-        --bulma-light-h: var(--bulma-scheme-h);
-        --bulma-light-s: var(--bulma-scheme-s);
-        --bulma-light-l: var(--bulma-scheme-main-ter-l);
-        --bulma-light-invert-l: var(--bulma-text-strong-l);
-        --cm-bg: #1b1d23;
-        --cm-text: #d4d7dd;
-        --cm-gutter-bg: #21232b;
-        --cm-gutter-text: #5c6370;
-        --cm-selection: #2c3140;
-        --cm-active: rgba(255, 255, 255, 0.04);
-        --cm-comment: #7f848e;
-        --cm-key: #61afef;
-        --cm-string: #98c379;
-        --cm-number: #d19a66;
-        --cm-keyword: #c678dd;
-        --cm-meta: #56b6c2;
-      }
-
-      /* "is-light" buttons (e.g. is-link is-light) take their background lightness from the generic
-         --bulma-light-l we darken above, leaving them at ~13% — a dim chip indistinguishable from the
-         ~9% page — with dark *-light-invert text (dark-on-dark). Instead render them as bright solid
-         colored buttons in dark mode: a vivid background at the color's full lightness + light text. */
-      :root:not([data-theme="light"]) .button.is-light {
-        --bulma-button-background-l: 48%;
-        --bulma-button-color-l: var(--bulma-text-strong-l);
-      }
-      /* "is-light" tags (e.g. the manager-dial / update badges) hit the same dark-on-dark trap
-         as the buttons above. Render them as bright solid colored chips with light text too. */
-      :root:not([data-theme="light"]) .tag.is-light {
-        --bulma-tag-background-l: 48%;
-        --bulma-tag-color-l: var(--bulma-text-strong-l);
-      }
-    }
-
-    [data-theme="dark"] {
-      --bulma-light-h: var(--bulma-scheme-h);
-      --bulma-light-s: var(--bulma-scheme-s);
-      --bulma-light-l: var(--bulma-scheme-main-ter-l);
-      --bulma-light-invert-l: var(--bulma-text-strong-l);
-      --cm-bg: #1b1d23;
-      --cm-text: #d4d7dd;
-      --cm-gutter-bg: #21232b;
-      --cm-gutter-text: #5c6370;
-      --cm-selection: #2c3140;
-      --cm-active: rgba(255, 255, 255, 0.04);
-      --cm-comment: #7f848e;
-      --cm-key: #61afef;
-      --cm-string: #98c379;
-      --cm-number: #d19a66;
-      --cm-keyword: #c678dd;
-      --cm-meta: #56b6c2;
-    }
-
-    [data-theme="dark"] .button.is-light {
-      --bulma-button-background-l: 48%;
-      --bulma-button-color-l: var(--bulma-text-strong-l);
-    }
-
-    [data-theme="dark"] .tag.is-light {
-      --bulma-tag-background-l: 48%;
-      --bulma-tag-color-l: var(--bulma-text-strong-l);
-    }
-  </style>
 </head>
 
 <body x-data="app()" x-init="init()" :class="!needsLogin && 'has-navbar-fixed-top'">
 
   <nav class="navbar is-dark is-fixed-top" role="navigation" x-show="ready && !needsLogin" x-cloak>
     <div class="navbar-brand">
-      <span class="navbar-item has-text-weight-bold is-size-5">LabAssistant</span>
-      <a role="button" class="navbar-burger" :class="navOpen && 'is-active'" aria-label="menu"
-        :aria-expanded="navOpen" @click="navOpen=!navOpen">
+      <span class="navbar-item has-text-weight-bold is-size-5" :title="statusTitle()">
+        <svg viewBox="0 0 24 24" width="22" height="22" style="margin-right:0.5rem;vertical-align:-0.25rem" aria-hidden="true">
+          <path d="M9.5 3h5M9.5 3v6L4 19h16L14.5 9V3" fill="none" stroke="currentColor"
+                stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
+          <path d="M9.5 9H14.5L20 19H4z" :fill="statusColor()"/>
+        </svg>LabAssistant</span>
+      <a role="button" class="navbar-burger" :class="navOpen && 'is-active'" aria-label="menu" :aria-expanded="navOpen"
+        @click="navOpen=!navOpen">
         <span aria-hidden="true"></span>
         <span aria-hidden="true"></span>
         <span aria-hidden="true"></span>
@@ -359,8 +60,7 @@
 
   <!-- Stale-manager banner: shown when the manager process restarted underneath this page
        (detected by a change in its instance marker), so the session/state is no longer valid. -->
-  <div x-show="stale" x-cloak
-       style="position:fixed; top:0; left:0; right:0; z-index:40;">
+  <div x-show="stale" x-cloak style="position:fixed; top:0; left:0; right:0; z-index:40;">
     <div class="notification is-warning is-radiusless mb-0 py-3">
       <div class="container is-flex is-align-items-center is-justify-content-space-between">
         <span><strong>The manager restarted.</strong> This page is out of date — sign in again to reconnect.</span>
@@ -370,7 +70,7 @@
   </div>
 
   <section class="section app-section" x-show="ready && !needsLogin" x-cloak
-           :style="jobPanelOpen ? ('padding-bottom:' + ((jobPanelHeight || Math.round(window.innerHeight * 0.33)) + 24) + 'px') : ''">
+    :style="jobPanelOpen ? ('padding-bottom:' + ((jobPanelHeight || Math.round(window.innerHeight * 0.33)) + 24) + 'px') : ''">
     <div class="container is-fluid app-container">
 
       <!-- Pending approvals (visible on every page) -->
@@ -454,12 +154,16 @@
       <!-- Hosts -->
       <div x-show="page==='hosts'">
         <div class="level is-mobile">
-          <div class="level-left"><h1 class="title">Hosts</h1></div>
+          <div class="level-left">
+            <h1 class="title">Hosts</h1>
+          </div>
           <div class="level-right" x-show="hosts.length>1">
             <div class="level-item field has-addons mb-0">
               <p class="control"><span class="button is-small is-static">Sort</span></p>
-              <p class="control"><button class="button is-small" :class="hostSort==='name' && 'is-info is-selected'" @click="hostSort='name'">Name</button></p>
-              <p class="control"><button class="button is-small" :class="hostSort==='ip' && 'is-info is-selected'" @click="hostSort='ip'">IP</button></p>
+              <p class="control"><button class="button is-small" :class="hostSort==='name' && 'is-info is-selected'"
+                  @click="hostSort='name'">Name</button></p>
+              <p class="control"><button class="button is-small" :class="hostSort==='ip' && 'is-info is-selected'"
+                  @click="hostSort='ip'">IP</button></p>
             </div>
           </div>
         </div>
@@ -476,9 +180,11 @@
                 </div>
                 <div class="level-item has-text-weight-semibold" x-text="h.name"></div>
                 <div class="level-item is-size-7 has-text-grey" x-text="h.ip"></div>
-                <div class="level-item" x-show="h.connMode==='manager_dial'"><span class="tag is-info" title="Manager dials this host">manager-dial</span></div>
+                <div class="level-item" x-show="h.connMode==='manager_dial'"><span class="tag is-info"
+                    title="Manager dials this host">manager-dial</span></div>
                 <div class="level-item" x-show="hostUpdates(h)>0"><span class="tag is-warning"
-                    :title="hostUpdates(h)+' update(s) available'" x-text="hostUpdates(h)+(hostUpdates(h)===1?' update':' updates')"></span></div>
+                    :title="hostUpdates(h)+' update(s) available'"
+                    x-text="hostUpdates(h)+(hostUpdates(h)===1?' update':' updates')"></span></div>
               </div>
               <div class="level-right">
                 <div class="level-item is-size-7 has-text-grey"
@@ -498,7 +204,9 @@
                     </div>
                     <div class="column is-narrow">
                       <p class="heading mb-1">Memory</p>
-                      <p x-text="`${humanBytes(h.health.memUsedBytes)} used · ${humanBytes((h.health.memTotalBytes||0)-(h.health.memUsedBytes||0))} free · ${h.health.memPercent||0}%`"></p>
+                      <p
+                        x-text="`${humanBytes(h.health.memUsedBytes)} used · ${humanBytes((h.health.memTotalBytes||0)-(h.health.memUsedBytes||0))} free · ${h.health.memPercent||0}%`">
+                      </p>
                     </div>
                     <div class="column is-narrow" x-show="h.health.uptimeSeconds">
                       <p class="heading mb-1">Uptime</p>
@@ -554,12 +262,16 @@
       <!-- Services -->
       <div x-show="page==='services'">
         <div class="level is-mobile">
-          <div class="level-left"><h1 class="title">Services</h1></div>
+          <div class="level-left">
+            <h1 class="title">Services</h1>
+          </div>
           <div class="level-right" x-show="services.stacks.length>1">
             <div class="level-item field has-addons mb-0">
               <p class="control"><span class="button is-small is-static">Sort by host</span></p>
-              <p class="control"><button class="button is-small" :class="hostSort==='name' && 'is-info is-selected'" @click="hostSort='name'">Name</button></p>
-              <p class="control"><button class="button is-small" :class="hostSort==='ip' && 'is-info is-selected'" @click="hostSort='ip'">IP</button></p>
+              <p class="control"><button class="button is-small" :class="hostSort==='name' && 'is-info is-selected'"
+                  @click="hostSort='name'">Name</button></p>
+              <p class="control"><button class="button is-small" :class="hostSort==='ip' && 'is-info is-selected'"
+                  @click="hostSort='ip'">IP</button></p>
             </div>
           </div>
         </div>
@@ -593,7 +305,8 @@
                     <template x-for="sv in st.services" :key="sv.name">
                       <tr>
                         <td><span class="tag" :class="svcClass(sv)"
-                            :title="sv.status + (sv.health ? ' ('+sv.health+')' : '')" x-text="svcLabel(sv)"></span></td>
+                            :title="sv.status + (sv.health ? ' ('+sv.health+')' : '')" x-text="svcLabel(sv)"></span>
+                        </td>
                         <td class="has-text-weight-semibold" x-text="sv.name"></td>
                         <td class="is-size-7 has-text-grey" x-text="sv.image"></td>
                         <td><span class="tag is-warning" x-show="sv.updateAvailable">update</span></td>
@@ -655,10 +368,13 @@
           <div class="level-right">
             <div class="level-item field has-addons mb-0" x-show="updates.os.length>1 || updates.containers.length>1">
               <p class="control"><span class="button is-small is-static">Sort by host</span></p>
-              <p class="control"><button class="button is-small" :class="hostSort==='name' && 'is-info is-selected'" @click="hostSort='name'">Name</button></p>
-              <p class="control"><button class="button is-small" :class="hostSort==='ip' && 'is-info is-selected'" @click="hostSort='ip'">IP</button></p>
+              <p class="control"><button class="button is-small" :class="hostSort==='name' && 'is-info is-selected'"
+                  @click="hostSort='name'">Name</button></p>
+              <p class="control"><button class="button is-small" :class="hostSort==='ip' && 'is-info is-selected'"
+                  @click="hostSort='ip'">IP</button></p>
             </div>
-            <div class="level-item"><button class="button is-info" @click="checkAllUpdates()">Check all hosts</button></div>
+            <div class="level-item"><button class="button is-info" @click="checkAllUpdates()">Check all hosts</button>
+            </div>
           </div>
         </div>
 
@@ -679,8 +395,8 @@
               </div>
               <div class="level-right">
                 <div class="level-item buttons are-small">
-                  <button class="button" :disabled="!hostOnline(hu.hostId)"
-                    @click="checkHost(hu.hostId)">check for updates</button>
+                  <button class="button" :disabled="!hostOnline(hu.hostId)" @click="checkHost(hu.hostId)">check for
+                    updates</button>
                   <button class="button is-warning" :disabled="!hu.os || hu.os.count===0 || !hostOnline(hu.hostId)"
                     @click="runAction(hu.hostId,'qup','apply')">apply updates</button>
                 </div>
@@ -710,43 +426,45 @@
 
             <div class="level is-mobile mt-4 mb-2">
               <div class="level-left">
-                <div class="level-item"><h3 class="subtitle is-6 mb-0">Container images</h3></div>
+                <div class="level-item">
+                  <h3 class="subtitle is-6 mb-0">Container images</h3>
+                </div>
               </div>
               <div class="level-right" x-show="hu.containers.length>0">
-                <div class="level-item"><button class="button is-warning is-small"
-                    :disabled="!hostOnline(hu.hostId)" @click="updateAllHost(hu)">update all</button></div>
+                <div class="level-item"><button class="button is-warning is-small" :disabled="!hostOnline(hu.hostId)"
+                    @click="updateAllHost(hu)">update all</button></div>
               </div>
             </div>
             <template x-if="hu.containers.length===0">
               <p class="is-size-7 has-text-grey">No container image updates.</p>
             </template>
             <div style="overflow-x:auto" x-show="hu.containers.length>0">
-            <table class="table is-fullwidth is-narrow is-size-7 mb-0">
-              <thead>
-                <tr>
-                  <th>Stack</th>
-                  <th>Service</th>
-                  <th>Image</th>
-                  <th>Change</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                <template x-for="c in hu.containers" :key="c.stack+'/'+c.service">
+              <table class="table is-fullwidth is-narrow is-size-7 mb-0">
+                <thead>
                   <tr>
-                    <td x-text="c.stack"></td>
-                    <td class="has-text-weight-semibold" x-text="c.service"></td>
-                    <td class="has-text-grey" x-text="c.image"></td>
-                    <td class="is-family-monospace">
-                      <span x-show="c.current" x-text="shortDigest(c.current)+' → '+shortDigest(c.latest)"></span>
-                      <span class="has-text-grey" x-show="!c.current">—</span>
-                    </td>
-                    <td class="has-text-right"><button class="button is-small is-warning" :disabled="!hostOnline(c.hostId)"
-                        @click="updateService(c)">update</button></td>
+                    <th>Stack</th>
+                    <th>Service</th>
+                    <th>Image</th>
+                    <th>Change</th>
+                    <th></th>
                   </tr>
-                </template>
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  <template x-for="c in hu.containers" :key="c.stack+'/'+c.service">
+                    <tr>
+                      <td x-text="c.stack"></td>
+                      <td class="has-text-weight-semibold" x-text="c.service"></td>
+                      <td class="has-text-grey" x-text="c.image"></td>
+                      <td class="is-family-monospace">
+                        <span x-show="c.current" x-text="shortDigest(c.current)+' → '+shortDigest(c.latest)"></span>
+                        <span class="has-text-grey" x-show="!c.current">—</span>
+                      </td>
+                      <td class="has-text-right"><button class="button is-small is-warning"
+                          :disabled="!hostOnline(c.hostId)" @click="updateService(c)">update</button></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
             </div>
           </div>
         </template>
@@ -833,10 +551,10 @@
           </tbody>
         </table>
         <nav class="mt-3" style="display:flex;align-items:center;justify-content:space-between"
-             x-show="auditPages() > 1">
+          x-show="auditPages() > 1">
           <button class="button is-small" :disabled="auditPage<=1" @click="auditPage--">Previous</button>
           <span class="is-size-7 has-text-grey"
-                x-text="`Page ${auditPage} of ${auditPages()} · ${audit.length} entries`"></span>
+            x-text="`Page ${auditPage} of ${auditPages()} · ${audit.length} entries`"></span>
           <button class="button is-small" :disabled="auditPage>=auditPages()" @click="auditPage++">Next</button>
         </nav>
       </div>
@@ -871,9 +589,10 @@
           <h3 class="title is-6 mb-2">Update manager</h3>
           <p class="is-size-7 has-text-grey mb-3">Pull the latest code, rebuild, and restart the manager
             on this control host. The manager will drop offline briefly, so
-            <strong>you will need to sign in again</strong> once it is back.</p>
-          <button class="button is-warning" :class="managerUpdating && 'is-loading'"
-            :disabled="managerUpdating" @click="updateManager()">Update &amp; restart manager</button>
+            <strong>you will need to sign in again</strong> once it is back.
+          </p>
+          <button class="button is-warning" :class="managerUpdating && 'is-loading'" :disabled="managerUpdating"
+            @click="updateManager()">Update &amp; restart manager</button>
           <p class="help is-danger mt-2" x-show="managerUpdateError" x-text="managerUpdateError"></p>
           <p class="help is-info mt-2" x-show="managerUpdating">Updating — the manager is rebuilding and will
             restart. You will be asked to sign in again.</p>
@@ -931,6 +650,13 @@
         <div class="columns is-centered">
           <div class="column is-5-tablet is-4-desktop is-3-widescreen">
             <div class="box">
+              <p class="has-text-centered mb-2">
+                <svg viewBox="0 0 24 24" width="56" height="56" aria-hidden="true">
+                  <path d="M9.5 3h5M9.5 3v6L4 19h16L14.5 9V3" fill="none" stroke="#0f9d8f"
+                        stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
+                  <path d="M9.5 9H14.5L20 19H4z" fill="#00d1b2"/>
+                </svg>
+              </p>
               <h1 class="title is-4 has-text-centered mb-1">LabAssistant</h1>
               <div class="field">
                 <label class="label">Username</label>
@@ -1062,31 +788,46 @@
           </div>
           <div class="columns is-mobile is-gapless" x-show="cronFields">
             <div class="column mr-2"><input class="input" x-model="cronParts.m" @input="syncCron()" placeholder="*">
-              <p class="help">min 0-59</p></div>
+              <p class="help">min 0-59</p>
+            </div>
             <div class="column mr-2"><input class="input" x-model="cronParts.h" @input="syncCron()" placeholder="*">
-              <p class="help">hour 0-23</p></div>
+              <p class="help">hour 0-23</p>
+            </div>
             <div class="column mr-2"><input class="input" x-model="cronParts.dom" @input="syncCron()" placeholder="*">
-              <p class="help">day 1-31</p></div>
+              <p class="help">day 1-31</p>
+            </div>
             <div class="column mr-2"><input class="input" x-model="cronParts.mon" @input="syncCron()" placeholder="*">
-              <p class="help">month 1-12</p></div>
+              <p class="help">month 1-12</p>
+            </div>
             <div class="column"><input class="input" x-model="cronParts.dow" @input="syncCron()" placeholder="*">
-              <p class="help">dow 0-6</p></div>
+              <p class="help">dow 0-6</p>
+            </div>
           </div>
         </div>
         <div class="columns">
           <div class="column field"><label class="label">Module</label>
-            <div class="control"><div class="select is-fullwidth">
-              <select x-model="newTask.module" @change="newTask.action=''">
-                <option value="" disabled>select module</option>
-                <template x-for="m in taskModuleNames()" :key="m"><option :value="m" x-text="m"></option></template>
-              </select></div></div>
+            <div class="control">
+              <div class="select is-fullwidth">
+                <select x-model="newTask.module" @change="newTask.action=''">
+                  <option value="" disabled>select module</option>
+                  <template x-for="m in taskModuleNames()" :key="m">
+                    <option :value="m" x-text="m"></option>
+                  </template>
+                </select>
+              </div>
+            </div>
           </div>
           <div class="column field"><label class="label">Action</label>
-            <div class="control"><div class="select is-fullwidth">
-              <select x-model="newTask.action" :disabled="!newTask.module">
-                <option value="" disabled>select action</option>
-                <template x-for="a in taskModuleActions()" :key="a"><option :value="a" x-text="a"></option></template>
-              </select></div></div>
+            <div class="control">
+              <div class="select is-fullwidth">
+                <select x-model="newTask.action" :disabled="!newTask.module">
+                  <option value="" disabled>select action</option>
+                  <template x-for="a in taskModuleActions()" :key="a">
+                    <option :value="a" x-text="a"></option>
+                  </template>
+                </select>
+              </div>
+            </div>
           </div>
         </div>
         <div class="field">
@@ -1140,7 +881,7 @@
   <!-- Job output: a panel docked to the lower third of the viewport (not a modal, so the page
        behind stays usable). Drag the top edge to resize; output autoscrolls to the latest line. -->
   <div class="job-panel" x-ref="jobPanel" x-show="jobPanelOpen" x-cloak x-transition.opacity
-       :style="jobPanelHeight ? ('height:' + jobPanelHeight + 'px') : ''">
+    :style="jobPanelHeight ? ('height:' + jobPanelHeight + 'px') : ''">
     <div class="job-panel-resize" @pointerdown="startJobResize($event)" title="Drag to resize"></div>
     <header class="job-panel-head">
       <span class="has-text-weight-semibold">Job</span>
@@ -1171,14 +912,16 @@
         <p class="modal-card-title">Add Host</p>
       </header>
       <section class="modal-card-body">
-        <p class="has-text-grey is-size-7 mb-3">Leave SSH blank to install on this manager box itself; fill it in to install on a remote host over SSH.</p>
+        <p class="has-text-grey is-size-7 mb-3">Leave SSH blank to install on this manager box itself; fill it in to
+          install on a remote host over SSH.</p>
         <div class="field">
           <label class="label">Name</label>
           <div class="control"><input class="input" x-model="newHost.name" placeholder="media-server"></div>
         </div>
         <div class="field">
           <label class="label">IP / Address</label>
-          <div class="control"><input class="input" x-model="newHost.ip" placeholder="10.0.0.5 (or localhost for this box)"></div>
+          <div class="control"><input class="input" x-model="newHost.ip"
+              placeholder="10.0.0.5 (or localhost for this box)"></div>
         </div>
         <div class="field">
           <label class="label">SSH User <span class="has-text-grey is-size-7">(blank = local install)</span></label>
@@ -1192,14 +935,16 @@
         <div class="field mt-4">
           <label class="label">Connection</label>
           <div class="select is-fullwidth"><select x-model="newHost.connMode">
-            <option value="manager_dial">Manager connects to associate (default)</option>
-            <option value="dial_home">Associate connects to manager</option>
-          </select></div>
-          <p class="help" x-show="newHost.connMode==='manager_dial'">The associate listens and the manager connects to it. Allow inbound TCP on the host firewall from the manager.</p>
+              <option value="manager_dial">Manager connects to associate (default)</option>
+              <option value="dial_home">Associate connects to manager</option>
+            </select></div>
+          <p class="help" x-show="newHost.connMode==='manager_dial'">The associate listens and the manager connects to
+            it. Allow inbound TCP on the host firewall from the manager.</p>
         </div>
         <div class="field" x-show="newHost.connMode==='manager_dial'">
           <label class="label">Listen Port <span class="has-text-grey is-size-7">(blank = default 8444)</span></label>
-          <div class="control"><input class="input" type="number" x-model.number="newHost.connPort" placeholder="8444"></div>
+          <div class="control"><input class="input" type="number" x-model.number="newHost.connPort" placeholder="8444">
+          </div>
         </div>
       </section>
       <footer class="modal-card-foot">

@@ -1,0 +1,338 @@
+[x-cloak] {
+    display: none !important
+}
+
+/* Space out the confirm/cancel buttons in every modal footer. */
+.modal-card-foot {
+    gap: 0.75rem;
+}
+
+/* Prevent a flash of unstyled modal markup before Bulma's stylesheet loads.
+    Bulma normally hides inactive modals; replicate that inline so it applies
+    on first paint. */
+.modal:not(.is-active) {
+    display: none !important;
+}
+
+/* Widen the main content area: use nearly the full viewport with a small side gutter
+    instead of Bulma's narrow centered breakpoint-based max-widths. */
+.container {
+    max-width: none;
+    width: 100%;
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+}
+
+/* Compose editor: a half-width panel that fills the viewport height (sticky under the
+    navbar), with the CodeMirror area flexing to take all the leftover space. */
+/* Widen the main content: near-edge margins instead of Bulma's centered container. */
+.app-section {
+    padding-left: 2.0rem;
+    padding-right: 2.0rem;
+}
+
+.app-container.is-fluid {
+    padding-left: 0;
+    padding-right: 0;
+}
+
+/* Pin the compose editor to the right half of the viewport. Fixed (not sticky) so it never
+    adds to document height — sticky rendered it at its natural spot below the nav and spilled
+    past the bottom until you scrolled. Anchoring top+bottom makes it always fit the screen. */
+.compose-panel {
+    position: fixed;
+    top: 5rem;
+    bottom: 1rem;
+    right: 0.75rem;
+    width: calc(50vw - 1.1rem);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.compose-editor-wrap {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.compose-panel .CodeMirror {
+    height: 100% !important;
+}
+
+/* Fallback when CodeMirror isn't available: the raw textarea fills the wrap too. */
+.compose-editor-wrap>textarea {
+    width: 100%;
+    height: 100%;
+    resize: none;
+}
+
+/* On narrow screens the columns stack full-width, so drop the fixed overlay and let the
+    editor flow normally beneath the stack list. */
+@media screen and (max-width: 768px) {
+    .compose-panel {
+        position: static;
+        width: auto;
+        height: 70vh;
+    }
+}
+
+/* Below desktop width (large phones + tablets in portrait), drop the stack action buttons
+    onto their own second row and stack the per-service rows, instead of squishing them.
+    Desktop (>=1024px) keeps the single-row / full-table layout. */
+@media screen and (max-width: 1023px) {
+    .svc-stack-head {
+        flex-wrap: wrap;
+    }
+
+    .svc-stack-head>.level-right {
+        width: 100%;
+        margin-top: 0.5rem;
+    }
+
+    .svc-stack-head>.level-right .buttons {
+        justify-content: flex-start;
+    }
+
+    /* The per-service table has 5 columns (status, name, image, update, actions) that squish
+        on a narrow screen. Collapse each row into a stacked card: status tag + service name on
+        the first line, then image, update badge, and the action buttons each on their own row. */
+    .svc-table tbody,
+    .svc-table tr,
+    .svc-table td {
+        display: block;
+    }
+
+    .svc-table tr {
+        padding: 0.5rem 0;
+        border-bottom: 1px solid var(--bulma-border-weak);
+    }
+
+    .svc-table tr:last-child {
+        border-bottom: 0;
+    }
+
+    .svc-table td {
+        border: 0;
+        padding: 0.15rem 0;
+    }
+
+    .svc-table td:nth-child(1),
+    .svc-table td:nth-child(2) {
+        display: inline-block;
+        vertical-align: middle;
+    }
+
+    .svc-table td:nth-child(2) {
+        margin-left: 0.5rem;
+    }
+
+    .svc-table td.has-text-right {
+        text-align: left !important;
+    }
+
+    .svc-table .buttons.is-right {
+        justify-content: flex-start;
+    }
+}
+
+.CodeMirror {
+    height: 60vh;
+    border: 1px solid var(--bulma-border);
+    border-radius: 4px;
+    font-size: 0.85rem;
+    /* Theme-aware editor colors (light defaults ~ CodeMirror's default theme; the dark-mode
+        blocks below re-point these vars). */
+    background: var(--cm-bg, #fff);
+    color: var(--cm-text, #000);
+}
+
+.CodeMirror-gutters {
+    background: var(--cm-gutter-bg, #f7f7f7);
+    border-right: 1px solid var(--bulma-border-weak);
+}
+
+.CodeMirror-linenumber {
+    color: var(--cm-gutter-text, #999);
+}
+
+.CodeMirror-cursor {
+    border-left: 1px solid var(--cm-text, #000);
+}
+
+.CodeMirror-selected {
+    background: var(--cm-selection, #d7d4f0) !important;
+}
+
+.CodeMirror-activeline-background {
+    background: var(--cm-active, transparent);
+}
+
+.cm-s-default .cm-comment {
+    color: var(--cm-comment, #a50);
+}
+
+.cm-s-default .cm-atom {
+    color: var(--cm-key, #219);
+}
+
+.cm-s-default .cm-string {
+    color: var(--cm-string, #a11);
+}
+
+.cm-s-default .cm-number {
+    color: var(--cm-number, #164);
+}
+
+.cm-s-default .cm-keyword {
+    color: var(--cm-keyword, #708);
+}
+
+.cm-s-default .cm-meta {
+    color: var(--cm-meta, #555);
+}
+
+/* Job output: a panel docked to the lower third of the viewport instead of a modal. */
+.job-panel {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 33vh;
+    min-height: 11rem;
+    z-index: 30;
+    background: var(--bulma-scheme-main);
+    border-top: 1px solid var(--bulma-border);
+    box-shadow: 0 -2px 12px rgba(10, 10, 10, 0.12);
+    display: flex;
+    flex-direction: column;
+}
+
+.job-panel-resize {
+    flex: 0 0 auto;
+    height: 8px;
+    cursor: ns-resize;
+    background: var(--bulma-scheme-main-ter);
+    border-bottom: 1px solid var(--bulma-border-weak);
+    touch-action: none;
+}
+
+.job-panel-resize:hover {
+    background: var(--bulma-border);
+}
+
+.job-panel-head {
+    display: flex;
+    align-items: center;
+    padding: 0.6rem 1rem;
+    border-bottom: 1px solid var(--bulma-border-weak);
+}
+
+.job-panel-head .delete {
+    margin-left: auto;
+}
+
+/* Queue indicator: a scrollable row of job chips between the title and the close button. */
+.job-queue {
+    display: flex;
+    align-items: center;
+    overflow-x: auto;
+    max-width: 60%;
+}
+
+.job-queue .tag {
+    max-width: 12rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* The chip whose log is currently on screen gets a ring so it stands out from the others. */
+.job-queue .tag.is-current {
+    box-shadow: 0 0 0 2px var(--bulma-text-strong);
+}
+
+.job-panel-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 0.75rem 1rem 1rem;
+}
+
+.job-panel-log {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    margin: 0;
+}
+
+/* Dark-mode support. The dashboard leans on Bulma's "light" palette (is-light tags/heroes/
+    buttons and has-background-light panels), which all derive from the --bulma-light-* HSL
+    components. Bulma keeps those pale (~96% lightness) even under a dark scheme, so they render
+    as white patches. Re-point them at the theme-aware scheme tokens so light surfaces become
+    subtle dark elevated surfaces with light text. */
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --bulma-light-h: var(--bulma-scheme-h);
+        --bulma-light-s: var(--bulma-scheme-s);
+        --bulma-light-l: var(--bulma-scheme-main-ter-l);
+        --bulma-light-invert-l: var(--bulma-text-strong-l);
+        --cm-bg: #1b1d23;
+        --cm-text: #d4d7dd;
+        --cm-gutter-bg: #21232b;
+        --cm-gutter-text: #5c6370;
+        --cm-selection: #2c3140;
+        --cm-active: rgba(255, 255, 255, 0.04);
+        --cm-comment: #7f848e;
+        --cm-key: #61afef;
+        --cm-string: #98c379;
+        --cm-number: #d19a66;
+        --cm-keyword: #c678dd;
+        --cm-meta: #56b6c2;
+    }
+
+    /* "is-light" buttons (e.g. is-link is-light) take their background lightness from the generic
+        --bulma-light-l we darken above, leaving them at ~13% — a dim chip indistinguishable from the
+        ~9% page — with dark *-light-invert text (dark-on-dark). Instead render them as bright solid
+        colored buttons in dark mode: a vivid background at the color's full lightness + light text. */
+    :root:not([data-theme="light"]) .button.is-light {
+        --bulma-button-background-l: 48%;
+        --bulma-button-color-l: var(--bulma-text-strong-l);
+    }
+
+    /* "is-light" tags (e.g. the manager-dial / update badges) hit the same dark-on-dark trap
+        as the buttons above. Render them as bright solid colored chips with light text too. */
+    :root:not([data-theme="light"]) .tag.is-light {
+        --bulma-tag-background-l: 48%;
+        --bulma-tag-color-l: var(--bulma-text-strong-l);
+    }
+}
+
+[data-theme="dark"] {
+    --bulma-light-h: var(--bulma-scheme-h);
+    --bulma-light-s: var(--bulma-scheme-s);
+    --bulma-light-l: var(--bulma-scheme-main-ter-l);
+    --bulma-light-invert-l: var(--bulma-text-strong-l);
+    --cm-bg: #1b1d23;
+    --cm-text: #d4d7dd;
+    --cm-gutter-bg: #21232b;
+    --cm-gutter-text: #5c6370;
+    --cm-selection: #2c3140;
+    --cm-active: rgba(255, 255, 255, 0.04);
+    --cm-comment: #7f848e;
+    --cm-key: #61afef;
+    --cm-string: #98c379;
+    --cm-number: #d19a66;
+    --cm-keyword: #c678dd;
+    --cm-meta: #56b6c2;
+}
+
+[data-theme="dark"] .button.is-light {
+    --bulma-button-background-l: 48%;
+    --bulma-button-color-l: var(--bulma-text-strong-l);
+}
+
+[data-theme="dark"] .tag.is-light {
+    --bulma-tag-background-l: 48%;
+    --bulma-tag-color-l: var(--bulma-text-strong-l);
+}

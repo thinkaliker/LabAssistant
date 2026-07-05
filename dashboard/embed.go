@@ -6,5 +6,5 @@ import "embed"
 
 // Assets holds the embedded dashboard files, served at the manager's web root.
 //
-//go:embed index.html app.js vendor
+//go:embed index.html app.js favicon.svg stylesheet.css vendor
 var Assets embed.FS

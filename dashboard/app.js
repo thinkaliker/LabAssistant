@@ -358,6 +358,40 @@ function app() {
       await this.refresh();
       if (jobId) this.watchJob(jobId, 'revive ' + hostName);
     },
+    // Overall system health, used to tint the flask icon like a status light.
+    //   crit (red)  — something needs attention now: a host down, an unhealthy container,
+    //                 or a sudo password blocking a job.
+    //   warn (amber)— degraded but not urgent: updates available, pending approvals,
+    //                 a host enrolling, or a stopped/partial service.
+    //   good (green)— all hosts online, all services healthy, nothing pending.
+    overallStatus() {
+      if (this.sudoPrompts.length) return 'crit';
+      if (this.hosts.some(h => h.status === 'offline' || h.status === 'error')) return 'crit';
+      for (const st of (this.services.stacks || [])) {
+        for (const sv of (st.services || [])) {
+          if (sv.health === 'unhealthy') return 'crit';
+        }
+      }
+      if (this.approvals.length) return 'warn';
+      if (this.hosts.some(h => h.status !== 'online')) return 'warn'; // enrolling / unknown
+      if ((this.overview.updates?.packages ?? 0) > 0) return 'warn';
+      if ((this.updates?.containers?.length ?? 0) > 0) return 'warn';
+      for (const st of (this.services.stacks || [])) {
+        if (st.status === 'partial' || st.status === 'stopped') return 'warn';
+        for (const sv of (st.services || [])) {
+          if (sv.status === 'stopped' || sv.status === 'exited' || sv.updateAvailable) return 'warn';
+        }
+      }
+      return 'good';
+    },
+    // Fill color for the flask liquid — the visible status light.
+    statusColor() {
+      return { good: '#48c78e', warn: '#ffb454', crit: '#f14668' }[this.overallStatus()];
+    },
+    statusTitle() {
+      return { good: 'All systems healthy', warn: 'Attention: updates or issues pending',
+               crit: 'Action required: a host or service needs attention' }[this.overallStatus()];
+    },
     statusClass(s) {
       return {
         online: 'is-success', offline: 'is-danger', enrolling: 'is-warning',
