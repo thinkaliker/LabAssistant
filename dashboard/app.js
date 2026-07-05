@@ -21,6 +21,7 @@ function app() {
     auditPage: 1,
     auditPageSize: 25,
     expanded: null,
+    hostSort: 'name', // 'name' | 'ip' — how the Hosts list is ordered
     addHostOpen: false,
     taskOpen: false,
     newHost: { name: '', ip: '', sshUser: '', sshPassword: '', tailscale: false, connMode: 'dial_home', connPort: null },
@@ -130,6 +131,18 @@ function app() {
       this.cfg.open = false;
     },
     hostName(id) { const h = this.hosts.find(x => x.id === id); return h ? h.name : id; },
+    // sortedHosts returns a stable copy of hosts ordered by the chosen key so the list
+    // doesn't reshuffle as the backend returns hosts in map/enroll order.
+    sortedHosts() {
+      const key = (ip) => (ip || '').split('.').map(o => String(parseInt(o, 10) || 0).padStart(3, '0')).join('.');
+      return [...this.hosts].sort((a, b) => {
+        if (this.hostSort === 'ip') {
+          const c = key(a.ip).localeCompare(key(b.ip));
+          if (c !== 0) return c;
+        }
+        return (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
+      });
+    },
     openTask() {
       this.newTask = { name: '', schedule: '', module: '', action: '', hostIds: [], misfire: 'skip', interHostDelaySeconds: 0, enabled: true, allowDestructive: false };
       this.taskOpen = true;

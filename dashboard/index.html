@@ -326,12 +326,21 @@
 
       <!-- Hosts -->
       <div x-show="page==='hosts'">
-        <h1 class="title">Hosts</h1>
+        <div class="level is-mobile">
+          <div class="level-left"><h1 class="title">Hosts</h1></div>
+          <div class="level-right" x-show="hosts.length>1">
+            <div class="level-item field has-addons mb-0">
+              <p class="control"><span class="button is-small is-static">Sort</span></p>
+              <p class="control"><button class="button is-small" :class="hostSort==='name' && 'is-info is-selected'" @click="hostSort='name'">Name</button></p>
+              <p class="control"><button class="button is-small" :class="hostSort==='ip' && 'is-info is-selected'" @click="hostSort='ip'">IP</button></p>
+            </div>
+          </div>
+        </div>
         <template x-if="hosts.length===0">
           <p class="has-text-grey">No hosts yet. Enroll one with <code>manager enroll</code> or use the Add Hosts
             button.</p>
         </template>
-        <template x-for="h in hosts" :key="h.id">
+        <template x-for="h in sortedHosts()" :key="h.id">
           <div class="box">
             <div class="level is-mobile" style="cursor:pointer" @click="toggle(h.id)">
               <div class="level-left">
