@@ -241,6 +241,24 @@ function app() {
       this.newTask = { name: '', schedule: '', module: '', action: '', hostIds: [], misfire: 'skip', interHostDelaySeconds: 0, enabled: true, allowDestructive: false };
       this.taskOpen = true;
     },
+    // Unique module names across all reporting hosts, alphabetical, for the Add Task dropdown.
+    taskModuleNames() {
+      const set = new Set();
+      for (const h of this.hosts) for (const m of (h.modules || [])) set.add(m.name);
+      return [...set].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    },
+    // Actions available for the currently-selected module, unioned across hosts, alphabetical.
+    taskModuleActions() {
+      const set = new Set();
+      for (const h of this.hosts) for (const m of (h.modules || [])) {
+        if (m.name === this.newTask.module) for (const a of (m.actions || [])) set.add(a.name);
+      }
+      return [...set].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    },
+    // Hosts sorted by name so the Add Task checkbox list doesn't reshuffle on refresh.
+    taskHostsSorted() {
+      return [...this.hosts].sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
+    },
     toggleTaskHost(id) {
       const i = this.newTask.hostIds.indexOf(id);
       if (i >= 0) this.newTask.hostIds.splice(i, 1); else this.newTask.hostIds.push(id);

@@ -1037,15 +1037,23 @@
         </div>
         <div class="columns">
           <div class="column field"><label class="label">Module</label>
-            <div class="control"><input class="input" x-model="newTask.module" placeholder="qup"></div>
+            <div class="control"><div class="select is-fullwidth">
+              <select x-model="newTask.module" @change="newTask.action=''">
+                <option value="" disabled>select module</option>
+                <template x-for="m in taskModuleNames()" :key="m"><option :value="m" x-text="m"></option></template>
+              </select></div></div>
           </div>
           <div class="column field"><label class="label">Action</label>
-            <div class="control"><input class="input" x-model="newTask.action" placeholder="apply"></div>
+            <div class="control"><div class="select is-fullwidth">
+              <select x-model="newTask.action" :disabled="!newTask.module">
+                <option value="" disabled>select action</option>
+                <template x-for="a in taskModuleActions()" :key="a"><option :value="a" x-text="a"></option></template>
+              </select></div></div>
           </div>
         </div>
         <div class="field">
           <label class="label">Target hosts</label>
-          <template x-for="h in hosts" :key="h.id">
+          <template x-for="h in taskHostsSorted()" :key="h.id">
             <label class="checkbox mr-3"><input type="checkbox" :value="h.id" @change="toggleTaskHost(h.id)"> <span
                 x-text="h.name"></span></label>
           </template>
