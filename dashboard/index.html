@@ -174,6 +174,12 @@
         --bulma-button-background-l: 48%;
         --bulma-button-color-l: var(--bulma-text-strong-l);
       }
+      /* "is-light" tags (e.g. the manager-dial / update badges) hit the same dark-on-dark trap
+         as the buttons above. Render them as bright solid colored chips with light text too. */
+      :root:not([data-theme="light"]) .tag.is-light {
+        --bulma-tag-background-l: 48%;
+        --bulma-tag-color-l: var(--bulma-text-strong-l);
+      }
     }
 
     [data-theme="dark"] {
@@ -198,6 +204,11 @@
     [data-theme="dark"] .button.is-light {
       --bulma-button-background-l: 48%;
       --bulma-button-color-l: var(--bulma-text-strong-l);
+    }
+
+    [data-theme="dark"] .tag.is-light {
+      --bulma-tag-background-l: 48%;
+      --bulma-tag-color-l: var(--bulma-text-strong-l);
     }
   </style>
 </head>
