@@ -503,10 +503,11 @@
                   <tbody>
                     <template x-for="sv in st.services" :key="sv.name">
                       <tr>
-                        <td><span class="tag" :class="statusClass(sv.status)" x-text="sv.status"></span></td>
+                        <td><span class="tag" :class="svcClass(sv)"
+                            :title="sv.status + (sv.health ? ' ('+sv.health+')' : '')" x-text="svcLabel(sv)"></span></td>
                         <td class="has-text-weight-semibold" x-text="sv.name"></td>
                         <td class="is-size-7 has-text-grey" x-text="sv.image"></td>
-                        <td><span class="tag is-info is-light" x-show="sv.updateAvailable">update</span></td>
+                        <td><span class="tag is-warning" x-show="sv.updateAvailable">update</span></td>
                         <td class="has-text-right">
                           <div class="buttons are-small is-right">
                             <button class="button is-success" @click="svcAction(st,sv.name,'start')">start</button>

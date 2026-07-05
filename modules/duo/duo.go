@@ -51,6 +51,7 @@ type Stack struct {
 type Service struct {
 	Name            string `json:"name"`
 	Status          string `json:"status"`
+	Health          string `json:"health,omitempty"` // healthy|unhealthy|starting; empty = no healthcheck
 	Image           string `json:"image"`
 	UpdateAvailable bool   `json:"updateAvailable"`
 	CurrentDigest   string `json:"currentDigest,omitempty"`
@@ -72,11 +73,11 @@ func New() *Module {
 	}
 	m.stacks = []*Stack{
 		{Name: "media", Path: "/srv/media/compose.yaml", Status: "running", Services: []*Service{
-			{Name: "jellyfin", Status: "running", Image: "jellyfin/jellyfin:10.9", UpdateAvailable: true, HasLogs: true},
-			{Name: "sonarr", Status: "running", Image: "linuxserver/sonarr:4.0", HasLogs: true},
+			{Name: "jellyfin", Status: "running", Health: "healthy", Image: "jellyfin/jellyfin:10.9", UpdateAvailable: true, HasLogs: true},
+			{Name: "sonarr", Status: "running", Health: "starting", Image: "linuxserver/sonarr:4.0", HasLogs: true},
 		}},
 		{Name: "infra", Path: "/srv/infra/compose.yaml", Status: "running", Services: []*Service{
-			{Name: "traefik", Status: "running", Image: "traefik:3.1", HasLogs: true},
+			{Name: "traefik", Status: "running", Health: "healthy", Image: "traefik:3.1", HasLogs: true},
 		}},
 	}
 	return m

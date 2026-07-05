@@ -22,6 +22,7 @@ type dctr struct {
 	Names  string `json:"Names"`
 	Image  string `json:"Image"`
 	State  string `json:"State"`
+	Status string `json:"Status"` // human string, e.g. "Up 2 hours (healthy)"
 	Labels string `json:"Labels"` // "k=v,k=v,..."
 }
 
@@ -73,7 +74,7 @@ func (m *Module) dockerStatus(ctx context.Context) (module.Status, error) {
 		}
 		iu := updates[c.Image]
 		st.Services = append(st.Services, &Service{
-			Name: svc, Status: status, Image: c.Image,
+			Name: svc, Status: status, Health: parseHealth(c.Status), Image: c.Image,
 			UpdateAvailable: iu.hasUpdate(),
 			CurrentDigest:   iu.Current, LatestDigest: iu.Latest,
 			HasLogs: true,
@@ -87,6 +88,21 @@ func (m *Module) dockerStatus(ctx context.Context) (module.Status, error) {
 	}
 	data, _ := json.Marshal(map[string]any{"stacks": stacks})
 	return module.Status{Summary: fmt.Sprintf("%d/%d services running", running, total), Data: data}, nil
+}
+
+// parseHealth extracts a container's healthcheck state from the `docker ps` status string
+// (e.g. "Up 2 hours (healthy)"). Empty means the container defines no healthcheck.
+func parseHealth(psStatus string) string {
+	switch {
+	case strings.Contains(psStatus, "(healthy)"):
+		return "healthy"
+	case strings.Contains(psStatus, "(unhealthy)"):
+		return "unhealthy"
+	case strings.Contains(psStatus, "health: starting"):
+		return "starting"
+	default:
+		return ""
+	}
 }
 
 func (m *Module) executeDocker(ctx context.Context, req module.ActionRequest, emit func(module.Event)) (module.Result, error) {

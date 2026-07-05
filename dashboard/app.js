@@ -295,6 +295,13 @@ function app() {
         stopped: 'is-danger'
       }[s] || 'is-light';
     },
+    // A service tag prefers its docker healthcheck state (healthy/unhealthy/starting) over the
+    // raw running/stopped status, so an unhealthy-but-running container reads at a glance.
+    svcLabel(sv) { return sv.health || sv.status; },
+    svcClass(sv) {
+      if (sv.health) return { healthy: 'is-success', unhealthy: 'is-danger', starting: 'is-warning' }[sv.health] || 'is-info';
+      return this.statusClass(sv.status);
+    },
     capabilities(m) {
       const c = m.detection && m.detection.capabilities || {};
       return Object.entries(c).map(([k, v]) => `${k}=${v}`).join(' ');

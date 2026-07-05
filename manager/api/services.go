@@ -18,6 +18,7 @@ type svcStack struct {
 type svcService struct {
 	Name            string `json:"name"`
 	Status          string `json:"status"`
+	Health          string `json:"health,omitempty"`
 	Image           string `json:"image"`
 	UpdateAvailable bool   `json:"updateAvailable"`
 	CurrentDigest   string `json:"currentDigest,omitempty"`
