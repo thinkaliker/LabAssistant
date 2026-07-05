@@ -20,14 +20,20 @@ http_addr = ":8080"
 
 # --- enrollment --------------------------------------------------------------
 # How the quartermaster installs associates and what each enrollment bundle dials.
-# associate_bin is REQUIRED to enroll any host: it's the locally-built associate
-# binary the manager deploys (spawned as a child in "local" mode, uploaded over
-# SSH in "ssh" mode). Without it, enrollment fails with "no associate binary
-# configured". For "ssh" mode it may contain {os}/{arch} placeholders to select a
-# build matching the detected host, e.g. "/srv/bin/associate-{os}-{arch}".
+# The install method is chosen PER HOST at enroll time: a host added with SSH
+# credentials is installed remotely over SSH; a host added without them runs as a
+# child process on this manager box (use this to manage the manager host itself).
+# One manager covers both.
+#
+# associate_bin is the associate binary the manager deploys (spawned as a child for
+# local hosts, uploaded over SSH for remote ones). It DEFAULTS to the "associate"
+# binary sitting next to the running manager (bin/associate — where a standard
+# deploy builds it), and helper_bin defaults to bin/associatehelper if present, so
+# you usually don't need to set either. Override only if your binaries live
+# elsewhere. For SSH onto a different OS/arch, use {os}/{arch} placeholders to pick
+# a matching build, e.g. "/srv/bin/associate-{os}-{arch}".
 #[enroll]
-#mode          = "local"                                  # "local" (dev: child process) or "ssh"
-#associate_bin = "/opt/labassistant/bin/associate"        # required: associate binary to deploy
+#associate_bin = "/opt/labassistant/bin/associate"        # default: <manager dir>/associate
 #helper_bin    = "/opt/labassistant/bin/associatehelper"  # optional: privileged helper binary
 #manager_addr  = "localhost:8443"                         # address associates dial back (host:port)
 #server_name   = "localhost"                              # manager TLS server name (must match its cert)

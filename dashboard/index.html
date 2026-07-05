@@ -951,16 +951,17 @@
         <p class="modal-card-title">Add Host</p>
       </header>
       <section class="modal-card-body">
+        <p class="has-text-grey is-size-7 mb-3">Leave SSH blank to install on this manager box itself; fill it in to install on a remote host over SSH.</p>
         <div class="field">
           <label class="label">Name</label>
           <div class="control"><input class="input" x-model="newHost.name" placeholder="media-server"></div>
         </div>
         <div class="field">
           <label class="label">IP / Address</label>
-          <div class="control"><input class="input" x-model="newHost.ip" placeholder="10.0.0.5"></div>
+          <div class="control"><input class="input" x-model="newHost.ip" placeholder="10.0.0.5 (or localhost for this box)"></div>
         </div>
         <div class="field">
-          <label class="label">SSH User</label>
+          <label class="label">SSH User <span class="has-text-grey is-size-7">(blank = local install)</span></label>
           <div class="control"><input class="input" x-model="newHost.sshUser" placeholder=""></div>
         </div>
         <div class="field">

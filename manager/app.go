@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -75,22 +76,35 @@ func NewApp(layout paths.Layout, cfg config.Config) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	var installer quartermaster.Installer
-	switch cfg.Enroll.Mode {
-	case "ssh":
-		installer = quartermaster.SSHInstaller{
-			AssociateBin:   cfg.Enroll.AssociateBin,
-			HelperBin:      cfg.Enroll.HelperBin,
-			KnownHostsPath: layout.KnownHostsFile(),
+	// Default the deploy binaries to siblings of the running manager executable
+	// (a standard deploy builds bin/manager, bin/associate, bin/associatehelper
+	// together) so enrollment works without setting enroll.associate_bin by hand.
+	assocBin, helperBin := cfg.Enroll.AssociateBin, cfg.Enroll.HelperBin
+	if exe, err := os.Executable(); err == nil {
+		binDir := filepath.Dir(exe)
+		if assocBin == "" {
+			assocBin = filepath.Join(binDir, "associate")
 		}
-	default:
-		installer = quartermaster.LocalInstaller{
-			AssociateBin: cfg.Enroll.AssociateBin,
-			HelperBin:    cfg.Enroll.HelperBin,
-			WorkDir:      filepath.Join(layout.Data, "hosts"),
+		if helperBin == "" {
+			if p := filepath.Join(binDir, "associatehelper"); fileExists(p) {
+				helperBin = p
+			}
 		}
 	}
-	qm := quartermaster.New(authority, store, jr, aud, installer, cfg.Enroll.ManagerAddr, cfg.Enroll.ServerName)
+	// Both installers are always available; the quartermaster picks per host —
+	// local (child process on this box) for a host added without SSH credentials,
+	// ssh for one with them. This lets one manager cover itself and remote hosts.
+	localInstaller := quartermaster.LocalInstaller{
+		AssociateBin: assocBin,
+		HelperBin:    helperBin,
+		WorkDir:      filepath.Join(layout.Data, "hosts"),
+	}
+	sshInstaller := quartermaster.SSHInstaller{
+		AssociateBin:   assocBin,
+		HelperBin:      helperBin,
+		KnownHostsPath: layout.KnownHostsFile(),
+	}
+	qm := quartermaster.New(authority, store, jr, aud, localInstaller, sshInstaller, cfg.Enroll.ManagerAddr, cfg.Enroll.ServerName)
 
 	h := hub.New(store, jr)
 	qm.SetStream(h.Connected, h.Uninstall)
@@ -275,4 +289,10 @@ func envelope(typ string, payload any) []byte {
 		Payload any    `json:"payload"`
 	}{typ, payload})
 	return b
+}
+
+// fileExists reports whether path exists (used to auto-detect the optional helper binary).
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }

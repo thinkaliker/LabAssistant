@@ -33,6 +33,9 @@ type Host struct {
 	IP         string    `json:"ip"`
 	Tailscale  bool      `json:"tailscale"`
 	SSHUser    string    `json:"sshUser"`
+	// Mode is how the associate was installed: "ssh" (remote host) or "local"
+	// (child process on the manager box). Selected per host at enroll time.
+	Mode       string    `json:"mode,omitempty"`
 	CertSerial string    `json:"certSerial,omitempty"`
 	CertExpiry time.Time `json:"certExpiry,omitempty"`
 	CreatedAt  time.Time `json:"createdAt"`
@@ -50,6 +53,7 @@ type persisted struct {
 	IP         string    `json:"ip"`
 	Tailscale  bool      `json:"tailscale"`
 	SSHUser    string    `json:"sshUser"`
+	Mode       string    `json:"mode,omitempty"`
 	CertSerial string    `json:"certSerial,omitempty"`
 	CertExpiry time.Time `json:"certExpiry,omitempty"`
 	CreatedAt  time.Time `json:"createdAt"`
@@ -116,7 +120,7 @@ func Load(path string) (*Store, error) {
 	for _, p := range ps {
 		s.hosts[p.ID] = &Host{
 			ID: p.ID, Name: p.Name, IP: p.IP, Tailscale: p.Tailscale,
-			SSHUser: p.SSHUser, CertSerial: p.CertSerial, CertExpiry: p.CertExpiry,
+			SSHUser: p.SSHUser, Mode: p.Mode, CertSerial: p.CertSerial, CertExpiry: p.CertExpiry,
 			CreatedAt: p.CreatedAt, Status: StatusOffline,
 		}
 	}
@@ -264,7 +268,7 @@ func (s *Store) save() error {
 	for _, h := range s.hosts {
 		hosts = append(hosts, persisted{
 			ID: h.ID, Name: h.Name, IP: h.IP, Tailscale: h.Tailscale,
-			SSHUser: h.SSHUser, CertSerial: h.CertSerial, CertExpiry: h.CertExpiry,
+			SSHUser: h.SSHUser, Mode: h.Mode, CertSerial: h.CertSerial, CertExpiry: h.CertExpiry,
 			CreatedAt: h.CreatedAt,
 		})
 	}

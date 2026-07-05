@@ -55,18 +55,47 @@ type EnrollRequest struct {
 	Tailscale   bool
 }
 
+// Mode names for how an associate is installed on a host.
+const (
+	ModeLocal = "local" // associate runs as a child process on the manager box
+	ModeSSH   = "ssh"   // associate installed on a remote host over SSH
+)
+
+// modeFor picks the install mode from an enroll request: a host with SSH
+// credentials is remote (ssh); one without is the manager box itself (local).
+func modeFor(sshUser string) string {
+	if sshUser == "" {
+		return ModeLocal
+	}
+	return ModeSSH
+}
+
 // Quartermaster orchestrates enrollment.
 type Quartermaster struct {
 	ca          *ca.CA
 	store       *state.Store
 	jobs        *jobs.Registry
 	aud         *auditor.Auditor
-	installer   Installer
+	local       Installer // installs on the manager box (child process)
+	ssh         Installer // installs on remote hosts over SSH
 	managerAddr string
 	serverName  string
 
 	connected       func(string) bool  // hub liveness check (set via SetStream)
 	streamUninstall func(string) error // hub self-uninstall command (set via SetStream)
+}
+
+// installerFor returns the installer for a host's mode. An empty mode (hosts
+// enrolled before per-host mode existed) is inferred from whether the host has
+// an SSH user.
+func (q *Quartermaster) installerFor(mode, sshUser string) Installer {
+	if mode == "" {
+		mode = modeFor(sshUser)
+	}
+	if mode == ModeLocal {
+		return q.local
+	}
+	return q.ssh
 }
 
 // SetStream wires the hub functions the quartermaster uses for uninstall: connected reports
@@ -92,10 +121,11 @@ type ReviveRequest struct {
 	SSHPassword string
 }
 
-// New builds a Quartermaster.
-func New(authority *ca.CA, store *state.Store, jr *jobs.Registry, aud *auditor.Auditor, installer Installer, managerAddr, serverName string) *Quartermaster {
+// New builds a Quartermaster. local installs the associate as a child process on the
+// manager box; ssh installs it on remote hosts. The mode is chosen per host at enroll.
+func New(authority *ca.CA, store *state.Store, jr *jobs.Registry, aud *auditor.Auditor, local, ssh Installer, managerAddr, serverName string) *Quartermaster {
 	return &Quartermaster{
-		ca: authority, store: store, jobs: jr, aud: aud, installer: installer,
+		ca: authority, store: store, jobs: jr, aud: aud, local: local, ssh: ssh,
 		managerAddr: managerAddr, serverName: serverName,
 	}
 }
@@ -106,7 +136,7 @@ func (q *Quartermaster) Enroll(req EnrollRequest) (hostID, jobID string, err err
 	hostID = uuid.NewString()
 	host := state.Host{
 		ID: hostID, Name: req.Name, IP: req.IP, SSHUser: req.SSHUser,
-		Tailscale: req.Tailscale, Status: state.StatusEnrolling,
+		Mode: modeFor(req.SSHUser), Tailscale: req.Tailscale, Status: state.StatusEnrolling,
 	}
 	if err := q.store.Add(host); err != nil {
 		return "", "", err
@@ -138,9 +168,9 @@ func (q *Quartermaster) Revive(req ReviveRequest) (jobID string, err error) {
 	if !ok {
 		return "", fmt.Errorf("host not found")
 	}
-	r, ok := q.installer.(Reviver)
+	r, ok := q.installerFor(host.Mode, host.SSHUser).(Reviver)
 	if !ok {
-		return "", fmt.Errorf("no SSH revive path available")
+		return "", fmt.Errorf("no revive path available for this host")
 	}
 	job := q.jobs.Create(host.ID, "quartermaster", "revive", nil)
 	go q.runRevive(context.Background(), host, req, r, job.ID)
@@ -181,7 +211,7 @@ func (q *Quartermaster) runUninstall(ctx context.Context, host state.Host, req U
 			emit("associate is tearing itself down")
 		}
 	default:
-		if u, ok := q.installer.(Uninstaller); ok {
+		if u, ok := q.installerFor(host.Mode, host.SSHUser).(Uninstaller); ok {
 			emit("host offline; removing associate over SSH")
 			teardownErr = u.Uninstall(ctx, InstallParams{
 				HostID: host.ID, IP: host.IP, SSHUser: req.SSHUser, SSHPassword: req.SSHPassword,
@@ -245,7 +275,7 @@ func (q *Quartermaster) run(ctx context.Context, hostID string, req EnrollReques
 		HostID: hostID, IP: req.IP, SSHUser: req.SSHUser,
 		SSHPassword: req.SSHPassword, Bundle: b,
 	}
-	if err := q.installer.Install(ctx, params, emit); err != nil {
+	if err := q.installerFor(modeFor(req.SSHUser), req.SSHUser).Install(ctx, params, emit); err != nil {
 		fail(err)
 		return
 	}

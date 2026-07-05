@@ -33,7 +33,9 @@ type Audit struct {
 
 // Enroll configures how the quartermaster installs associates on hosts.
 type Enroll struct {
-	// Mode is "local" (spawn the associate as a child process — dev) or "ssh".
+	// Mode is retained for backward compatibility but ignored: the install method
+	// is now chosen per host at enroll time (SSH credentials present -> remote SSH
+	// install; absent -> local child process on the manager box).
 	Mode string `toml:"mode"`
 	// AssociateBin / HelperBin are paths to the binaries the installer deploys.
 	AssociateBin string `toml:"associate_bin"`
