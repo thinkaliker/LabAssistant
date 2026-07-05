@@ -26,8 +26,8 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// ManagerService is hosted by the manager. The associate dials home and opens a
-// single long-lived bidirectional stream over mTLS; the connection plus transport
+// ManagerService is hosted by the manager. In dial-home mode the associate dials home and
+// opens a single long-lived bidirectional stream over mTLS; the connection plus transport
 // keepalive provide liveness (no application-level polling).
 type ManagerServiceClient interface {
 	Connect(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[AssociateMessage, ManagerMessage], error)
@@ -58,8 +58,8 @@ type ManagerService_ConnectClient = grpc.BidiStreamingClient[AssociateMessage, M
 // All implementations must embed UnimplementedManagerServiceServer
 // for forward compatibility.
 //
-// ManagerService is hosted by the manager. The associate dials home and opens a
-// single long-lived bidirectional stream over mTLS; the connection plus transport
+// ManagerService is hosted by the manager. In dial-home mode the associate dials home and
+// opens a single long-lived bidirectional stream over mTLS; the connection plus transport
 // keepalive provide liveness (no application-level polling).
 type ManagerServiceServer interface {
 	Connect(grpc.BidiStreamingServer[AssociateMessage, ManagerMessage]) error
@@ -115,6 +115,114 @@ var ManagerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "Connect",
 			Handler:       _ManagerService_Connect_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
+	},
+	Metadata: "v1/labassistant.proto",
+}
+
+const (
+	AssociateService_Attach_FullMethodName = "/labassistant.v1.AssociateService/Attach"
+)
+
+// AssociateServiceClient is the client API for AssociateService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// AssociateService is hosted by the associate in manager-dial mode: the manager dials the
+// associate and opens the stream. The message payloads are identical to ManagerService, only
+// the transport direction is reversed (the manager is the client). The associate sends the
+// first Hello frame; the manager replies with HelloAck. Used when the host cannot accept the
+// associate dialing home but can accept the manager dialing in (or vice-versa per network).
+type AssociateServiceClient interface {
+	Attach(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ManagerMessage, AssociateMessage], error)
+}
+
+type associateServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewAssociateServiceClient(cc grpc.ClientConnInterface) AssociateServiceClient {
+	return &associateServiceClient{cc}
+}
+
+func (c *associateServiceClient) Attach(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ManagerMessage, AssociateMessage], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &AssociateService_ServiceDesc.Streams[0], AssociateService_Attach_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[ManagerMessage, AssociateMessage]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AssociateService_AttachClient = grpc.BidiStreamingClient[ManagerMessage, AssociateMessage]
+
+// AssociateServiceServer is the server API for AssociateService service.
+// All implementations must embed UnimplementedAssociateServiceServer
+// for forward compatibility.
+//
+// AssociateService is hosted by the associate in manager-dial mode: the manager dials the
+// associate and opens the stream. The message payloads are identical to ManagerService, only
+// the transport direction is reversed (the manager is the client). The associate sends the
+// first Hello frame; the manager replies with HelloAck. Used when the host cannot accept the
+// associate dialing home but can accept the manager dialing in (or vice-versa per network).
+type AssociateServiceServer interface {
+	Attach(grpc.BidiStreamingServer[ManagerMessage, AssociateMessage]) error
+	mustEmbedUnimplementedAssociateServiceServer()
+}
+
+// UnimplementedAssociateServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedAssociateServiceServer struct{}
+
+func (UnimplementedAssociateServiceServer) Attach(grpc.BidiStreamingServer[ManagerMessage, AssociateMessage]) error {
+	return status.Errorf(codes.Unimplemented, "method Attach not implemented")
+}
+func (UnimplementedAssociateServiceServer) mustEmbedUnimplementedAssociateServiceServer() {}
+func (UnimplementedAssociateServiceServer) testEmbeddedByValue()                          {}
+
+// UnsafeAssociateServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to AssociateServiceServer will
+// result in compilation errors.
+type UnsafeAssociateServiceServer interface {
+	mustEmbedUnimplementedAssociateServiceServer()
+}
+
+func RegisterAssociateServiceServer(s grpc.ServiceRegistrar, srv AssociateServiceServer) {
+	// If the following call pancis, it indicates UnimplementedAssociateServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&AssociateService_ServiceDesc, srv)
+}
+
+func _AssociateService_Attach_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(AssociateServiceServer).Attach(&grpc.GenericServerStream[ManagerMessage, AssociateMessage]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AssociateService_AttachServer = grpc.BidiStreamingServer[ManagerMessage, AssociateMessage]
+
+// AssociateService_ServiceDesc is the grpc.ServiceDesc for AssociateService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var AssociateService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "labassistant.v1.AssociateService",
+	HandlerType: (*AssociateServiceServer)(nil),
+	Methods:     []grpc.MethodDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "Attach",
+			Handler:       _AssociateService_Attach_Handler,
 			ServerStreams: true,
 			ClientStreams: true,
 		},

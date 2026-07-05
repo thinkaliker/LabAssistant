@@ -18,6 +18,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
 
+	"github.com/thinkaliker/labassistant/internal/bundle"
 	"github.com/thinkaliker/labassistant/internal/paths"
 	"github.com/thinkaliker/labassistant/manager/actions"
 	"github.com/thinkaliker/labassistant/manager/api"
@@ -44,6 +45,7 @@ type App struct {
 	jobs      *jobs.Registry
 	events    *events.Broker
 	hub       *hub.Hub
+	dialer    *hub.Dialer
 	qm        *quartermaster.Quartermaster
 	runner    *actions.Runner
 	scheduler *scheduler.Scheduler
@@ -65,8 +67,14 @@ func NewApp(layout paths.Layout, cfg config.Config) (*App, error) {
 		return nil, err
 	}
 	ev := events.New()
+	// dialer is assigned below once the hub exists; the notify closure reconciles the
+	// manager-dial pool on every host change (add/remove/edit) via the same variable.
+	var dialer *hub.Dialer
 	store.SetNotify(func(c state.Change) {
 		ev.Publish(envelope("host", c))
+		if dialer != nil {
+			dialer.Sync()
+		}
 	})
 	jr := jobs.NewRegistry(ev)
 
@@ -104,9 +112,10 @@ func NewApp(layout paths.Layout, cfg config.Config) (*App, error) {
 		HelperBin:      helperBin,
 		KnownHostsPath: layout.KnownHostsFile(),
 	}
-	qm := quartermaster.New(authority, store, jr, aud, localInstaller, sshInstaller, cfg.Enroll.ManagerAddr, cfg.Enroll.ServerName)
+	qm := quartermaster.New(authority, store, jr, aud, localInstaller, sshInstaller, cfg.Enroll.ManagerAddr, cfg.Enroll.ServerName, cfg.Enroll.AssociatePort)
 
 	h := hub.New(store, jr)
+	dialer = hub.NewDialer(h, store, authority.DialTLSConfig, 0)
 	qm.SetStream(h.Connected, h.Uninstall)
 	runner := actions.NewRunner(store, jr, h, ev, aud)
 	jr.SetResultHook(func(j jobs.View) {
@@ -159,6 +168,7 @@ func NewApp(layout paths.Layout, cfg config.Config) (*App, error) {
 		jobs:      jr,
 		events:    ev,
 		hub:       h,
+		dialer:    dialer,
 		qm:        qm,
 		runner:    runner,
 		scheduler: sched,
@@ -202,6 +212,7 @@ func (a *App) Serve(ctx context.Context) error {
 			errCh <- err
 		}
 	}()
+	a.dialer.Start(ctx)
 	go a.scheduler.Start(ctx)
 	go a.certRotationLoop(ctx)
 
@@ -223,8 +234,14 @@ func (a *App) Serve(ctx context.Context) error {
 // stream. The old certificate is left to expire (not revoked) to avoid locking the host out
 // if the new cert never lands.
 func (a *App) rotateCert(hostID string) error {
-	if _, ok := a.store.Get(hostID); !ok {
+	host, ok := a.store.Get(hostID)
+	if !ok {
 		return fmt.Errorf("host not found")
+	}
+	// Rotation pushes a client certificate down the stream; manager-dial associates present a
+	// server certificate instead, so this path does not apply to them (re-enroll to rotate).
+	if host.ConnMode == bundle.ModeManagerDial {
+		return fmt.Errorf("cert rotation not supported for manager-dial hosts")
 	}
 	if !a.hub.Connected(hostID) {
 		return fmt.Errorf("host not connected")
@@ -257,7 +274,8 @@ func (a *App) certRotationLoop(ctx context.Context) {
 			return
 		case <-t.C:
 			for _, h := range a.store.Hosts() {
-				if h.CertExpiry.IsZero() || !a.hub.Connected(h.ID) {
+				// Manager-dial hosts use server certs rotated only by re-enrollment.
+				if h.ConnMode == bundle.ModeManagerDial || h.CertExpiry.IsZero() || !a.hub.Connected(h.ID) {
 					continue
 				}
 				if time.Until(h.CertExpiry) < certRenewThreshold {

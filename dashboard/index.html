@@ -339,6 +339,7 @@
                 </div>
                 <div class="level-item has-text-weight-semibold" x-text="h.name"></div>
                 <div class="level-item is-size-7 has-text-grey" x-text="h.ip"></div>
+                <div class="level-item" x-show="h.connMode==='manager_dial'"><span class="tag is-info is-light" title="Manager dials this host">manager-dial</span></div>
               </div>
               <div class="level-right">
                 <div class="level-item is-size-7 has-text-grey"
@@ -969,6 +970,18 @@
           <div class="control"><input class="input" type="password" x-model="newHost.sshPassword"></div>
         </div>
         <label class="checkbox"><input type="checkbox" x-model="newHost.tailscale"> Tailscale enabled</label>
+        <div class="field mt-4">
+          <label class="label">Connection</label>
+          <div class="select is-fullwidth"><select x-model="newHost.connMode">
+            <option value="dial_home">Associate dials the manager (default)</option>
+            <option value="manager_dial">Manager dials the associate</option>
+          </select></div>
+          <p class="help" x-show="newHost.connMode==='manager_dial'">The associate listens and the manager connects to it. Allow inbound TCP on the host firewall from the manager.</p>
+        </div>
+        <div class="field" x-show="newHost.connMode==='manager_dial'">
+          <label class="label">Listen Port <span class="has-text-grey is-size-7">(blank = default 8444)</span></label>
+          <div class="control"><input class="input" type="number" x-model.number="newHost.connPort" placeholder="8444"></div>
+        </div>
       </section>
       <footer class="modal-card-foot">
         <button class="button is-primary" @click="submitHost()" :disabled="!newHost.name || !newHost.ip">Enroll</button>

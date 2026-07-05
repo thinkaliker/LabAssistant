@@ -1910,7 +1910,9 @@ const file_v1_labassistant_proto_rawDesc = "" +
 	"\x13JOB_STATE_TIMED_OUT\x10\x05\x12!\n" +
 	"\x1dJOB_STATE_NEEDS_SUDO_PASSWORD\x10\x062c\n" +
 	"\x0eManagerService\x12Q\n" +
-	"\aConnect\x12!.labassistant.v1.AssociateMessage\x1a\x1f.labassistant.v1.ManagerMessage(\x010\x01B=Z;github.com/thinkaliker/labassistant/proto/v1;labassistantv1b\x06proto3"
+	"\aConnect\x12!.labassistant.v1.AssociateMessage\x1a\x1f.labassistant.v1.ManagerMessage(\x010\x012d\n" +
+	"\x10AssociateService\x12P\n" +
+	"\x06Attach\x12\x1f.labassistant.v1.ManagerMessage\x1a!.labassistant.v1.AssociateMessage(\x010\x01B=Z;github.com/thinkaliker/labassistant/proto/v1;labassistantv1b\x06proto3"
 
 var (
 	file_v1_labassistant_proto_rawDescOnce sync.Once
@@ -1987,9 +1989,11 @@ var file_v1_labassistant_proto_depIdxs = []int32{
 	26, // 28: labassistant.v1.ActionSpec.default_timeout:type_name -> google.protobuf.Duration
 	24, // 29: labassistant.v1.Detection.capabilities:type_name -> labassistant.v1.Detection.CapabilitiesEntry
 	3,  // 30: labassistant.v1.ManagerService.Connect:input_type -> labassistant.v1.AssociateMessage
-	4,  // 31: labassistant.v1.ManagerService.Connect:output_type -> labassistant.v1.ManagerMessage
-	31, // [31:32] is the sub-list for method output_type
-	30, // [30:31] is the sub-list for method input_type
+	4,  // 31: labassistant.v1.AssociateService.Attach:input_type -> labassistant.v1.ManagerMessage
+	4,  // 32: labassistant.v1.ManagerService.Connect:output_type -> labassistant.v1.ManagerMessage
+	3,  // 33: labassistant.v1.AssociateService.Attach:output_type -> labassistant.v1.AssociateMessage
+	32, // [32:34] is the sub-list for method output_type
+	30, // [30:32] is the sub-list for method input_type
 	30, // [30:30] is the sub-list for extension type_name
 	30, // [30:30] is the sub-list for extension extendee
 	0,  // [0:30] is the sub-list for field type_name
@@ -2026,7 +2030,7 @@ func file_v1_labassistant_proto_init() {
 			NumEnums:      3,
 			NumMessages:   22,
 			NumExtensions: 0,
-			NumServices:   1,
+			NumServices:   2,
 		},
 		GoTypes:           file_v1_labassistant_proto_goTypes,
 		DependencyIndexes: file_v1_labassistant_proto_depIdxs,

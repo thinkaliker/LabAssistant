@@ -31,6 +31,8 @@ const (
 	caKeyFile      = "ca.key"
 	serverCertFile = "server.crt"
 	serverKeyFile  = "server.key"
+	clientCertFile = "client.crt" // the manager's own client cert, used to dial associates
+	clientKeyFile  = "client.key"
 )
 
 // CA is the manager's certificate authority.
@@ -40,6 +42,7 @@ type CA struct {
 	caKey   *ecdsa.PrivateKey
 	caPEM   []byte // PEM-encoded CA certificate (for pinning by clients)
 	srvCert tls.Certificate
+	cliCert tls.Certificate // the manager's own client cert for dialing associates
 
 	mu      sync.Mutex
 	revoked map[string]bool // revoked client-cert serials (hex)
@@ -59,6 +62,9 @@ func LoadOrCreate(dir string, serverSANs []string) (*CA, error) {
 		return nil, err
 	}
 	if err := c.loadOrCreateServer(serverSANs); err != nil {
+		return nil, err
+	}
+	if err := c.loadOrCreateClient(); err != nil {
 		return nil, err
 	}
 	c.loadRevoked()
@@ -163,6 +169,72 @@ func (c *CA) IssueClient(hostID string) (certPEM, keyPEM []byte, serial string, 
 	return encodeCert(der), encodeKey(key), serialHex(sn), nil
 }
 
+// IssueServer mints a server certificate+key for an associate that the manager dials
+// (manager_dial mode). hostID is the Common Name (the manager pins it on connect); sans are
+// extra names/IPs the host is reachable at. Returns PEM cert+key and the serial (hex).
+func (c *CA) IssueServer(hostID string, sans []string) (certPEM, keyPEM []byte, serial string, err error) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	sn, err := randSerial()
+	if err != nil {
+		return nil, nil, "", err
+	}
+	dns, ips := splitSANs(append([]string{hostID}, sans...))
+	tmpl := &x509.Certificate{
+		SerialNumber: sn,
+		Subject:      pkix.Name{CommonName: hostID},
+		NotBefore:    time.Now().Add(-time.Minute),
+		NotAfter:     time.Now().Add(leafValidity),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		DNSNames:     dns,
+		IPAddresses:  ips,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, c.caCert, &key.PublicKey, c.caKey)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	return encodeCert(der), encodeKey(key), serialHex(sn), nil
+}
+
+// DialTLSConfig returns the TLS config the manager uses to dial an associate in manager_dial
+// mode: it presents the manager's client certificate and pins the associate's identity by
+// verifying the presented server certificate chains to this CA and carries CommonName ==
+// hostID. Verification is done manually (InsecureSkipVerify) so identity is pinned to the
+// host id rather than the dialed IP/hostname.
+func (c *CA) DialTLSConfig(hostID string) *tls.Config {
+	pool := x509.NewCertPool()
+	pool.AddCert(c.caCert)
+	return &tls.Config{
+		Certificates:       []tls.Certificate{c.cliCert},
+		InsecureSkipVerify: true,
+		MinVersion:         tls.VersionTLS13,
+		VerifyConnection: func(cs tls.ConnectionState) error {
+			if len(cs.PeerCertificates) == 0 {
+				return errors.New("no server certificate")
+			}
+			leaf := cs.PeerCertificates[0]
+			opts := x509.VerifyOptions{
+				Roots:         pool,
+				Intermediates: x509.NewCertPool(),
+				KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+			}
+			for _, ic := range cs.PeerCertificates[1:] {
+				opts.Intermediates.AddCert(ic)
+			}
+			if _, err := leaf.Verify(opts); err != nil {
+				return fmt.Errorf("verify associate server cert: %w", err)
+			}
+			if leaf.Subject.CommonName != hostID {
+				return fmt.Errorf("associate cert CN %q != expected host %q", leaf.Subject.CommonName, hostID)
+			}
+			return nil
+		},
+	}
+}
+
 func (c *CA) loadOrCreateCA() error {
 	certPEM, errC := os.ReadFile(filepath.Join(c.dir, caCertFile))
 	keyPEM, errK := os.ReadFile(filepath.Join(c.dir, caKeyFile))
@@ -258,6 +330,56 @@ func (c *CA) loadOrCreateServer(sans []string) error {
 		return err
 	}
 	c.srvCert = pair
+	return nil
+}
+
+// loadOrCreateClient loads (or generates on first run) the manager's own client certificate,
+// used to dial associates in manager_dial mode. It is a single long-lived identity signed by
+// the CA; associates verify it against the pinned CA.
+func (c *CA) loadOrCreateClient() error {
+	certPEM, errC := os.ReadFile(filepath.Join(c.dir, clientCertFile))
+	keyPEM, errK := os.ReadFile(filepath.Join(c.dir, clientKeyFile))
+	if errC == nil && errK == nil {
+		pair, err := tls.X509KeyPair(certPEM, keyPEM)
+		if err != nil {
+			return fmt.Errorf("load client cert: %w", err)
+		}
+		c.cliCert = pair
+		return nil
+	}
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return err
+	}
+	serial, err := randSerial()
+	if err != nil {
+		return err
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: serial,
+		Subject:      pkix.Name{CommonName: "labassistant-manager"},
+		NotBefore:    time.Now().Add(-time.Minute),
+		NotAfter:     time.Now().Add(leafValidity),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, c.caCert, &key.PublicKey, c.caKey)
+	if err != nil {
+		return err
+	}
+	cliCertPEM, cliKeyPEM := encodeCert(der), encodeKey(key)
+	if err := writeFile(filepath.Join(c.dir, clientCertFile), cliCertPEM, 0o644); err != nil {
+		return err
+	}
+	if err := writeFile(filepath.Join(c.dir, clientKeyFile), cliKeyPEM, 0o600); err != nil {
+		return err
+	}
+	pair, err := tls.X509KeyPair(cliCertPEM, cliKeyPEM)
+	if err != nil {
+		return err
+	}
+	c.cliCert = pair
 	return nil
 }
 

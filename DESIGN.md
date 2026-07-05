@@ -19,9 +19,13 @@ updates and applies those to the hosts.
 
 A small agent installed on each host. It communicates with the manager, gathers basic health
 and status of the host, and is the sole entrypoint to each host for LabAssistant. It maintains
-a persistent mTLS stream to the manager that carries live statuses and a heartbeat (gRPC
-messages with a websocket fallback). It can stream logs from modules to the manager when
+a single persistent mTLS stream with the manager that carries live statuses and a heartbeat
+(gRPC messages with a websocket fallback). It can stream logs from modules to the manager when
 requested.
+
+The stream is bidirectional, so the same connection carries commands down (manager → associate)
+and statuses, heartbeats, job events, and log chunks back up (associate → manager) regardless of
+which side opened it. Which side dials is a per-host setting — see [connection modes](#connection-modes).
 
 It manages a command queue to serialize commands from the manager. Actions report their
 progress so that long-running actions can have their state tracked by the manager, which avoids
@@ -31,8 +35,10 @@ can kick off an elevated helper to run privileged actions when a module requests
 ### manager
 
 The mastermind of the whole operation. The manager talks to and listens to the associate
-agents. The internal state of each host and the module states are kept in the manager and
-displayed by the dashboard. It observes liveness from the mTLS stream connection.
+agents — accepting streams from associates that dial home, and dialing out to associates that
+listen (see [connection modes](#connection-modes)). The internal state of each host and the
+module states are kept in the manager and displayed by the dashboard. It observes liveness from
+the mTLS stream connection regardless of which side opened it.
 
 Hosts and their details (including which modules are enabled), as well as any system settings,
 are kept in a simple JSON file. The manager assigns and revokes certs when hosts are
@@ -44,12 +50,39 @@ The manager exposes an API the dashboard ingests — and that other services can
 by the same auth as login or an auth token. The API is specified in [API.md](API.md). Future
 work: webhooks for external notification and Home Assistant integration.
 
+#### connection modes
+
+Every host has a connection mode chosen at enroll time that decides **which side opens the TCP
+connection**. It does not change what flows over it: in both modes a single bidirectional mTLS
+stream carries commands down to the associate and statuses/heartbeats/job events/logs back up to
+the manager. Only the initial dial direction — and therefore which firewall must permit the
+inbound connection — differs.
+
+- **dial-home** (default): the associate dials the manager. The manager listens on its gRPC port
+  (`grpc_addr`); the host only needs outbound access to the manager. The associate holds a
+  client certificate (CN = host id) and the manager a server certificate; the manager identifies
+  the host from the verified client-cert CommonName. This is the right choice when the manager is
+  reachable but the hosts are not.
+
+- **manager-dial**: the manager dials the associate. The associate listens on a per-host port
+  (default 8444) and the manager connects out to it, retrying with backoff and holding one
+  outbound stream per host. The roles reverse at the TLS layer — the associate presents a server
+  certificate (CN = host id) and the manager a client certificate, and the manager pins the
+  associate's identity by verifying that CommonName. This is the right choice when the hosts are
+  reachable but the manager cannot accept inbound connections. The host firewall must allow the
+  manager to reach the listen port; LabAssistant does not modify host firewalls.
+
+Because the two directions share the same message protocol, everything downstream — command
+queueing, job tracking, log streaming, liveness — is identical either way. Certificate rotation
+currently applies to dial-home hosts only; a manager-dial host rotates by re-enrolling.
+
 #### quartermaster
 
 An internal package inside the manager. The quartermaster negotiates the SSH connection to the
 hosts to initiate associate installation, mTLS creation and exchange, and any protocol-version
-negotiation. It can also upgrade associates when enough has changed, add new modules to each
-host, or re-exchange mTLS certs. It notifies the manager when certs are close to expiry. Only
+negotiation. The certificate it issues depends on the host's [connection mode](#connection-modes)
+— a client certificate for dial-home, a server certificate for manager-dial. It can also upgrade
+associates when enough has changed, add new modules to each host, or re-exchange mTLS certs. It notifies the manager when certs are close to expiry. Only
 the manager interfaces with it.
 
 #### auditor
@@ -129,14 +162,18 @@ elevation is needed.
 1. Install the manager on a host. This is your control host and single point of access. It
    generates mTLS certificates for use as the root CA.
 2. Open the web dashboard.
-3. Add a new host. Specify the SSH user. Specify whether tailscale is enabled for that host.
+3. Add a new host. Specify the SSH user, whether tailscale is enabled, and the
+   [connection mode](#connection-modes) (dial-home by default, or manager-dial if the manager
+   cannot accept inbound connections).
 4. The manager attempts to SSH to the host and prompts for a password if no keys are available.
    If a key is already exchanged for the host, or tailscale is enabled, skip this step.
-5. The quartermaster installs the associate onto the host over SSH.
+5. The quartermaster installs the associate onto the host over SSH, issuing a client certificate
+   for a dial-home host or a server certificate (plus a listen port) for a manager-dial host.
 6. The associate and quartermaster perform the mTLS auth exchange over SSH.
 7. Start the associate as a systemd (or equivalent) service.
-8. The associate pings the manager and establishes a connection via mTLS.
-9. The associate sends qup/duo/sys/etc. status to the manager.
+8. The mTLS stream is established: a dial-home associate dials the manager, while a manager-dial
+   associate listens and the manager dials it (retrying with backoff until it is up).
+9. The associate sends qup/duo/sys/etc. status to the manager over that stream.
 10. The dashboard sends qup/duo/sys/etc. commands to the manager.
 11. The manager sends commands to the appropriate associate.
 12. The associate runs the corresponding module action.

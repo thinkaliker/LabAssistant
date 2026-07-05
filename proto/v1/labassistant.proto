@@ -7,11 +7,20 @@ option go_package = "github.com/thinkaliker/labassistant/proto/v1;labassistantv1
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/duration.proto";
 
-// ManagerService is hosted by the manager. The associate dials home and opens a
-// single long-lived bidirectional stream over mTLS; the connection plus transport
+// ManagerService is hosted by the manager. In dial-home mode the associate dials home and
+// opens a single long-lived bidirectional stream over mTLS; the connection plus transport
 // keepalive provide liveness (no application-level polling).
 service ManagerService {
   rpc Connect(stream AssociateMessage) returns (stream ManagerMessage);
+}
+
+// AssociateService is hosted by the associate in manager-dial mode: the manager dials the
+// associate and opens the stream. The message payloads are identical to ManagerService, only
+// the transport direction is reversed (the manager is the client). The associate sends the
+// first Hello frame; the manager replies with HelloAck. Used when the host cannot accept the
+// associate dialing home but can accept the manager dialing in (or vice-versa per network).
+service AssociateService {
+  rpc Attach(stream ManagerMessage) returns (stream AssociateMessage);
 }
 
 // ---- Envelopes ----

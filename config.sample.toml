@@ -35,8 +35,9 @@ http_addr = ":8080"
 #[enroll]
 #associate_bin = "/opt/labassistant/bin/associate"        # default: <manager dir>/associate
 #helper_bin    = "/opt/labassistant/bin/associatehelper"  # optional: privileged helper binary
-#manager_addr  = "localhost:8443"                         # address associates dial back (host:port)
+#manager_addr  = "localhost:8443"                         # address associates dial back (host:port, dial-home)
 #server_name   = "localhost"                              # manager TLS server name (must match its cert)
+#associate_port = 8444                                    # default port a manager-dial associate listens on / the manager dials
 
 # --- audit -------------------------------------------------------------------
 #[audit]

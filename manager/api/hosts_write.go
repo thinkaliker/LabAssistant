@@ -16,6 +16,10 @@ type addHostRequest struct {
 	SSHUser     string `json:"sshUser"`
 	SSHPassword string `json:"sshPassword"`
 	Tailscale   bool   `json:"tailscale"`
+	// ConnMode selects the stream direction: "dial_home" (default) or "manager_dial".
+	// ConnPort optionally overrides the associate listen port in manager_dial mode.
+	ConnMode string `json:"connMode"`
+	ConnPort int    `json:"connPort"`
 }
 
 // addHost starts async enrollment and returns the enrolling host plus its job id.
@@ -35,6 +39,8 @@ func (d Deps) addHost(w http.ResponseWriter, r *http.Request) {
 		SSHUser:     req.SSHUser,
 		SSHPassword: req.SSHPassword,
 		Tailscale:   req.Tailscale,
+		ConnMode:    req.ConnMode,
+		ConnPort:    req.ConnPort,
 	})
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "enroll_failed", err.Error())

@@ -53,6 +53,10 @@ type EnrollRequest struct {
 	SSHUser     string
 	SSHPassword string
 	Tailscale   bool
+	// ConnMode selects the stream direction: bundle.ModeDialHome (default) or
+	// bundle.ModeManagerDial. ConnPort overrides the default listen port in manager-dial mode.
+	ConnMode string
+	ConnPort int
 }
 
 // Mode names for how an associate is installed on a host.
@@ -70,16 +74,30 @@ func modeFor(sshUser string) string {
 	return ModeSSH
 }
 
+// resolveConn normalizes the requested connection direction and listen port. Manager-dial
+// hosts get the requested port or the configured default; dial-home hosts get no listen port.
+func (q *Quartermaster) resolveConn(req EnrollRequest) (mode string, port int) {
+	if req.ConnMode == bundle.ModeManagerDial {
+		port = req.ConnPort
+		if port == 0 {
+			port = q.associatePort
+		}
+		return bundle.ModeManagerDial, port
+	}
+	return bundle.ModeDialHome, 0
+}
+
 // Quartermaster orchestrates enrollment.
 type Quartermaster struct {
-	ca          *ca.CA
-	store       *state.Store
-	jobs        *jobs.Registry
-	aud         *auditor.Auditor
-	local       Installer // installs on the manager box (child process)
-	ssh         Installer // installs on remote hosts over SSH
-	managerAddr string
-	serverName  string
+	ca            *ca.CA
+	store         *state.Store
+	jobs          *jobs.Registry
+	aud           *auditor.Auditor
+	local         Installer // installs on the manager box (child process)
+	ssh           Installer // installs on remote hosts over SSH
+	managerAddr   string
+	serverName    string
+	associatePort int // default listen port for manager-dial hosts
 
 	connected       func(string) bool  // hub liveness check (set via SetStream)
 	streamUninstall func(string) error // hub self-uninstall command (set via SetStream)
@@ -123,20 +141,26 @@ type ReviveRequest struct {
 
 // New builds a Quartermaster. local installs the associate as a child process on the
 // manager box; ssh installs it on remote hosts. The mode is chosen per host at enroll.
-func New(authority *ca.CA, store *state.Store, jr *jobs.Registry, aud *auditor.Auditor, local, ssh Installer, managerAddr, serverName string) *Quartermaster {
+// associatePort is the default listen port baked into manager-dial bundles.
+func New(authority *ca.CA, store *state.Store, jr *jobs.Registry, aud *auditor.Auditor, local, ssh Installer, managerAddr, serverName string, associatePort int) *Quartermaster {
+	if associatePort == 0 {
+		associatePort = 8444
+	}
 	return &Quartermaster{
 		ca: authority, store: store, jobs: jr, aud: aud, local: local, ssh: ssh,
-		managerAddr: managerAddr, serverName: serverName,
+		managerAddr: managerAddr, serverName: serverName, associatePort: associatePort,
 	}
 }
 
 // Enroll registers a host in the "enrolling" state and starts async provisioning. It
 // returns the new host id and the enrollment job id.
 func (q *Quartermaster) Enroll(req EnrollRequest) (hostID, jobID string, err error) {
+	connMode, connPort := q.resolveConn(req)
 	hostID = uuid.NewString()
 	host := state.Host{
 		ID: hostID, Name: req.Name, IP: req.IP, SSHUser: req.SSHUser,
 		Mode: modeFor(req.SSHUser), Tailscale: req.Tailscale, Status: state.StatusEnrolling,
+		ConnMode: connMode, ConnPort: connPort,
 	}
 	if err := q.store.Add(host); err != nil {
 		return "", "", err
@@ -249,8 +273,19 @@ func (q *Quartermaster) run(ctx context.Context, hostID string, req EnrollReques
 		q.aud.Record("host_enroll_failed", hostID, "manager", "enrollment failed: "+err.Error(), nil)
 	}
 
-	emit("issuing client certificate")
-	certPEM, keyPEM, serial, err := q.ca.IssueClient(hostID)
+	connMode, connPort := q.resolveConn(req)
+	var (
+		certPEM, keyPEM []byte
+		serial          string
+		err             error
+	)
+	if connMode == bundle.ModeManagerDial {
+		emit("issuing server certificate")
+		certPEM, keyPEM, serial, err = q.ca.IssueServer(hostID, []string{req.IP})
+	} else {
+		emit("issuing client certificate")
+		certPEM, keyPEM, serial, err = q.ca.IssueClient(hostID)
+	}
 	if err != nil {
 		fail(err)
 		return
@@ -260,14 +295,20 @@ func (q *Quartermaster) run(ctx context.Context, hostID string, req EnrollReques
 		h.CertSerial = serial
 		h.CertExpiry = expiry
 	})
-	q.aud.Record("cert_issued", hostID, "manager", "client certificate issued", nil)
+	q.aud.Record("cert_issued", hostID, "manager", "certificate issued", nil)
+
 	b := bundle.Bundle{
 		HostID:      hostID,
+		ConnMode:    connMode,
 		ManagerAddr: q.managerAddr,
 		ServerName:  q.serverName,
 		CACert:      q.ca.CAPEM(),
 		ClientCert:  certPEM,
 		ClientKey:   keyPEM,
+	}
+	if connMode == bundle.ModeManagerDial {
+		b.ListenAddr = fmt.Sprintf(":%d", connPort)
+		emit(fmt.Sprintf("manager-dial mode: the manager will dial %s:%d — ensure the host firewall allows inbound TCP %d from the manager", req.IP, connPort, connPort))
 	}
 
 	emit("installing associate on " + req.IP)

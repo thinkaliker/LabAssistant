@@ -7,8 +7,10 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"sync"
 	"time"
 
@@ -127,8 +129,22 @@ func New(b bundle.Bundle, mods ...module.Module) *Associate {
 	return a
 }
 
-// Run dials the manager and serves the stream, reconnecting with backoff until ctx ends.
+// assocStream is the associate's view of a live bidirectional stream. It is satisfied by both
+// the dial-home client stream (ManagerService/Connect) and the accepted manager-dial server
+// stream (AssociateService/Attach): in both directions the associate sends AssociateMessages
+// and receives ManagerMessages.
+type assocStream interface {
+	Send(*pb.AssociateMessage) error
+	Recv() (*pb.ManagerMessage, error)
+}
+
+// Run drives the associate's stream. In dial-home mode it dials the manager and reconnects
+// with backoff; in manager-dial mode it listens for the manager to dial in. It returns when
+// ctx ends.
 func (a *Associate) Run(ctx context.Context) error {
+	if !a.bundle.DialsHome() {
+		return a.serve(ctx)
+	}
 	for {
 		if err := a.session(ctx); err != nil && ctx.Err() == nil {
 			slog.Warn("stream ended; reconnecting", "err", err, "in", reconnectBackoff)
@@ -141,6 +157,7 @@ func (a *Associate) Run(ctx context.Context) error {
 	}
 }
 
+// session (dial-home) dials the manager and runs one stream to completion.
 func (a *Associate) session(parent context.Context) error {
 	tlsCfg, err := a.clientTLS()
 	if err != nil {
@@ -166,7 +183,54 @@ func (a *Associate) session(parent context.Context) error {
 	if err != nil {
 		return err
 	}
+	return a.runStream(ctx, cancel, stream)
+}
 
+// serve (manager-dial) listens for the manager to dial in and serves each Attach stream. The
+// associate presents its server certificate and requires the manager's client certificate.
+func (a *Associate) serve(ctx context.Context) error {
+	tlsCfg, err := a.serverTLS()
+	if err != nil {
+		return err
+	}
+	lis, err := net.Listen("tcp", a.bundle.ListenAddr)
+	if err != nil {
+		return fmt.Errorf("listen %s: %w", a.bundle.ListenAddr, err)
+	}
+	srv := grpc.NewServer(
+		grpc.Creds(credentials.NewTLS(tlsCfg)),
+		grpc.KeepaliveParams(keepalive.ServerParameters{Time: 25 * time.Second, Timeout: 10 * time.Second}),
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{MinTime: 10 * time.Second, PermitWithoutStream: true}),
+	)
+	pb.RegisterAssociateServiceServer(srv, &attachServer{a: a})
+	go func() {
+		<-ctx.Done()
+		srv.GracefulStop()
+	}()
+	slog.Info("associate listening for manager", "addr", a.bundle.ListenAddr)
+	if err := srv.Serve(lis); err != nil && ctx.Err() == nil {
+		return err
+	}
+	return ctx.Err()
+}
+
+// attachServer adapts the associate to the AssociateService gRPC server (manager-dial mode).
+type attachServer struct {
+	pb.UnimplementedAssociateServiceServer
+	a *Associate
+}
+
+// Attach handles one manager-dialed stream for the whole life of the connection.
+func (s *attachServer) Attach(stream pb.AssociateService_AttachServer) error {
+	ctx, cancel := context.WithCancel(stream.Context())
+	defer cancel()
+	return s.a.runStream(ctx, cancel, stream)
+}
+
+// runStream drives one live stream regardless of direction: it performs the Hello/HelloAck
+// handshake (the associate always sends Hello first), starts the worker loops, and pumps
+// inbound messages until the stream ends. ctx/cancel bound the session.
+func (a *Associate) runStream(ctx context.Context, cancel context.CancelFunc, stream assocStream) error {
 	if err := stream.Send(&pb.AssociateMessage{Payload: &pb.AssociateMessage_Hello{Hello: a.hello(ctx)}}); err != nil {
 		return err
 	}
@@ -177,7 +241,7 @@ func (a *Associate) session(parent context.Context) error {
 	if h := ack.GetHelloAck(); h == nil || !h.GetAccepted() {
 		return errors.New("manager rejected hello")
 	}
-	slog.Info("connected to manager", "addr", a.bundle.ManagerAddr)
+	slog.Info("stream established", "host", a.bundle.HostID)
 
 	s := &session{
 		a:      a,
@@ -207,10 +271,17 @@ func (a *Associate) session(parent context.Context) error {
 	}
 }
 
+// serverTLS builds the associate's server TLS config (manager-dial mode) under lock.
+func (a *Associate) serverTLS() (*tls.Config, error) {
+	a.bundleMu.Lock()
+	defer a.bundleMu.Unlock()
+	return a.bundle.ServerTLSConfig()
+}
+
 // session is one live connection's mutable state.
 type session struct {
 	a      *Associate
-	stream pb.ManagerService_ConnectClient
+	stream assocStream
 	ctx    context.Context
 	cancel context.CancelFunc
 	outbox chan *pb.AssociateMessage

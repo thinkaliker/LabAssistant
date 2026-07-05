@@ -129,14 +129,29 @@ func (h *Hub) closeLog(streamID string) {
 	h.logMu.Unlock()
 }
 
-// Connect is the bidirectional stream RPC the associate dials.
+// mgrStream is the manager's view of a live bidirectional stream. It is satisfied by both the
+// dial-home accepted stream (ManagerService/Connect) and the manager-dial client stream
+// (AssociateService/Attach): in both directions the manager sends ManagerMessages and
+// receives AssociateMessages.
+type mgrStream interface {
+	Send(*pb.ManagerMessage) error
+	Recv() (*pb.AssociateMessage, error)
+}
+
+// Connect is the bidirectional stream RPC the associate dials (dial-home mode).
 func (h *Hub) Connect(stream pb.ManagerService_ConnectServer) error {
-	ctx := stream.Context()
-	hostID, err := hostIDFromCert(ctx)
+	hostID, err := hostIDFromCert(stream.Context())
 	if err != nil {
 		return err
 	}
+	return h.serveStream(stream.Context(), hostID, stream)
+}
 
+// serveStream runs one live stream to a host for the whole life of the connection, regardless
+// of who dialed: it completes the Hello/HelloAck handshake, registers the connection, marks
+// the host online, and pumps inbound messages until the stream ends. hostID is the identity
+// already verified from the peer certificate (dial-home) or the dial target (manager-dial).
+func (h *Hub) serveStream(ctx context.Context, hostID string, stream mgrStream) error {
 	first, err := stream.Recv()
 	if err != nil {
 		return err
@@ -146,7 +161,7 @@ func (h *Hub) Connect(stream pb.ManagerService_ConnectServer) error {
 		return fmt.Errorf("first message must be Hello")
 	}
 	if hello.GetHostId() != hostID {
-		return fmt.Errorf("host id mismatch: cert=%q hello=%q", hostID, hello.GetHostId())
+		return fmt.Errorf("host id mismatch: peer=%q hello=%q", hostID, hello.GetHostId())
 	}
 	if _, ok := h.store.Get(hostID); !ok {
 		return fmt.Errorf("unknown host %q", hostID)
@@ -179,7 +194,7 @@ func (h *Hub) Connect(stream pb.ManagerService_ConnectServer) error {
 	}
 }
 
-func (h *Hub) sendLoop(ctx context.Context, stream pb.ManagerService_ConnectServer, c *conn) {
+func (h *Hub) sendLoop(ctx context.Context, stream mgrStream, c *conn) {
 	for {
 		select {
 		case <-ctx.Done():

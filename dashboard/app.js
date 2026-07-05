@@ -23,7 +23,7 @@ function app() {
     expanded: null,
     addHostOpen: false,
     taskOpen: false,
-    newHost: { name: '', ip: '', sshUser: '', sshPassword: '', tailscale: false },
+    newHost: { name: '', ip: '', sshUser: '', sshPassword: '', tailscale: false, connMode: 'dial_home', connPort: null },
     newTask: { name: '', schedule: '', module: '', action: '', hostIds: [], misfire: 'skip', interHostDelaySeconds: 0, enabled: true, allowDestructive: false },
     job: { open: false, state: '', progress: 0, log: [] },
     jobPanelHeight: 0, // px override for the docked job panel (0 = CSS default of 33vh)
@@ -486,15 +486,16 @@ function app() {
       this.logView = { open: false, title: '', lines: [], es: null };
     },
     async submitHost() {
+      const body = { ...this.newHost, connPort: Number(this.newHost.connPort) || 0 };
       const r = await fetch('/api/v1/hosts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(this.newHost),
+        body: JSON.stringify(body),
       });
       if (!r.ok) { alert('enroll failed'); return; }
       const { jobId } = await r.json();
       this.addHostOpen = false;
-      this.newHost = { name: '', ip: '', sshUser: '', sshPassword: '', tailscale: false };
+      this.newHost = { name: '', ip: '', sshUser: '', sshPassword: '', tailscale: false, connMode: 'dial_home', connPort: null };
       this.page = 'hosts';
       await this.refresh();
       this.watchJob(jobId);

@@ -40,9 +40,13 @@ type Enroll struct {
 	// AssociateBin / HelperBin are paths to the binaries the installer deploys.
 	AssociateBin string `toml:"associate_bin"`
 	HelperBin    string `toml:"helper_bin"`
-	// ManagerAddr / ServerName are baked into each bundle (what the associate dials).
+	// ManagerAddr / ServerName are baked into each bundle (what the associate dials in
+	// dial-home mode).
 	ManagerAddr string `toml:"manager_addr"`
 	ServerName  string `toml:"server_name"`
+	// AssociatePort is the default TCP port a manager-dial associate listens on and the
+	// manager dials. Per-host overrides are chosen at enroll time.
+	AssociatePort int `toml:"associate_port"`
 }
 
 // Auth holds dashboard login settings. The password is stored only as a hash.
@@ -59,9 +63,10 @@ func Default() Config {
 		LogLevel: "info",
 		Auth:     Auth{Username: "admin"},
 		Enroll: Enroll{
-			Mode:        "local",
-			ManagerAddr: "localhost:8443",
-			ServerName:  "localhost",
+			Mode:          "local",
+			ManagerAddr:   "localhost:8443",
+			ServerName:    "localhost",
+			AssociatePort: 8444,
 		},
 		Audit: Audit{Max: 1000},
 	}
