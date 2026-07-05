@@ -67,7 +67,7 @@ into the associate for v1).
 
 | Module | Purpose |
 | --- | --- |
-| **duo** | **d**ocker **u**pdater/**o**rchestrator — image update checks (Watchtower-style), compose start/stop/restart, docker log streaming. |
+| **duo** | **d**ocker **u**pdater/**o**rchestrator — image update checks (Watchtower-style), compose start/stop/restart, docker log streaming. On hosts without the `docker` CLI it stays empty; set `LABASSISTANT_DEMO=1` on the associate to seed demo stacks for a docker-less walkthrough. |
 | **qup** | **q**uick **up**dater — dry-run + apply host package updates, distro-detected (Debian-based today). |
 | **sys** | **sys**tem — host commands: logs, reboot (confirmed), interfaces, disk usage, uptime, service restarts. |
 

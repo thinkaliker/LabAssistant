@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"sync"
 	"time"
@@ -62,6 +63,11 @@ func New() *Module {
 	m := &Module{updates: map[string]imageUpdate{}}
 	if _, err := exec.LookPath("docker"); err == nil {
 		m.useDocker = true
+		return m
+	}
+	// Without docker the module runs in simulated mode, but only seeds demo stacks
+	// when explicitly asked (LABASSISTANT_DEMO=1) so real docker-less hosts stay empty.
+	if os.Getenv("LABASSISTANT_DEMO") != "1" {
 		return m
 	}
 	m.stacks = []*Stack{
