@@ -964,7 +964,7 @@
     </header>
     <div class="job-panel-body">
       <progress class="progress is-link mb-2" :value="job.progress" max="1" x-show="job.state==='running'"></progress>
-      <pre class="job-panel-log" x-ref="jobLog" x-text="job.log.join('\n')"></pre>
+      <pre class="job-panel-log" x-ref="jobLog" @scroll="onJobScroll($event)" x-text="job.log.join('\n')"></pre>
     </div>
   </div>
 

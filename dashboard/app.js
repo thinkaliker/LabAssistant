@@ -27,6 +27,7 @@ function app() {
     newHost: { name: '', ip: '', sshUser: '', sshPassword: '', tailscale: false, connMode: 'manager_dial', connPort: null },
     newTask: { name: '', schedule: '', module: '', action: '', hostIds: [], misfire: 'skip', interHostDelaySeconds: 0, enabled: true, allowDestructive: false },
     job: { open: false, state: '', progress: 0, log: [] },
+    jobStick: true, // keep the job log pinned to the newest line until the user scrolls up
     jobPanelHeight: 0, // px override for the docked job panel (0 = CSS default of 33vh)
     logView: { open: false, title: '', lines: [], es: null },
     ready: false,
@@ -281,17 +282,17 @@ function app() {
       // progress, or a meaningful terminal state). A job that immediately hands off to the
       // sudo-password banner produces no such signal, so the modal never flashes open/closed.
       this.job = { open: false, state: 'running', progress: 0, log: [] };
+      this.jobStick = true;
       const es = new EventSource(`/api/v1/jobs/${jobId}/events`);
       es.onmessage = (e) => {
         const ev = JSON.parse(e.data).payload;
         if (ev.kind === 'log' && ev.message) {
-          // Stick to the bottom only if the user is already there, so scrolling up to read
-          // history isn't yanked away by new output.
-          const el = this.$refs.jobLog;
-          const atBottom = !el || el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+          // Stay pinned to the newest line while jobStick holds. jobStick is driven by the
+          // user's own scrolling (see onJobScroll), not re-measured here, so a fast burst of
+          // lines can't be misread as "user scrolled up" and stop the autoscroll.
           this.job.log.push(ev.message);
           this.job.open = true;
-          if (atBottom) this.$nextTick(() => { const e = this.$refs.jobLog; if (e) e.scrollTop = e.scrollHeight; });
+          if (this.jobStick) this.$nextTick(() => { const e = this.$refs.jobLog; if (e) e.scrollTop = e.scrollHeight; });
         }
         if (ev.kind === 'progress') { this.job.progress = ev.progress; this.job.open = true; }
         if (ev.kind === 'state') {
@@ -305,6 +306,13 @@ function app() {
           }
         }
       };
+    },
+    // onJobScroll re-arms or releases autoscroll from the user's scroll position: at (or near)
+    // the bottom re-pins; scrolling up to read history releases the pin. Programmatic scrolls
+    // land at the bottom, so they simply keep jobStick true.
+    onJobScroll(e) {
+      const el = e.target;
+      this.jobStick = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
     },
     // startJobResize drags the panel's top edge to grow/shrink the docked job output. Pointer
     // events cover mouse + touch; height is clamped between a sensible floor and ~92vh.
