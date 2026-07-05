@@ -47,10 +47,10 @@
       height: 100%;
     }
 
-    /* On a mobile viewport, drop the stack action buttons onto their own second row
-       instead of squishing them beside the stack name. Desktop keeps the single row
-       (is-mobile level default). */
-    @media screen and (max-width: 768px) {
+    /* Below desktop width (large phones + tablets in portrait), drop the stack action buttons
+       onto their own second row and stack the per-service rows, instead of squishing them.
+       Desktop (>=1024px) keeps the single-row / full-table layout. */
+    @media screen and (max-width: 1023px) {
       .svc-stack-head {
         flex-wrap: wrap;
       }
@@ -59,6 +59,40 @@
         margin-top: 0.5rem;
       }
       .svc-stack-head > .level-right .buttons {
+        justify-content: flex-start;
+      }
+
+      /* The per-service table has 5 columns (status, name, image, update, actions) that squish
+         on a narrow screen. Collapse each row into a stacked card: status tag + service name on
+         the first line, then image, update badge, and the action buttons each on their own row. */
+      .svc-table tbody,
+      .svc-table tr,
+      .svc-table td {
+        display: block;
+      }
+      .svc-table tr {
+        padding: 0.5rem 0;
+        border-bottom: 1px solid var(--bulma-border-weak);
+      }
+      .svc-table tr:last-child {
+        border-bottom: 0;
+      }
+      .svc-table td {
+        border: 0;
+        padding: 0.15rem 0;
+      }
+      .svc-table td:nth-child(1),
+      .svc-table td:nth-child(2) {
+        display: inline-block;
+        vertical-align: middle;
+      }
+      .svc-table td:nth-child(2) {
+        margin-left: 0.5rem;
+      }
+      .svc-table td.has-text-right {
+        text-align: left !important;
+      }
+      .svc-table .buttons.is-right {
         justify-content: flex-start;
       }
     }
@@ -537,7 +571,7 @@
                     </div>
                   </div>
                 </div>
-                <table class="table is-fullwidth is-narrow">
+                <table class="table is-fullwidth is-narrow svc-table">
                   <tbody>
                     <template x-for="sv in st.services" :key="sv.name">
                       <tr>
@@ -620,7 +654,10 @@
               <div class="level-left">
                 <div class="level-item has-text-weight-semibold" x-text="hu.hostName"></div>
                 <div class="level-item" x-show="hu.os"><span class="tag"
-                    :class="hu.os && hu.os.count>0 ? 'is-warning' : 'is-success'" x-text="(hu.os ? hu.os.count : 0)+' updates'"></span></div>
+                    :class="hu.os && hu.os.count>0 ? 'is-warning' : 'is-success'"
+                    x-text="(hu.os ? hu.os.count : 0)+' package'+((hu.os && hu.os.count===1)?'':'s')"></span></div>
+                <div class="level-item" x-show="hu.containers.length>0"><span class="tag is-warning"
+                    x-text="hu.containers.length+' image'+(hu.containers.length===1?'':'s')"></span></div>
                 <div class="level-item is-size-7 has-text-grey" x-show="hu.os" x-text="hu.os && hu.os.mode"></div>
               </div>
               <div class="level-right">
@@ -666,7 +703,8 @@
             <template x-if="hu.containers.length===0">
               <p class="is-size-7 has-text-grey">No container image updates.</p>
             </template>
-            <table class="table is-fullwidth is-narrow is-size-7 mb-0" x-show="hu.containers.length>0">
+            <div style="overflow-x:auto" x-show="hu.containers.length>0">
+            <table class="table is-fullwidth is-narrow is-size-7 mb-0">
               <thead>
                 <tr>
                   <th>Stack</th>
@@ -692,6 +730,7 @@
                 </template>
               </tbody>
             </table>
+            </div>
           </div>
         </template>
       </div>
