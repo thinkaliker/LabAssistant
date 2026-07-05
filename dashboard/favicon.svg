@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
   <!-- Erlenmeyer (triangle) flask: glass outline + turquoise liquid in the base. -->
+  <path d="M9.5 9H14.5L20 19H4z" fill="#00d1b2"/>
   <path d="M9.5 3h5M9.5 3v6L4 19h16L14.5 9V3" fill="none" stroke="#0f9d8f"
         stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
-  <path d="M9.5 9H14.5L20 19H4z" fill="#00d1b2"/>
 </svg>

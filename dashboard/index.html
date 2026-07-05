@@ -19,9 +19,9 @@
     <div class="navbar-brand">
       <span class="navbar-item has-text-weight-bold is-size-5" :title="statusTitle()">
         <svg viewBox="0 0 24 24" width="22" height="22" style="margin-right:0.5rem;vertical-align:-0.25rem" aria-hidden="true">
+          <path d="M9.5 9H14.5L20 19H4z" :fill="statusColor()"/>
           <path d="M9.5 3h5M9.5 3v6L4 19h16L14.5 9V3" fill="none" stroke="currentColor"
                 stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
-          <path d="M9.5 9H14.5L20 19H4z" :fill="statusColor()"/>
         </svg>LabAssistant</span>
       <a role="button" class="navbar-burger" :class="navOpen && 'is-active'" aria-label="menu" :aria-expanded="navOpen"
         @click="navOpen=!navOpen">
@@ -652,9 +652,9 @@
             <div class="box">
               <p class="has-text-centered mb-2">
                 <svg viewBox="0 0 24 24" width="56" height="56" aria-hidden="true">
+                  <path d="M9.5 9H14.5L20 19H4z" fill="#00d1b2"/>
                   <path d="M9.5 3h5M9.5 3v6L4 19h16L14.5 9V3" fill="none" stroke="#0f9d8f"
                         stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
-                  <path d="M9.5 9H14.5L20 19H4z" fill="#00d1b2"/>
                 </svg>
               </p>
               <h1 class="title is-4 has-text-centered mb-1">LabAssistant</h1>
