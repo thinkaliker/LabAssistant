@@ -389,7 +389,7 @@
                 </div>
                 <div class="level-item has-text-weight-semibold" x-text="h.name"></div>
                 <div class="level-item is-size-7 has-text-grey" x-text="h.ip"></div>
-                <div class="level-item" x-show="h.connMode==='manager_dial'"><span class="tag is-info is-light" title="Manager dials this host">manager-dial</span></div>
+                <div class="level-item" x-show="h.connMode==='manager_dial'"><span class="tag is-info" title="Manager dials this host">manager-dial</span></div>
                 <div class="level-item" x-show="hostUpdates(h)>0"><span class="tag is-warning"
                     :title="hostUpdates(h)+' update(s) available'" x-text="hostUpdates(h)+(hostUpdates(h)===1?' update':' updates')"></span></div>
               </div>
