@@ -606,6 +606,23 @@ function app() {
       this.compose = { open: false, hostId: '', stack: '', path: '', multiFile: false, loading: false, busy: false, error: '', status: '' };
     },
     // ---- updates ----
+    // updateHosts merges the flat os/containers projections into one row per host so the
+    // Updates page can show each host's package and container image updates together in its
+    // own panel. Hosts appear if they report qup status or have any container image update.
+    updateHosts() {
+      const byId = new Map();
+      for (const o of this.updates.os) {
+        byId.set(o.hostId, { hostId: o.hostId, hostName: o.hostName, os: o, containers: [] });
+      }
+      for (const c of this.updates.containers) {
+        let e = byId.get(c.hostId);
+        if (!e) { e = { hostId: c.hostId, hostName: c.hostName, os: null, containers: [] }; byId.set(c.hostId, e); }
+        e.containers.push(c);
+      }
+      const rows = this.sortByHost([...byId.values()]);
+      for (const r of rows) r.containers = this.sortByHost(r.containers, x => x.stack + '/' + x.service);
+      return rows;
+    },
     shortDigest(d) {
       if (!d) return '';
       const h = String(d).replace(/^sha256:/, '');

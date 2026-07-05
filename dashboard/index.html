@@ -595,33 +595,34 @@
           </div>
         </div>
 
-        <h2 class="subtitle mb-2">Host packages</h2>
-        <template x-if="updates.os.length===0">
-          <p class="has-text-grey">No hosts reporting package updates.</p>
+        <template x-if="updateHosts().length===0">
+          <p class="has-text-grey">No hosts reporting updates.</p>
         </template>
-        <template x-for="o in sortByHost(updates.os)" :key="o.hostId">
+        <template x-for="hu in updateHosts()" :key="hu.hostId">
           <div class="box">
             <div class="level is-mobile">
               <div class="level-left">
-                <div class="level-item has-text-weight-semibold" x-text="o.hostName"></div>
-                <div class="level-item"><span class="tag"
-                    :class="o.count>0 ? 'is-warning' : 'is-success'" x-text="o.count+' updates'"></span></div>
-                <div class="level-item is-size-7 has-text-grey" x-text="o.mode"></div>
+                <div class="level-item has-text-weight-semibold" x-text="hu.hostName"></div>
+                <div class="level-item" x-show="hu.os"><span class="tag"
+                    :class="hu.os && hu.os.count>0 ? 'is-warning' : 'is-success'" x-text="(hu.os ? hu.os.count : 0)+' updates'"></span></div>
+                <div class="level-item is-size-7 has-text-grey" x-show="hu.os" x-text="hu.os && hu.os.mode"></div>
               </div>
               <div class="level-right">
                 <div class="level-item buttons are-small">
-                  <button class="button" :disabled="!hostOnline(o.hostId)"
-                    @click="checkHost(o.hostId)">check for updates</button>
-                  <button class="button is-warning" :disabled="o.count===0 || !hostOnline(o.hostId)"
-                    @click="runAction(o.hostId,'qup','apply')">apply updates</button>
+                  <button class="button" :disabled="!hostOnline(hu.hostId)"
+                    @click="checkHost(hu.hostId)">check for updates</button>
+                  <button class="button is-warning" :disabled="!hu.os || hu.os.count===0 || !hostOnline(hu.hostId)"
+                    @click="runAction(hu.hostId,'qup','apply')">apply updates</button>
                 </div>
               </div>
             </div>
-            <template x-if="o.packages && o.packages.length">
+
+            <h3 class="subtitle is-6 mb-2">Host packages</h3>
+            <template x-if="hu.os && hu.os.packages && hu.os.packages.length">
               <div style="max-height:18rem;overflow:auto">
                 <table class="table is-fullwidth is-narrow is-size-7 mb-0">
                   <tbody>
-                    <template x-for="pkg in o.packages" :key="pkg.name">
+                    <template x-for="pkg in hu.os.packages" :key="pkg.name">
                       <tr>
                         <td class="has-text-weight-semibold" x-text="pkg.name"></td>
                         <td class="is-family-monospace has-text-grey" x-text="pkg.current || '—'"></td>
@@ -633,41 +634,42 @@
                 </table>
               </div>
             </template>
+            <template x-if="!hu.os || !hu.os.packages || !hu.os.packages.length">
+              <p class="is-size-7 has-text-grey">No package updates.</p>
+            </template>
+
+            <h3 class="subtitle is-6 mt-4 mb-2">Container images</h3>
+            <template x-if="hu.containers.length===0">
+              <p class="is-size-7 has-text-grey">No container image updates.</p>
+            </template>
+            <table class="table is-fullwidth is-narrow is-size-7 mb-0" x-show="hu.containers.length>0">
+              <thead>
+                <tr>
+                  <th>Stack</th>
+                  <th>Service</th>
+                  <th>Image</th>
+                  <th>Change</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="c in hu.containers" :key="c.stack+'/'+c.service">
+                  <tr>
+                    <td x-text="c.stack"></td>
+                    <td class="has-text-weight-semibold" x-text="c.service"></td>
+                    <td class="has-text-grey" x-text="c.image"></td>
+                    <td class="is-family-monospace">
+                      <span x-show="c.current" x-text="shortDigest(c.current)+' → '+shortDigest(c.latest)"></span>
+                      <span class="has-text-grey" x-show="!c.current">—</span>
+                    </td>
+                    <td class="has-text-right"><button class="button is-small is-warning" :disabled="!hostOnline(c.hostId)"
+                        @click="updateService(c)">update</button></td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
           </div>
         </template>
-
-        <h2 class="subtitle mt-5 mb-2">Container images</h2>
-        <template x-if="updates.containers.length===0">
-          <p class="has-text-grey">No container image updates found. Run a check to refresh.</p>
-        </template>
-        <table class="table is-fullwidth is-narrow" x-show="updates.containers.length>0">
-          <thead>
-            <tr>
-              <th>Host</th>
-              <th>Stack</th>
-              <th>Service</th>
-              <th>Image</th>
-              <th>Change</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            <template x-for="c in sortByHost(updates.containers, x => x.stack+'/'+x.service)" :key="c.hostId+'/'+c.stack+'/'+c.service">
-              <tr>
-                <td class="is-size-7" x-text="c.hostName"></td>
-                <td x-text="c.stack"></td>
-                <td class="has-text-weight-semibold" x-text="c.service"></td>
-                <td class="is-size-7 has-text-grey" x-text="c.image"></td>
-                <td class="is-size-7 is-family-monospace">
-                  <span x-show="c.current" x-text="shortDigest(c.current)+' → '+shortDigest(c.latest)"></span>
-                  <span class="has-text-grey" x-show="!c.current">—</span>
-                </td>
-                <td class="has-text-right"><button class="button is-small is-warning" :disabled="!hostOnline(c.hostId)"
-                    @click="updateService(c)">update</button></td>
-              </tr>
-            </template>
-          </tbody>
-        </table>
       </div>
 
       <!-- Scheduler -->
