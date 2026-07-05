@@ -155,11 +155,14 @@ function app() {
       this.jobs.push(rec);
       this.showJob(rec);
       this.jobPanelOpen = true;
+      // Mutate through the reactive array element (not the raw `rec`) so Alpine repaints the
+      // log panel on each line. `this.jobs.find` returns the reactive proxy for this record.
+      const live = () => this.jobs.find(j => j.id === rec.id) || rec;
       const es = new EventSource('/api/v1/manager/update/logs');
       es.onmessage = (e) => {
         let ev; try { ev = JSON.parse(e.data); } catch { return; }
         if (ev.kind === 'log' && ev.message) {
-          rec.log.push(ev.message);
+          live().log.push(ev.message);
           if (this.job.id === rec.id && this.jobStick) this.$nextTick(() => { const el = this.$refs.jobLog; if (el) el.scrollTop = el.scrollHeight; });
         }
       };
@@ -167,7 +170,8 @@ function app() {
         // The manager restarting at the end of the update drops the stream — expected. Stop the
         // browser's auto-reconnect and mark the record; the stale banner takes over.
         es.close();
-        if (rec.state === 'running') rec.state = 'restarting';
+        const r = live();
+        if (r.state === 'running') r.state = 'restarting';
       };
     },
     _pollStaleUntilRestart() {
