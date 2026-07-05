@@ -1,6 +1,7 @@
 package quartermaster
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -342,7 +343,31 @@ func sshRun(client *ssh.Client, script string) error {
 		return err
 	}
 	defer sess.Close()
-	return sess.Run("bash -c " + shellQuote(script))
+	var out bytes.Buffer
+	sess.Stdout = &out
+	sess.Stderr = &out
+	if err := sess.Run("bash -c " + shellQuote(script)); err != nil {
+		if msg := lastLines(out.String(), 4); msg != "" {
+			return fmt.Errorf("%w: %s", err, msg)
+		}
+		return err
+	}
+	return nil
+}
+
+// lastLines returns up to the last n non-empty lines of s, joined with "; ". Used to
+// surface the tail of a failed remote script (the actual error) instead of a bare exit code.
+func lastLines(s string, n int) string {
+	var lines []string
+	for _, l := range strings.Split(s, "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			lines = append(lines, l)
+		}
+	}
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "; ")
 }
 
 // sshOutput runs a command and returns its trimmed stdout.
