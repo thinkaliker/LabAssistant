@@ -51,11 +51,15 @@ func (d Deps) addHost(w http.ResponseWriter, r *http.Request) {
 }
 
 // editHostRequest carries the editable host fields; nil fields are left unchanged.
+// ConnMode/ConnPort describe the associate's stream wiring and only take effect after the
+// associate is reinstalled; the UI warns before sending a change to either.
 type editHostRequest struct {
 	Name      *string `json:"name"`
 	IP        *string `json:"ip"`
 	SSHUser   *string `json:"sshUser"`
 	Tailscale *bool   `json:"tailscale"`
+	ConnMode  *string `json:"connMode"`
+	ConnPort  *int    `json:"connPort"`
 }
 
 func (d Deps) editHost(w http.ResponseWriter, r *http.Request) {
@@ -76,6 +80,12 @@ func (d Deps) editHost(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.Tailscale != nil {
 			h.Tailscale = *req.Tailscale
+		}
+		if req.ConnMode != nil {
+			h.ConnMode = *req.ConnMode
+		}
+		if req.ConnPort != nil {
+			h.ConnPort = *req.ConnPort
 		}
 	})
 	if !ok {

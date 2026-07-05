@@ -23,7 +23,14 @@ function app() {
     expanded: null,
     hostSort: 'name', // 'name' | 'ip' — how the Hosts list is ordered
     addHostOpen: false,
+    // Edit Host modal. editHost holds the working copy; editHostOrig captures the values at open
+    // time so we can detect changes to the associate-baked fields (connMode/connPort) and warn.
+    editHostOpen: false,
+    editHostId: null,
+    editHost: { name: '', ip: '', sshUser: '', tailscale: false, connMode: 'manager_dial', connPort: null },
+    editHostOrig: { connMode: 'manager_dial', connPort: null },
     taskOpen: false,
+    editingTaskId: null, // null = creating a new task, otherwise the id being edited
     cronFields: false, // Add Task: false = raw cron string, true = 5 separate fields
     cronParts: { m: '*', h: '*', dom: '*', mon: '*', dow: '*' },
     newHost: { name: '', ip: '', sshUser: '', sshPassword: '', tailscale: false, connMode: 'manager_dial', connPort: null },
@@ -240,7 +247,20 @@ function app() {
       });
     },
     openTask() {
+      this.editingTaskId = null;
       this.newTask = { name: '', schedule: '', module: '', action: '', hostIds: [], misfire: 'skip', interHostDelaySeconds: 0, enabled: true, allowDestructive: false };
+      this.cronFields = false;
+      this.cronParts = { m: '*', h: '*', dom: '*', mon: '*', dow: '*' };
+      this.taskOpen = true;
+    },
+    // Open the same modal pre-filled from an existing task; submitTask then PUTs instead of POSTs.
+    editTask(t) {
+      this.editingTaskId = t.id;
+      this.newTask = {
+        name: t.name || '', schedule: t.schedule || '', module: t.module || '', action: t.action || '',
+        hostIds: [...(t.hostIds || [])], misfire: t.misfire || 'skip',
+        interHostDelaySeconds: t.interHostDelaySeconds || 0, enabled: !!t.enabled, allowDestructive: !!t.allowDestructive,
+      };
       this.cronFields = false;
       this.cronParts = { m: '*', h: '*', dom: '*', mon: '*', dow: '*' };
       this.taskOpen = true;
@@ -282,8 +302,10 @@ function app() {
       if (i >= 0) this.newTask.hostIds.splice(i, 1); else this.newTask.hostIds.push(id);
     },
     async submitTask() {
-      const r = await fetch('/api/v1/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(this.newTask) });
-      if (!r.ok) { const e = await r.json().catch(() => ({})); alert('create failed: ' + (e.error?.message || r.status)); return; }
+      const editing = this.editingTaskId;
+      const url = editing ? `/api/v1/tasks/${editing}` : '/api/v1/tasks';
+      const r = await fetch(url, { method: editing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(this.newTask) });
+      if (!r.ok) { const e = await r.json().catch(() => ({})); alert((editing ? 'update' : 'create') + ' failed: ' + (e.error?.message || r.status)); return; }
       this.taskOpen = false;
       this.refresh();
     },
@@ -765,6 +787,35 @@ function app() {
     closeLogs() {
       if (this.logView.es) this.logView.es.close();
       this.logView = { open: false, title: '', lines: [], es: null };
+    },
+    openEditHost(h) {
+      this.editHostId = h.id;
+      this.editHost = {
+        name: h.name || '', ip: h.ip || '', sshUser: h.sshUser || '', tailscale: !!h.tailscale,
+        connMode: h.connMode || 'manager_dial', connPort: h.connPort || null,
+      };
+      this.editHostOrig = { connMode: this.editHost.connMode, connPort: this.editHost.connPort };
+      this.editHostOpen = true;
+    },
+    // True when the edit touches a field baked into the associate at install time (stream
+    // direction or listen port), so the change only takes effect after a reinstall.
+    hostNeedsReinstall() {
+      const port = Number(this.editHost.connPort) || 0;
+      const origPort = Number(this.editHostOrig.connPort) || 0;
+      return this.editHost.connMode !== this.editHostOrig.connMode || port !== origPort;
+    },
+    async submitEditHost() {
+      const body = {
+        name: this.editHost.name, ip: this.editHost.ip, sshUser: this.editHost.sshUser,
+        tailscale: this.editHost.tailscale, connMode: this.editHost.connMode,
+        connPort: Number(this.editHost.connPort) || 0,
+      };
+      const r = await fetch(`/api/v1/hosts/${this.editHostId}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      });
+      if (!r.ok) { const e = await r.json().catch(() => ({})); alert('save failed: ' + (e.error?.message || r.status)); return; }
+      this.editHostOpen = false;
+      this.refresh();
     },
     async submitHost() {
       const body = { ...this.newHost, connPort: Number(this.newHost.connPort) || 0 };

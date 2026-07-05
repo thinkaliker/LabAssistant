@@ -252,6 +252,7 @@
                 </div>
               </template>
               <div class="has-text-right">
+                <button class="button is-small is-info is-outlined" @click="openEditHost(h)">Edit host</button>
                 <button class="button is-small is-link is-outlined" x-show="h.status!=='online'"
                   @click="openRevive(h)">Revive associate</button>
                 <button class="button is-small is-danger is-outlined" @click="openUninstall(h)">Uninstall host</button>
@@ -515,8 +516,12 @@
                   <span x-show="!t.lastStatus" class="has-text-grey">—</span>
                 </td>
                 <td class="is-size-7" x-text="t.nextRun ? new Date(t.nextRun).toLocaleString() : '—'"></td>
-                <td class="has-text-right"><button class="button is-small is-danger is-light"
-                    @click="removeTask(t.id)">delete</button></td>
+                <td class="has-text-right">
+                  <div class="buttons are-small is-right">
+                    <button class="button is-info" @click="editTask(t)">edit</button>
+                    <button class="button is-danger" @click="removeTask(t.id)">delete</button>
+                  </div>
+                </td>
               </tr>
             </template>
           </tbody>
@@ -771,7 +776,7 @@
     <div class="modal-background" @click="taskOpen=false"></div>
     <div class="modal-card">
       <header class="modal-card-head">
-        <p class="modal-card-title">Add Task</p>
+        <p class="modal-card-title" x-text="editingTaskId ? 'Edit Task' : 'Add Task'"></p>
       </header>
       <section class="modal-card-body">
         <div class="field"><label class="label">Name</label>
@@ -860,7 +865,8 @@
       </section>
       <footer class="modal-card-foot">
         <button class="button is-primary" @click="submitTask()"
-          :disabled="!newTask.name || !newTask.schedule || !newTask.module || !newTask.action">Create</button>
+          :disabled="!newTask.name || !newTask.schedule || !newTask.module || !newTask.action"
+          x-text="editingTaskId ? 'Save' : 'Create'"></button>
         <button class="button" @click="taskOpen=false">Cancel</button>
       </footer>
     </div>
@@ -952,6 +958,52 @@
       <footer class="modal-card-foot">
         <button class="button is-primary" @click="submitHost()" :disabled="!newHost.name || !newHost.ip">Enroll</button>
         <button class="button" @click="addHostOpen=false">Cancel</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Edit Host -->
+  <div class="modal" :class="editHostOpen && 'is-active'">
+    <div class="modal-background" @click="editHostOpen=false"></div>
+    <div class="modal-card">
+      <header class="modal-card-head">
+        <p class="modal-card-title">Edit Host</p>
+      </header>
+      <section class="modal-card-body">
+        <div class="field">
+          <label class="label">Name</label>
+          <div class="control"><input class="input" x-model="editHost.name"></div>
+        </div>
+        <div class="field">
+          <label class="label">IP / Address</label>
+          <div class="control"><input class="input" x-model="editHost.ip"></div>
+        </div>
+        <div class="field">
+          <label class="label">SSH User</label>
+          <div class="control"><input class="input" x-model="editHost.sshUser"></div>
+        </div>
+        <label class="checkbox"><input type="checkbox" x-model="editHost.tailscale"> Tailscale enabled</label>
+        <div class="field mt-4">
+          <label class="label">Connection</label>
+          <div class="select is-fullwidth"><select x-model="editHost.connMode">
+              <option value="manager_dial">Manager connects to associate (default)</option>
+              <option value="dial_home">Associate connects to manager</option>
+            </select></div>
+        </div>
+        <div class="field" x-show="editHost.connMode==='manager_dial'">
+          <label class="label">Listen Port <span class="has-text-grey is-size-7">(blank = default 8444)</span></label>
+          <div class="control"><input class="input" type="number" x-model.number="editHost.connPort"
+              placeholder="8444"></div>
+        </div>
+        <div class="notification is-warning is-light" x-show="hostNeedsReinstall()">
+          <strong>Reinstall required.</strong> Changing the connection mode or listen port only takes effect after the
+          associate is reinstalled on this host (uninstall, then re-add). Saving here updates the record, but the host
+          will not reconnect on the new settings until you do.
+        </div>
+      </section>
+      <footer class="modal-card-foot">
+        <button class="button is-primary" @click="submitEditHost()" :disabled="!editHost.name || !editHost.ip">Save</button>
+        <button class="button" @click="editHostOpen=false">Cancel</button>
       </footer>
     </div>
   </div>
