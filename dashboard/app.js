@@ -26,7 +26,9 @@ function app() {
     taskOpen: false,
     newHost: { name: '', ip: '', sshUser: '', sshPassword: '', tailscale: false, connMode: 'manager_dial', connPort: null },
     newTask: { name: '', schedule: '', module: '', action: '', hostIds: [], misfire: 'skip', interHostDelaySeconds: 0, enabled: true, allowDestructive: false },
-    job: { open: false, state: '', progress: 0, log: [] },
+    job: { id: '', label: '', state: '', progress: 0, log: [] }, // the job currently on screen
+    jobs: [], // all active jobs (queued/running + briefly-settled), shown in the queue indicator
+    jobPanelOpen: false, // whether the docked log panel is visible
     jobStick: true, // keep the job log pinned to the newest line until the user scrolls up
     jobPanelHeight: 0, // px override for the docked job panel (0 = CSS default of 33vh)
     logView: { open: false, title: '', lines: [], es: null },
@@ -225,7 +227,7 @@ function app() {
     },
     async confirmApproval(id) {
       const r = await fetch(`/api/v1/approvals/${id}/confirm`, { method: 'POST' });
-      if (r.ok) { const { jobId } = await r.json(); this.refresh(); if (jobId) this.watchJob(jobId); }
+      if (r.ok) { const { jobId } = await r.json(); this.refresh(); if (jobId) this.watchJob(jobId, 'approved action'); }
     },
     async rejectApproval(id) {
       await fetch(`/api/v1/approvals/${id}/reject`, { method: 'POST' });
@@ -245,13 +247,14 @@ function app() {
         return;
       }
       const action = this.sudoModal.action;
+      const mod = this.sudoModal.module;
       const { jobId } = await r.json().catch(() => ({}));
       this.sudoModal = { open: false, id: '', hostId: '', module: '', action: '', password: '', error: '' };
       this.refresh();
       if (!jobId) return;
       // A re-dispatched compose read feeds the editor instead of the generic job modal.
       if (action === 'read-compose') { this.openComposeFromJob(await this.awaitJob(jobId)); }
-      else this.watchJob(jobId);
+      else this.watchJob(jobId, mod + '/' + action);
     },
     async cancelSudo(id) {
       await fetch(`/api/v1/sudo/${id}/cancel`, { method: 'POST' });
@@ -270,8 +273,9 @@ function app() {
       this.uninstall.open = false;
       if (!r.ok) { alert('uninstall failed'); return; }
       const { jobId } = await r.json();
+      const hostName = this.uninstall.hostName;
       await this.refresh();
-      if (jobId) this.watchJob(jobId);
+      if (jobId) this.watchJob(jobId, 'uninstall ' + hostName);
     },
     openRevive(h) {
       this.revive = { open: true, hostId: h.id, hostName: h.name, sshUser: h.sshUser || '', sshPassword: '' };
@@ -284,8 +288,9 @@ function app() {
       this.revive.open = false;
       if (!r.ok) { alert('revive failed'); return; }
       const { jobId } = await r.json();
+      const hostName = this.revive.hostName;
       await this.refresh();
-      if (jobId) this.watchJob(jobId);
+      if (jobId) this.watchJob(jobId, 'revive ' + hostName);
     },
     statusClass(s) {
       return {
@@ -344,35 +349,75 @@ function app() {
       if (h > 0) return `${h}h ${m}m`;
       return `${m}m`;
     },
-    watchJob(jobId) {
-      // Start with the modal CLOSED and open it lazily on the first real signal (a log line,
-      // progress, or a meaningful terminal state). A job that immediately hands off to the
-      // sudo-password banner produces no such signal, so the modal never flashes open/closed.
-      this.job = { open: false, state: 'running', progress: 0, log: [] };
+    // isTerminalJob reports whether a job state is final (no more events will come).
+    isTerminalJob(s) { return s === 'succeeded' || s === 'failed' || s === 'timed_out'; },
+    // showJob puts a job's record on screen without forcing the panel open — opening is lazy
+    // (see the event handler) so a sudo hand-off or silent success doesn't flash the panel.
+    showJob(rec) {
+      this.job = rec;
       this.jobStick = true;
+      this.$nextTick(() => { const el = this.$refs.jobLog; if (el) el.scrollTop = el.scrollHeight; });
+    },
+    // selectJob is the user clicking a queue chip to bring that job's log to the front.
+    selectJob(rec) { this.showJob(rec); this.jobPanelOpen = true; },
+    watchJob(jobId, label) {
+      // Each job gets its OWN record so overlapping jobs (e.g. several started in a row, or
+      // parallel jobs across hosts) don't cross-contaminate one shared log. All non-terminal
+      // jobs show up in the queue indicator; the panel displays one at a time.
+      const rec = { id: jobId, label: label || ('job ' + String(jobId).slice(0, 6)), state: 'queued', progress: 0, log: [] };
+      this.jobs.push(rec);
+      // Adopt the new job on screen when nothing live is showing (or the panel is closed);
+      // otherwise leave the current job up and let this one wait in the queue indicator.
+      if (!this.jobPanelOpen || !this.job.id || this.isTerminalJob(this.job.state)) this.showJob(rec);
       const es = new EventSource(`/api/v1/jobs/${jobId}/events`);
       es.onmessage = (e) => {
         const ev = JSON.parse(e.data).payload;
         if (ev.kind === 'log' && ev.message) {
-          // Stay pinned to the newest line while jobStick holds. jobStick is driven by the
-          // user's own scrolling (see onJobScroll), not re-measured here, so a fast burst of
-          // lines can't be misread as "user scrolled up" and stop the autoscroll.
-          this.job.log.push(ev.message);
-          this.job.open = true;
-          if (this.jobStick) this.$nextTick(() => { const e = this.$refs.jobLog; if (e) e.scrollTop = e.scrollHeight; });
+          rec.log.push(ev.message);
+          if (rec.state === 'queued') rec.state = 'running';
+          this.adoptIfIdle(rec);
+          // Only steal focus/scroll for the job actually on screen. jobStick is driven by the
+          // user's own scrolling (see onJobScroll), so a fast burst can't stop the autoscroll.
+          if (this.job.id === rec.id) {
+            this.jobPanelOpen = true;
+            if (this.jobStick) this.$nextTick(() => { const el = this.$refs.jobLog; if (el) el.scrollTop = el.scrollHeight; });
+          }
         }
-        if (ev.kind === 'progress') { this.job.progress = ev.progress; this.job.open = true; }
+        if (ev.kind === 'progress') {
+          rec.progress = ev.progress;
+          if (rec.state === 'queued') rec.state = 'running';
+          this.adoptIfIdle(rec);
+          if (this.job.id === rec.id) this.jobPanelOpen = true;
+        }
         if (ev.kind === 'state') {
-          this.job.state = ev.state;
-          if (['succeeded', 'failed', 'timed_out', 'needs_sudo_password'].includes(ev.state)) {
+          rec.state = ev.state;
+          if (ev.state === 'needs_sudo_password' || this.isTerminalJob(ev.state)) {
             es.close();
             this.refresh();
-            // A sudo prompt or a clean output-less success hands off elsewhere — keep the modal
-            // closed. Anything else (a failure, or a success with output) is worth showing.
-            this.job.open = !(ev.state === 'needs_sudo_password' || (ev.state === 'succeeded' && this.job.log.length === 0));
+            this.finishJob(rec, ev.state);
           }
         }
       };
+    },
+    // adoptIfIdle brings a job to the front when nothing live is showing (first run, or the
+    // previously shown job has finished), so a job that was queued behind another surfaces on
+    // its own once it starts producing output.
+    adoptIfIdle(rec) {
+      if (this.job.id !== rec.id && (!this.job.id || this.isTerminalJob(this.job.state))) this.showJob(rec);
+    },
+    // finishJob settles a terminal job: decide whether the panel stays up, then retire it from
+    // the queue indicator. A still-queued job takes over the panel later via adoptIfIdle.
+    finishJob(rec, state) {
+      if (this.job.id === rec.id) {
+        // A sudo prompt or a clean output-less success hands off elsewhere — keep the panel
+        // closed. A failure, or a success with output, is worth showing.
+        this.jobPanelOpen = !(state === 'needs_sudo_password' || (state === 'succeeded' && rec.log.length === 0));
+      }
+      // Drop it from the indicator: sudo hand-offs immediately, others after a beat so the user
+      // sees them settle. If it's still the shown job, the log stays up until the panel closes.
+      const retire = () => { this.jobs = this.jobs.filter(j => j.id !== rec.id); };
+      if (state === 'needs_sudo_password') retire();
+      else setTimeout(retire, 4000);
     },
     // onJobScroll re-arms or releases autoscroll from the user's scroll position: at (or near)
     // the bottom re-pins; scrolling up to read history releases the pin. Programmatic scrolls
@@ -431,7 +476,11 @@ function app() {
       const opts = { method: 'POST' };
       if (params) { opts.headers = { 'Content-Type': 'application/json' }; opts.body = JSON.stringify(params); }
       const r = await fetch(`/api/v1/hosts/${hostId}/modules/${mod}/actions/${action}`, opts);
-      if (!r.ok) { this.job = { open: true, state: 'failed', progress: 0, log: ['dispatch failed'] }; return; }
+      if (!r.ok) {
+        const rec = { id: 'err-' + Date.now(), label: mod + '/' + action, state: 'failed', progress: 0, log: ['dispatch failed'] };
+        this.showJob(rec); this.jobPanelOpen = true;
+        return;
+      }
       const out = await r.json();
       if (out.approvalId) {
         // No modal — the queued action surfaces in the "Pending approvals" banner. Refresh so
@@ -440,7 +489,7 @@ function app() {
         window.scrollTo({ top: 0, behavior: 'smooth' });
         return;
       }
-      if (out.jobId) this.watchJob(out.jobId);
+      if (out.jobId) this.watchJob(out.jobId, mod + '/' + action);
     },
     svcAction(stack, service, action) {
       const params = service ? { stack: stack.name, service } : { stack: stack.name };
@@ -598,11 +647,12 @@ function app() {
       });
       if (!r.ok) { alert('enroll failed'); return; }
       const { jobId } = await r.json();
+      const hostName = this.newHost.name;
       this.addHostOpen = false;
       this.newHost = { name: '', ip: '', sshUser: '', sshPassword: '', tailscale: false, connMode: 'manager_dial', connPort: null };
       this.page = 'hosts';
       await this.refresh();
-      this.watchJob(jobId);
+      this.watchJob(jobId, 'enroll ' + hostName);
     },
   };
 }
