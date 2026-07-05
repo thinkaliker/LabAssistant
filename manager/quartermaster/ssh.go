@@ -118,7 +118,7 @@ func (s SSHInstaller) Install(ctx context.Context, p InstallParams, emit func(st
 	}
 
 	emit("installing " + initSys + " service")
-	if err := sshRun(client, installScript(remoteDir, helperArg, initSys)); err != nil {
+	if err := sshRun(client, installScript(remoteDir, helperArg, initSys), p.SSHPassword); err != nil {
 		return fmt.Errorf("install service: %w", err)
 	}
 	return nil
@@ -137,7 +137,7 @@ func (s SSHInstaller) Uninstall(ctx context.Context, p InstallParams, emit func(
 
 	initSys := detectInit(client)
 	emit("removing associate service")
-	if err := sshRun(client, uninstallScript(initSys)); err != nil {
+	if err := sshRun(client, uninstallScript(initSys), p.SSHPassword); err != nil {
 		return fmt.Errorf("uninstall: %w", err)
 	}
 	emit("associate removed from host")
@@ -164,7 +164,7 @@ func (s SSHInstaller) Revive(ctx context.Context, p InstallParams, emit func(str
 		return fmt.Errorf("no supported service manager found on host (need systemd or openrc)")
 	}
 	emit("enabling and starting associate service (" + initSys + ")")
-	if err := sshRun(client, reviveScript(initSys)); err != nil {
+	if err := sshRun(client, reviveScript(initSys), p.SSHPassword); err != nil {
 		return fmt.Errorf("revive: %w", err)
 	}
 	status, _ := sshOutput(client, statusCmd(initSys))
@@ -337,12 +337,21 @@ func splitExec(execStart string) (bin, args string) {
 	return parts[0], ""
 }
 
-func sshRun(client *ssh.Client, script string) error {
+// sshRun runs script on the host via `bash -c`. sudoPass, when non-empty, primes sudo's
+// credential cache from stdin so the script's `sudo` calls work on hosts that require a
+// password (i.e. without passwordless/NOPASSWD sudo); it is never written to disk or argv.
+func sshRun(client *ssh.Client, script, sudoPass string) error {
 	sess, err := client.NewSession()
 	if err != nil {
 		return err
 	}
 	defer sess.Close()
+	if sudoPass != "" {
+		// Validate+cache sudo once, reading the password from stdin. Later `sudo` calls in
+		// the script reuse the cached timestamp. `-p ''` suppresses the prompt text.
+		sess.Stdin = strings.NewReader(sudoPass + "\n")
+		script = "sudo -S -p '' -v || { echo 'sudo authentication failed (check the SSH/sudo password, or grant passwordless sudo)' >&2; exit 1; }\n" + script
+	}
 	var out bytes.Buffer
 	sess.Stdout = &out
 	sess.Stderr = &out
