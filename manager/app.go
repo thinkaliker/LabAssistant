@@ -245,6 +245,12 @@ func (a *App) Serve(ctx context.Context) error {
 // its own host. It is spawned detached in a new session so the pull+build run to completion
 // independently of this process; the script's final `systemctl restart` then tears this
 // manager down on purpose, which is why the dashboard must re-login afterwards.
+// updateLogPath is where selfUpdate streams the update script's output. The log-tail SSE
+// endpoint reads the same file so the dashboard can surface progress in the jobs panel.
+func (a *App) updateLogPath() string {
+	return filepath.Join(a.layout.Data, "manager-update.log")
+}
+
 func (a *App) selfUpdate() error {
 	exe, err := os.Executable()
 	if err != nil {
@@ -257,7 +263,7 @@ func (a *App) selfUpdate() error {
 	if !fileExists(script) {
 		return fmt.Errorf("update script not found at %s", script)
 	}
-	logPath := filepath.Join(a.layout.Data, "manager-update.log")
+	logPath := a.updateLogPath()
 	logf, err := os.Create(logPath)
 	if err != nil {
 		return err

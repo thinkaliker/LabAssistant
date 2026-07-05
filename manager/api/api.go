@@ -42,6 +42,8 @@ type Deps struct {
 	Instance string
 	// SelfUpdate runs the manager's own update (pull, rebuild, restart) on the control host.
 	SelfUpdate func() error
+	// UpdateLogPath is the file selfUpdate streams its output to; the log-tail endpoint reads it.
+	UpdateLogPath string
 }
 
 // Router returns the /api/v1 handler.
@@ -92,6 +94,7 @@ func Router(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/v1/backup", d.backup)
 	mux.HandleFunc("POST /api/v1/restore", d.restore)
 	mux.HandleFunc("POST /api/v1/manager/update", d.managerUpdate)
+	mux.HandleFunc("GET /api/v1/manager/update/logs", d.managerUpdateLogs)
 
 	return d.authMiddleware(mux)
 }

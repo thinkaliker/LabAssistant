@@ -26,8 +26,9 @@ func (a *App) httpHandler() http.Handler {
 		ModConfig:  a.modconfig,
 		CA:         a.ca,
 		RotateCert: a.rotateCert,
-		Instance:   a.instance,
-		SelfUpdate: a.selfUpdate,
+		Instance:      a.instance,
+		SelfUpdate:    a.selfUpdate,
+		UpdateLogPath: a.updateLogPath(),
 	}))
 	mux.Handle("/", http.FileServerFS(dashboard.Assets))
 	return mux

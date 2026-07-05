@@ -136,6 +136,8 @@ function app() {
           this.managerUpdating = false;
           return;
         }
+        // Surface the update script's output in the jobs panel by tailing its log.
+        this.watchManagerUpdate();
         // The restart will change the instance marker; the poller then flips the stale banner.
         // Speed that up by polling more aggressively for a bit.
         this._pollStaleUntilRestart();
@@ -143,6 +145,30 @@ function app() {
         this.managerUpdateError = 'Failed to reach the manager.';
         this.managerUpdating = false;
       }
+    },
+    // watchManagerUpdate streams the manager self-update log into a jobs-panel record. Unlike a
+    // normal job it has no terminal state event: the manager restarts at the end, which drops
+    // the stream (handled in onerror). The stale banner then prompts re-login.
+    watchManagerUpdate() {
+      const rec = { id: 'manager-update', label: 'update manager', state: 'running', progress: 0, log: [] };
+      this.jobs = this.jobs.filter(j => j.id !== rec.id); // drop a prior run's record
+      this.jobs.push(rec);
+      this.showJob(rec);
+      this.jobPanelOpen = true;
+      const es = new EventSource('/api/v1/manager/update/logs');
+      es.onmessage = (e) => {
+        let ev; try { ev = JSON.parse(e.data); } catch { return; }
+        if (ev.kind === 'log' && ev.message) {
+          rec.log.push(ev.message);
+          if (this.job.id === rec.id && this.jobStick) this.$nextTick(() => { const el = this.$refs.jobLog; if (el) el.scrollTop = el.scrollHeight; });
+        }
+      };
+      es.onerror = () => {
+        // The manager restarting at the end of the update drops the stream — expected. Stop the
+        // browser's auto-reconnect and mark the record; the stale banner takes over.
+        es.close();
+        if (rec.state === 'running') rec.state = 'restarting';
+      };
     },
     _pollStaleUntilRestart() {
       let n = 0;
