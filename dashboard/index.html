@@ -14,6 +14,13 @@
       display: none !important
     }
 
+    /* Prevent a flash of unstyled modal markup before Bulma's stylesheet loads.
+       Bulma normally hides inactive modals; replicate that inline so it applies
+       on first paint. */
+    .modal:not(.is-active) {
+      display: none !important;
+    }
+
     /* Widen the main content area: use nearly the full viewport with a small side gutter
        instead of Bulma's narrow centered breakpoint-based max-widths. */
     .container {
