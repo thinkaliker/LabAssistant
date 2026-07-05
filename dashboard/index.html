@@ -242,7 +242,8 @@
     </div>
   </nav>
 
-  <section class="section" x-show="ready && !needsLogin" x-cloak>
+  <section class="section" x-show="ready && !needsLogin" x-cloak
+           :style="job.open ? ('padding-bottom:' + ((jobPanelHeight || Math.round(window.innerHeight * 0.33)) + 24) + 'px') : ''">
     <div class="container">
 
       <!-- Pending approvals (visible on every page) -->
