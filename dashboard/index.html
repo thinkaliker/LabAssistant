@@ -654,7 +654,15 @@
               <p class="is-size-7 has-text-grey">No package updates.</p>
             </template>
 
-            <h3 class="subtitle is-6 mt-4 mb-2">Container images</h3>
+            <div class="level is-mobile mt-4 mb-2">
+              <div class="level-left">
+                <div class="level-item"><h3 class="subtitle is-6 mb-0">Container images</h3></div>
+              </div>
+              <div class="level-right" x-show="hu.containers.length>0">
+                <div class="level-item"><button class="button is-warning is-small"
+                    :disabled="!hostOnline(hu.hostId)" @click="updateAllHost(hu)">update all</button></div>
+              </div>
+            </div>
             <template x-if="hu.containers.length===0">
               <p class="is-size-7 has-text-grey">No container image updates.</p>
             </template>

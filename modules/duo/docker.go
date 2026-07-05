@@ -380,7 +380,7 @@ func localRepoDigest(ctx context.Context, img string) string {
 		return ""
 	}
 	for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if _, digest, ok := strings.Cut(strings.TrimSpace(l), "@"); ok {
+		if _, digest, ok := strings.Cut(strings.TrimSpace(l), "@"); ok && isSHA256Digest(digest) {
 			return digest
 		}
 	}
@@ -396,7 +396,46 @@ func remoteDigest(ctx context.Context, img string) string {
 	if err != nil {
 		return ""
 	}
-	return strings.TrimSpace(string(out))
+	return parseRemoteDigest(string(out))
+}
+
+// parseRemoteDigest pulls a clean sha256 digest out of imagetools output. The --format path
+// normally prints the bare digest, but some docker/buildx versions ignore the template and
+// emit the default human-readable block instead ("Name: ...\nDigest: sha256:...\n"). Scan for
+// the first valid digest and reject anything else, so a stray line like "Name: ghcr.io/..."
+// never becomes a bogus "latest" that flags a phantom (uninstallable) update.
+func parseRemoteDigest(out string) string {
+	for _, l := range strings.Split(out, "\n") {
+		l = strings.TrimSpace(l)
+		if l == "" {
+			continue
+		}
+		if _, after, ok := strings.Cut(l, "Digest:"); ok { // default-output line
+			l = strings.TrimSpace(after)
+		}
+		if isSHA256Digest(l) {
+			return l
+		}
+	}
+	return ""
+}
+
+// isSHA256Digest reports whether s is a well-formed "sha256:<64 hex>" digest.
+func isSHA256Digest(s string) bool {
+	const p = "sha256:"
+	if !strings.HasPrefix(s, p) {
+		return false
+	}
+	h := s[len(p):]
+	if len(h) != 64 {
+		return false
+	}
+	for _, c := range h {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			return false
+		}
+	}
+	return true
 }
 
 func (m *Module) dockerStreamLogs(ctx context.Context, params json.RawMessage, emit func([]byte)) error {

@@ -13,6 +13,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
@@ -245,6 +247,52 @@ func (a *App) Serve(ctx context.Context) error {
 // its own host. It is spawned detached in a new session so the pull+build run to completion
 // independently of this process; the script's final `systemctl restart` then tears this
 // manager down on purpose, which is why the dashboard must re-login afterwards.
+// updateEnv returns the manager's environment with the Go toolchain's bin dir prepended to
+// PATH, so a self-update spawned under systemd's minimal PATH can still find `go`. Candidates
+// cover the GOROOT this binary was built with plus the common install locations.
+func updateEnv() []string {
+	env := os.Environ()
+	dirs := []string{}
+	if goroot := runtime.GOROOT(); goroot != "" {
+		dirs = append(dirs, filepath.Join(goroot, "bin"))
+	}
+	dirs = append(dirs, "/usr/local/go/bin")
+	if home := os.Getenv("HOME"); home != "" {
+		dirs = append(dirs, filepath.Join(home, "go", "bin"))
+	}
+
+	path := os.Getenv("PATH")
+	var add []string
+	for _, d := range dirs {
+		if fileExists(filepath.Join(d, "go")) && !pathContains(path, d) {
+			add = append(add, d)
+		}
+	}
+	if len(add) == 0 {
+		return env
+	}
+	newPath := strings.Join(add, string(os.PathListSeparator)) + string(os.PathListSeparator) + path
+
+	out := make([]string, 0, len(env))
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "PATH=") {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return append(out, "PATH="+newPath)
+}
+
+// pathContains reports whether dir is already an entry in a PATH-style list.
+func pathContains(list, dir string) bool {
+	for _, p := range strings.Split(list, string(os.PathListSeparator)) {
+		if p == dir {
+			return true
+		}
+	}
+	return false
+}
+
 // updateLogPath is where selfUpdate streams the update script's output. The log-tail SSE
 // endpoint reads the same file so the dashboard can surface progress in the jobs panel.
 func (a *App) updateLogPath() string {
@@ -272,6 +320,9 @@ func (a *App) selfUpdate() error {
 	cmd.Dir = checkout
 	cmd.Stdout = logf
 	cmd.Stderr = logf
+	// systemd hands the manager a minimal PATH that usually omits the Go toolchain
+	// (/usr/local/go/bin), so the detached build can't find `go`. Add the toolchain dir back.
+	cmd.Env = updateEnv()
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
 		logf.Close()

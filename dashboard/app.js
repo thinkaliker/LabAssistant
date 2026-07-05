@@ -667,6 +667,17 @@ function app() {
     updateService(c) {
       this.runAction(c.hostId, 'duo', 'update', { stack: c.stack, service: c.service });
     },
+    // updateAllHost updates every stack on a host that has a container image update. Each stack
+    // is a separate job (labelled by stack) so they show in the queue indicator; the associate
+    // serializes them per host. A whole-stack update pulls all its images and recreates.
+    async updateAllHost(hu) {
+      const stacks = [...new Set(hu.containers.map(c => c.stack))];
+      for (const stack of stacks) {
+        const out = await this.dispatchSilent(hu.hostId, 'duo', 'update', { stack });
+        if (out && out.jobId) this.watchJob(out.jobId, 'update ' + stack);
+        else if (out && out.approvalId) await this.refresh();
+      }
+    },
     openLogs(stack, service) {
       this.closeLogs();
       const title = service ? `${stack.name}/${service}` : stack.name;
