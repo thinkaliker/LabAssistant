@@ -326,7 +326,7 @@ function app() {
       return {
         online: 'is-success', offline: 'is-danger', enrolling: 'is-warning',
         error: 'is-danger', succeeded: 'is-success', failed: 'is-danger',
-        running: 'is-info', partial: 'is-warning', pending: 'is-warning',
+        running: 'is-success', partial: 'is-warning', pending: 'is-warning',
         stopped: 'is-danger'
       }[s] || 'is-light';
     },

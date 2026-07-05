@@ -564,7 +564,7 @@
                   </div>
                   <div class="level-right">
                     <div class="level-item buttons are-small">
-                      <button class="button is-link is-light" @click="editCompose(st)">edit compose</button>
+                      <button class="button is-info" @click="editCompose(st)">edit compose</button>
                       <button class="button is-success" @click="svcAction(st,'','start')">start</button>
                       <button class="button is-danger" @click="svcAction(st,'','stop')">stop</button>
                       <button class="button is-warning" @click="svcAction(st,'','restart')">restart</button>
@@ -641,7 +641,7 @@
               <p class="control"><button class="button is-small" :class="hostSort==='name' && 'is-info is-selected'" @click="hostSort='name'">Name</button></p>
               <p class="control"><button class="button is-small" :class="hostSort==='ip' && 'is-info is-selected'" @click="hostSort='ip'">IP</button></p>
             </div>
-            <div class="level-item"><button class="button is-link is-light" @click="checkAllUpdates()">Check all hosts</button></div>
+            <div class="level-item"><button class="button is-info" @click="checkAllUpdates()">Check all hosts</button></div>
           </div>
         </div>
 
