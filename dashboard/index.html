@@ -403,13 +403,24 @@
                   <button class="button" :class="checkingHosts.includes(hu.hostId) && 'is-loading'"
                     :disabled="!hostOnline(hu.hostId) || checkingHosts.includes(hu.hostId)"
                     @click="checkHost(hu.hostId)">check for updates</button>
-                  <button class="button is-warning" :disabled="!hu.os || hu.os.count===0 || !hostOnline(hu.hostId)"
-                    @click="runAction(hu.hostId,'qup','apply')">apply updates</button>
+                  <button class="button is-warning" :class="updatingHosts.includes(hu.hostId) && 'is-loading'"
+                    :disabled="!hostOnline(hu.hostId) || updatingHosts.includes(hu.hostId) || ((!hu.os || hu.os.count===0) && hu.containers.length===0)"
+                    @click="applyAllUpdates(hu)">apply all updates</button>
                 </div>
               </div>
             </div>
 
-            <h3 class="subtitle is-6 mb-2">Host packages</h3>
+            <div class="level is-mobile mb-2">
+              <div class="level-left">
+                <div class="level-item"><h3 class="subtitle is-6 mb-0">Host packages</h3></div>
+              </div>
+              <div class="level-right" x-show="hu.os && hu.os.count>0">
+                <div class="level-item"><button class="button is-warning is-small"
+                    :class="updatingHosts.includes(hu.hostId) && 'is-loading'"
+                    :disabled="!hostOnline(hu.hostId) || updatingHosts.includes(hu.hostId)"
+                    @click="updateHostPackages(hu)">update host packages</button></div>
+              </div>
+            </div>
             <template x-if="hu.os && hu.os.packages && hu.os.packages.length">
               <div style="max-height:18rem;overflow:auto">
                 <table class="table is-fullwidth is-narrow is-size-7 mb-0">
@@ -437,8 +448,10 @@
                 </div>
               </div>
               <div class="level-right" x-show="hu.containers.length>0">
-                <div class="level-item"><button class="button is-warning is-small" :disabled="!hostOnline(hu.hostId)"
-                    @click="updateAllHost(hu)">update all</button></div>
+                <div class="level-item"><button class="button is-warning is-small"
+                    :class="updatingHosts.includes(hu.hostId) && 'is-loading'"
+                    :disabled="!hostOnline(hu.hostId) || updatingHosts.includes(hu.hostId)"
+                    @click="updateContainers(hu)">update containers</button></div>
               </div>
             </div>
             <template x-if="hu.containers.length===0">
@@ -466,7 +479,9 @@
                         <span class="has-text-grey" x-show="!c.current">—</span>
                       </td>
                       <td class="has-text-right"><button class="button is-small is-warning"
-                          :disabled="!hostOnline(c.hostId)" @click="updateService(c)">update</button></td>
+                          :class="updatingHosts.includes(c.hostId) && 'is-loading'"
+                          :disabled="!hostOnline(c.hostId) || updatingHosts.includes(c.hostId)"
+                          @click="updateService(c)">update</button></td>
                     </tr>
                   </template>
                 </tbody>

@@ -23,6 +23,7 @@ function app() {
     expanded: null,
     hostSort: 'name', // 'name' | 'ip' — how the Hosts list is ordered
     checkingHosts: [], // host ids with an in-flight check-updates, for button loading state
+    updatingHosts: [], // host ids with an in-flight apply/update, for button loading state
     addHostOpen: false,
     // Edit Host modal. editHost holds the working copy; editHostOrig captures the values at open
     // time so we can detect changes to the associate-baked fields (connMode/connPort) and warn.
@@ -779,19 +780,58 @@ function app() {
     async checkAllUpdates() {
       await Promise.all(this.hosts.filter(h => h.status === 'online').map(h => this.checkHost(h.id)));
     },
-    updateService(c) {
-      this.runAction(c.hostId, 'duo', 'update', { stack: c.stack, service: c.service });
+    // runUpdate dispatches one destructive apply/update action, waits for the job to reach a
+    // terminal state, and reports whether it queued an approval instead of running. Both apply
+    // (qup) and update (duo) are destructive, so a policy can gate them behind an approval; in
+    // that case dispatchSilent returns {approvalId} and there is no job to await. Returns
+    // { approval } so the caller can surface the pending-approvals banner once at the end.
+    async runUpdate(hostId, mod, action, params) {
+      const out = await this.dispatchSilent(hostId, mod, action, params);
+      if (out && out.jobId) { await this.awaitJob(out.jobId); return { approval: false }; }
+      if (out && out.approvalId) return { approval: true };
+      return { approval: false };
     },
-    // updateAllHost updates every stack on a host that has a container image update. Each stack
-    // is a separate job (labelled by stack) so they show in the queue indicator; the associate
-    // serializes them per host. A whole-stack update pulls all its images and recreates.
-    async updateAllHost(hu) {
-      const stacks = [...new Set(hu.containers.map(c => c.stack))];
-      for (const stack of stacks) {
-        const out = await this.dispatchSilent(hu.hostId, 'duo', 'update', { stack });
-        if (out && out.jobId) this.watchJob(out.jobId, 'update ' + stack);
-        else if (out && out.approvalId) await this.refresh();
+    // runHostUpdates runs a set of update actions for one host with a shared loading state, then
+    // refreshes so applied updates drop out of the list. If any action was gated behind an
+    // approval, it scrolls the pending-approvals banner into view so the user isn't left guessing.
+    async runHostUpdates(hostId, actions) {
+      if (this.updatingHosts.includes(hostId)) return;
+      this.updatingHosts.push(hostId);
+      try {
+        let approval = false;
+        for (const a of actions) {
+          const r = await this.runUpdate(hostId, a.mod, a.action, a.params);
+          approval = approval || r.approval;
+        }
+        await this.refresh();
+        if (approval) window.scrollTo({ top: 0, behavior: 'smooth' });
+      } finally {
+        this.updatingHosts = this.updatingHosts.filter(x => x !== hostId);
       }
+    },
+    // updateService updates a single compose service.
+    updateService(c) {
+      return this.runHostUpdates(c.hostId, [{ mod: 'duo', action: 'update', params: { stack: c.stack, service: c.service } }]);
+    },
+    // updateContainers updates every stack on a host that has a container image update. Each stack
+    // is one action (a whole-stack update pulls all its images and recreates); the associate
+    // serializes them per host.
+    updateContainers(hu) {
+      const stacks = [...new Set(hu.containers.map(c => c.stack))];
+      return this.runHostUpdates(hu.hostId, stacks.map(stack => ({ mod: 'duo', action: 'update', params: { stack } })));
+    },
+    // updateHostPackages applies the host's pending OS package updates (qup).
+    updateHostPackages(hu) {
+      return this.runHostUpdates(hu.hostId, [{ mod: 'qup', action: 'apply' }]);
+    },
+    // applyAllUpdates does everything for one host: apply OS packages (qup) then update every
+    // container stack (duo), in one shared loading state.
+    applyAllUpdates(hu) {
+      const actions = [];
+      if (hu.os && hu.os.count > 0) actions.push({ mod: 'qup', action: 'apply' });
+      const stacks = [...new Set(hu.containers.map(c => c.stack))];
+      for (const stack of stacks) actions.push({ mod: 'duo', action: 'update', params: { stack } });
+      return this.runHostUpdates(hu.hostId, actions);
     },
     openLogs(stack, service) {
       this.closeLogs();
