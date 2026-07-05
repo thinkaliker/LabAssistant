@@ -312,7 +312,7 @@
                         </td>
                         <td class="has-text-weight-semibold" x-text="sv.name"></td>
                         <td class="is-size-7 has-text-grey" x-text="sv.image"></td>
-                        <td><span class="tag is-warning" x-show="sv.updateAvailable">update</span></td>
+                        <td><span class="tag is-warning" x-show="svcUpdate(sv)">update</span></td>
                         <td class="has-text-right">
                           <div class="buttons are-small is-right">
                             <button class="button is-success" @click="svcAction(st,sv.name,'start')">start</button>

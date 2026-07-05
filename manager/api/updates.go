@@ -5,6 +5,23 @@ import (
 	"net/http"
 )
 
+// isDigest reports whether s is a well-formed "sha256:<64 hex>" digest. Used to reject phantom
+// container updates: a stale associate status (reported before the associate's remote-digest
+// parsing was hardened) can carry a bogus latest like "Name: ghcr.io/..." that would otherwise
+// render as an uninstallable update. Digests are the only thing the update flow can act on.
+func isDigest(s string) bool {
+	const p = "sha256:"
+	if len(s) != len(p)+64 || s[:len(p)] != p {
+		return false
+	}
+	for _, c := range s[len(p):] {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			return false
+		}
+	}
+	return true
+}
+
 // pkgUpdate is one upgradable host package and its version transition.
 type pkgUpdate struct {
 	Name      string `json:"name"`
@@ -67,6 +84,11 @@ func (d Deps) updates(w http.ResponseWriter, r *http.Request) {
 				for _, s := range ds.Stacks {
 					for _, sv := range s.Services {
 						if !sv.UpdateAvailable {
+							continue
+						}
+						// Skip phantom updates from stale reports: an update the flow can't act
+						// on (its digests aren't real) is worse than showing nothing.
+						if !isDigest(sv.CurrentDigest) || !isDigest(sv.LatestDigest) {
 							continue
 						}
 						containers = append(containers, containerUpdate{

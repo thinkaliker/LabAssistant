@@ -401,7 +401,7 @@ function app() {
       for (const st of (this.services.stacks || [])) {
         if (st.status === 'partial' || st.status === 'stopped') return 'warn';
         for (const sv of (st.services || [])) {
-          if (sv.status === 'stopped' || sv.status === 'exited' || sv.updateAvailable) return 'warn';
+          if (sv.status === 'stopped' || sv.status === 'exited' || this.svcUpdate(sv)) return 'warn';
         }
       }
       return 'good';
@@ -439,7 +439,7 @@ function app() {
         if (typeof s === 'string') { try { s = JSON.parse(s); } catch (e) { continue; } }
         if (typeof s.count === 'number') n += s.count;
         if (Array.isArray(s.stacks)) {
-          for (const st of s.stacks) for (const sv of (st.services || [])) if (sv.updateAvailable) n++;
+          for (const st of s.stacks) for (const sv of (st.services || [])) if (this.svcUpdate(sv)) n++;
         }
       }
       return n;
@@ -750,6 +750,11 @@ function app() {
       const h = String(d).replace(/^sha256:/, '');
       return h.length > 12 ? h.slice(0, 12) : h;
     },
+    // A real "sha256:<64 hex>" digest. Mirrors the manager guard so phantom updates from stale
+    // associate reports (bogus latest like "Name: ...") never render or get counted.
+    isDigest(d) { return /^sha256:[0-9a-f]{64}$/.test(String(d || '')); },
+    // A service has a genuine, actionable update only when both digests are real.
+    svcUpdate(sv) { return !!sv.updateAvailable && this.isDigest(sv.currentDigest) && this.isDigest(sv.latestDigest); },
     checkHost(hostId) {
       const h = this.hosts.find(x => x.id === hostId);
       if (!h) return;
