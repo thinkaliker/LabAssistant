@@ -302,6 +302,21 @@ function app() {
       if (sv.health) return { healthy: 'is-success', unhealthy: 'is-danger', starting: 'is-warning' }[sv.health] || 'is-info';
       return this.statusClass(sv.status);
     },
+    // hostUpdates totals a host's pending updates: qup package counts plus duo services with a
+    // newer image. Mirrors the manager's overview tally, computed client-side from host modules.
+    hostUpdates(h) {
+      let n = 0;
+      for (const m of (h.modules || [])) {
+        let s = m.status;
+        if (!s) continue;
+        if (typeof s === 'string') { try { s = JSON.parse(s); } catch (e) { continue; } }
+        if (typeof s.count === 'number') n += s.count;
+        if (Array.isArray(s.stacks)) {
+          for (const st of s.stacks) for (const sv of (st.services || [])) if (sv.updateAvailable) n++;
+        }
+      }
+      return n;
+    },
     capabilities(m) {
       const c = m.detection && m.detection.capabilities || {};
       return Object.entries(c).map(([k, v]) => `${k}=${v}`).join(' ');
