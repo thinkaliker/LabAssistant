@@ -14,6 +14,9 @@
       display: none !important
     }
 
+    /* Space out the confirm/cancel buttons in every modal footer. */
+    .modal-card-foot { gap: 0.75rem; }
+
     /* Prevent a flash of unstyled modal markup before Bulma's stylesheet loads.
        Bulma normally hides inactive modals; replicate that inline so it applies
        on first paint. */
@@ -32,10 +35,24 @@
 
     /* Compose editor: a half-width panel that fills the viewport height (sticky under the
        navbar), with the CodeMirror area flexing to take all the leftover space. */
+    /* Widen the main content: near-edge margins instead of Bulma's centered container. */
+    .app-section {
+      padding-left: 0.75rem;
+      padding-right: 0.75rem;
+    }
+    .app-container.is-fluid {
+      padding-left: 0;
+      padding-right: 0;
+    }
+
     .compose-panel {
       position: sticky;
       top: 5rem;
-      height: calc(100vh - 6rem);
+      /* Use dynamic viewport height and clip overflow so the panel never pushes the page
+         past the bottom of the screen (its own header used to spill a bit below). */
+      height: calc(100dvh - 6rem);
+      max-height: calc(100dvh - 6rem);
+      overflow: hidden;
       display: flex;
       flex-direction: column;
     }
@@ -352,9 +369,9 @@
     </div>
   </div>
 
-  <section class="section" x-show="ready && !needsLogin" x-cloak
+  <section class="section app-section" x-show="ready && !needsLogin" x-cloak
            :style="jobPanelOpen ? ('padding-bottom:' + ((jobPanelHeight || Math.round(window.innerHeight * 0.33)) + 24) + 'px') : ''">
-    <div class="container">
+    <div class="container is-fluid app-container">
 
       <!-- Pending approvals (visible on every page) -->
       <template x-if="approvals.length > 0">
@@ -1032,8 +1049,29 @@
         <div class="field"><label class="label">Name</label>
           <div class="control"><input class="input" x-model="newTask.name" placeholder="weekly updates"></div>
         </div>
-        <div class="field"><label class="label">Schedule (cron)</label>
-          <div class="control"><input class="input" x-model="newTask.schedule" placeholder="0 3 * * 0"></div>
+        <div class="field">
+          <div class="level is-mobile mb-1">
+            <div class="level-left"><label class="label mb-0">Schedule (cron)</label></div>
+            <div class="level-right">
+              <button type="button" class="button is-small is-ghost" @click="toggleCronFields()"
+                x-text="cronFields ? 'use cron string' : 'use fields'"></button>
+            </div>
+          </div>
+          <div class="control" x-show="!cronFields">
+            <input class="input" x-model="newTask.schedule" placeholder="0 3 * * 0">
+          </div>
+          <div class="columns is-mobile is-gapless" x-show="cronFields">
+            <div class="column mr-2"><input class="input" x-model="cronParts.m" @input="syncCron()" placeholder="*">
+              <p class="help">min 0-59</p></div>
+            <div class="column mr-2"><input class="input" x-model="cronParts.h" @input="syncCron()" placeholder="*">
+              <p class="help">hour 0-23</p></div>
+            <div class="column mr-2"><input class="input" x-model="cronParts.dom" @input="syncCron()" placeholder="*">
+              <p class="help">day 1-31</p></div>
+            <div class="column mr-2"><input class="input" x-model="cronParts.mon" @input="syncCron()" placeholder="*">
+              <p class="help">month 1-12</p></div>
+            <div class="column"><input class="input" x-model="cronParts.dow" @input="syncCron()" placeholder="*">
+              <p class="help">dow 0-6</p></div>
+          </div>
         </div>
         <div class="columns">
           <div class="column field"><label class="label">Module</label>

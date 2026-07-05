@@ -24,6 +24,8 @@ function app() {
     hostSort: 'name', // 'name' | 'ip' — how the Hosts list is ordered
     addHostOpen: false,
     taskOpen: false,
+    cronFields: false, // Add Task: false = raw cron string, true = 5 separate fields
+    cronParts: { m: '*', h: '*', dom: '*', mon: '*', dow: '*' },
     newHost: { name: '', ip: '', sshUser: '', sshPassword: '', tailscale: false, connMode: 'manager_dial', connPort: null },
     newTask: { name: '', schedule: '', module: '', action: '', hostIds: [], misfire: 'skip', interHostDelaySeconds: 0, enabled: true, allowDestructive: false },
     job: { id: '', label: '', state: '', progress: 0, log: [] }, // the job currently on screen
@@ -239,7 +241,23 @@ function app() {
     },
     openTask() {
       this.newTask = { name: '', schedule: '', module: '', action: '', hostIds: [], misfire: 'skip', interHostDelaySeconds: 0, enabled: true, allowDestructive: false };
+      this.cronFields = false;
+      this.cronParts = { m: '*', h: '*', dom: '*', mon: '*', dow: '*' };
       this.taskOpen = true;
+    },
+    // Toggle between the raw cron string and the 5-field editor, keeping both in sync.
+    toggleCronFields() {
+      if (!this.cronFields) {
+        // switching to fields: parse the current string, filling gaps with '*'
+        const p = (this.newTask.schedule || '').trim().split(/\s+/);
+        this.cronParts = { m: p[0] || '*', h: p[1] || '*', dom: p[2] || '*', mon: p[3] || '*', dow: p[4] || '*' };
+      }
+      this.cronFields = !this.cronFields;
+    },
+    // Recompose the cron string from the 5 fields (called on each field edit).
+    syncCron() {
+      const c = this.cronParts;
+      this.newTask.schedule = [c.m, c.h, c.dom, c.mon, c.dow].map(x => (x || '').trim() || '*').join(' ');
     },
     // Unique module names across all reporting hosts, alphabetical, for the Add Task dropdown.
     taskModuleNames() {
