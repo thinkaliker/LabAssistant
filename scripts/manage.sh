@@ -2,9 +2,16 @@
 #
 # manage.sh — build and lifecycle management for the LabAssistant manager.
 #
-# Wraps the Go build for all three binaries and the systemd unit that runs the
-# manager (see labassistant-manager.service in this directory). Safe to run from
-# anywhere; it locates the checkout relative to itself.
+# Wraps the Go build for all three binaries, the systemd unit that runs the
+# manager (see labassistant-manager.service in this directory), and dashboard
+# auth setup (setpass). Safe to run from anywhere; it locates the checkout
+# relative to itself.
+#
+# setpass runs the manager binary against the same home the service uses
+# ($LABASSISTANT_HOME, else ~/.labassistant), so the login password is written
+# to the settings.json the running service reads. Use it rather than calling the
+# binary directly to avoid a home mismatch that leaves the dashboard open (no
+# login/logout shown).
 #
 # Usage: ./manage.sh <command> [args]   (run ./manage.sh --help for the list)
 
@@ -87,6 +94,14 @@ update() {
   fi
 }
 
+cmd_setpass() {
+  local bin="$CHECKOUT/bin/manager"
+  [[ -x "$bin" ]] || { log "manager binary missing; building..."; build manager; }
+  # Run against the same home the service uses so the password lands in the
+  # settings.json the running manager reads.
+  LABASSISTANT_HOME="$LA_HOME" "$bin" setpass "$@"
+}
+
 cmd_start()   { require_service; $SUDO systemctl start   "$SERVICE_NAME"; log "started"; }
 cmd_stop()    { require_service; $SUDO systemctl stop    "$SERVICE_NAME"; log "stopped"; }
 cmd_restart() { require_service; $SUDO systemctl restart "$SERVICE_NAME"; log "restarted"; }
@@ -111,6 +126,7 @@ Usage: $0 <command> [args]
 Build:
   build [manager|associate|helper|all]   build binaries into ./bin (default: all)
   update                                 git pull --ff-only, build all, restart if running
+  setpass [--user <name>]                set the dashboard login password (uses service home)
 
 Service lifecycle (systemd unit: $SERVICE_NAME):
   install-service                        render + install the unit, daemon-reload
@@ -130,6 +146,7 @@ USAGE
 case "${1:-}" in
   build)             shift; build "${1:-all}" ;;
   update)            update ;;
+  setpass)           shift; cmd_setpass "$@" ;;
   install-service)   install_service ;;
   uninstall-service) uninstall_service ;;
   enable)            cmd_enable ;;

@@ -96,15 +96,18 @@ Then follow the printed next steps:
 ```bash
 export LABASSISTANT_HOME="$HOME/.labassistant"
 cd ~/LabAssistant
-./bin/manager setpass         # set the dashboard login password
+./scripts/manage.sh setpass   # set the dashboard login password
 ./scripts/manage.sh start     # start the service (already enabled on boot)
 ./scripts/manage.sh status    # check it; `logs -f` to follow
 ```
 
 `manage.sh` wraps the whole lifecycle: `start`/`stop`/`restart`/`status`/`logs`,
-`enable`/`disable`, `install-service`/`uninstall-service`, and `build`/`update`. It calls
-`sudo systemctl` for you. (Deployed with `--no-service`? Run `./bin/manager serve` directly
-instead — dashboard on :8080, associate mTLS on :8443.)
+`enable`/`disable`, `install-service`/`uninstall-service`, `build`/`update`, and `setpass`. It
+calls `sudo systemctl` for you. `setpass` runs the manager binary against the *service's* home
+(`$LABASSISTANT_HOME`, else `~/.labassistant`), so the password lands in the `settings.json` the
+running service reads — always prefer it over `./bin/manager setpass` to avoid a home mismatch that
+leaves the dashboard in open mode (no login/logout). (Deployed with `--no-service`? Run
+`./bin/manager serve` directly instead — dashboard on :8080, associate mTLS on :8443.)
 
 The deploy script installs a starter config at `$LABASSISTANT_HOME/config/config.toml` (copied
 from [`config.sample.toml`](config.sample.toml); with the default home that's
