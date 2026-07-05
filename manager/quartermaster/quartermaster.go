@@ -6,6 +6,7 @@ package quartermaster
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -199,6 +200,28 @@ func (q *Quartermaster) Revive(req ReviveRequest) (jobID string, err error) {
 	job := q.jobs.Create(host.ID, "quartermaster", "revive", nil)
 	go q.runRevive(context.Background(), host, req, r, job.ID)
 	return job.ID, nil
+}
+
+// ReviveLocalOrphans restarts local-mode associates whose child process is gone. Local
+// associates are children of the manager process, so a manager restart (e.g. `manage
+// update`) takes them down with it; this brings them back on the next boot without an
+// operator having to click Revive. Reviving an already-running child is a no-op.
+func (q *Quartermaster) ReviveLocalOrphans(ctx context.Context) {
+	r, ok := q.local.(Reviver)
+	if !ok {
+		return
+	}
+	for _, host := range q.store.Hosts() {
+		if host.Mode != ModeLocal {
+			continue
+		}
+		emit := func(msg string) { slog.Info("revive local associate", "host", host.Name, "msg", msg) }
+		if err := r.Revive(ctx, InstallParams{HostID: host.ID}, emit); err != nil {
+			slog.Warn("revive local associate failed", "host", host.Name, "err", err)
+			continue
+		}
+		q.aud.Record("host_revived", host.ID, "manager", "local associate revived on manager start", nil)
+	}
 }
 
 func (q *Quartermaster) runRevive(ctx context.Context, host state.Host, req ReviveRequest, r Reviver, jobID string) {

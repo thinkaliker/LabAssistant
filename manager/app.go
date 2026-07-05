@@ -215,6 +215,9 @@ func (a *App) Serve(ctx context.Context) error {
 	a.dialer.Start(ctx)
 	go a.scheduler.Start(ctx)
 	go a.certRotationLoop(ctx)
+	// Local associates run as children of this process, so a manager restart (e.g.
+	// `manage update`) kills them. Bring any that are down back up on start.
+	go a.qm.ReviveLocalOrphans(ctx)
 
 	select {
 	case <-ctx.Done():
