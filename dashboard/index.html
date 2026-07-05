@@ -47,6 +47,22 @@
       height: 100%;
     }
 
+    /* On a mobile viewport, drop the stack action buttons onto their own second row
+       instead of squishing them beside the stack name. Desktop keeps the single row
+       (is-mobile level default). */
+    @media screen and (max-width: 768px) {
+      .svc-stack-head {
+        flex-wrap: wrap;
+      }
+      .svc-stack-head > .level-right {
+        width: 100%;
+        margin-top: 0.5rem;
+      }
+      .svc-stack-head > .level-right .buttons {
+        justify-content: flex-start;
+      }
+    }
+
     .CodeMirror {
       height: 60vh;
       border: 1px solid var(--bulma-border);
@@ -505,7 +521,7 @@
             </template>
             <template x-for="st in sortByHost(services.stacks, s => s.name)" :key="st.hostId+'/'+st.name">
               <div class="box">
-                <div class="level is-mobile">
+                <div class="level is-mobile svc-stack-head">
                   <div class="level-left">
                     <div class="level-item"><span class="tag" :class="statusClass(st.status)" x-text="st.status"></span>
                     </div>
