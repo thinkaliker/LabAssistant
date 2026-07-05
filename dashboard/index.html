@@ -376,7 +376,9 @@
               <p class="control"><button class="button is-small" :class="hostSort==='ip' && 'is-info is-selected'"
                   @click="hostSort='ip'">IP</button></p>
             </div>
-            <div class="level-item"><button class="button is-info" @click="checkAllUpdates()">Check all hosts</button>
+            <div class="level-item"><button class="button is-info"
+                :class="checkingHosts.length && 'is-loading'" :disabled="checkingHosts.length>0"
+                @click="checkAllUpdates()">Check all hosts</button>
             </div>
           </div>
         </div>
@@ -398,8 +400,9 @@
               </div>
               <div class="level-right">
                 <div class="level-item buttons are-small">
-                  <button class="button" :disabled="!hostOnline(hu.hostId)" @click="checkHost(hu.hostId)">check for
-                    updates</button>
+                  <button class="button" :class="checkingHosts.includes(hu.hostId) && 'is-loading'"
+                    :disabled="!hostOnline(hu.hostId) || checkingHosts.includes(hu.hostId)"
+                    @click="checkHost(hu.hostId)">check for updates</button>
                   <button class="button is-warning" :disabled="!hu.os || hu.os.count===0 || !hostOnline(hu.hostId)"
                     @click="runAction(hu.hostId,'qup','apply')">apply updates</button>
                 </div>

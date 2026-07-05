@@ -22,6 +22,7 @@ function app() {
     auditPageSize: 25,
     expanded: null,
     hostSort: 'name', // 'name' | 'ip' — how the Hosts list is ordered
+    checkingHosts: [], // host ids with an in-flight check-updates, for button loading state
     addHostOpen: false,
     // Edit Host modal. editHost holds the working copy; editHostOrig captures the values at open
     // time so we can detect changes to the associate-baked fields (connMode/connPort) and warn.
@@ -755,15 +756,28 @@ function app() {
     isDigest(d) { return /^sha256:[0-9a-f]{64}$/.test(String(d || '')); },
     // A service has a genuine, actionable update only when both digests are real.
     svcUpdate(sv) { return !!sv.updateAvailable && this.isDigest(sv.currentDigest) && this.isDigest(sv.latestDigest); },
-    checkHost(hostId) {
+    // checkHost runs qup/duo check-updates and waits for the jobs to finish before refreshing,
+    // so freshly-found updates actually appear. Without the await+refresh the fire-and-forget
+    // dispatch completed on the associate but the page never re-read the module status, so the
+    // button looked dead. checkingHosts drives the button's loading state.
+    async checkHost(hostId) {
       const h = this.hosts.find(x => x.id === hostId);
-      if (!h) return;
-      const mods = (h.modules || []).map(m => m.name);
-      if (mods.includes('qup')) this.dispatchSilent(hostId, 'qup', 'check-updates');
-      if (mods.includes('duo')) this.dispatchSilent(hostId, 'duo', 'check-updates');
+      if (!h || this.checkingHosts.includes(hostId)) return;
+      this.checkingHosts.push(hostId);
+      try {
+        const mods = (h.modules || []).map(m => m.name);
+        const dispatched = [];
+        if (mods.includes('qup')) dispatched.push(this.dispatchSilent(hostId, 'qup', 'check-updates'));
+        if (mods.includes('duo')) dispatched.push(this.dispatchSilent(hostId, 'duo', 'check-updates'));
+        const outs = await Promise.all(dispatched);
+        await Promise.all(outs.map(o => (o && o.jobId) ? this.awaitJob(o.jobId) : null));
+        await this.refresh();
+      } finally {
+        this.checkingHosts = this.checkingHosts.filter(x => x !== hostId);
+      }
     },
-    checkAllUpdates() {
-      for (const h of this.hosts) if (h.status === 'online') this.checkHost(h.id);
+    async checkAllUpdates() {
+      await Promise.all(this.hosts.filter(h => h.status === 'online').map(h => this.checkHost(h.id)));
     },
     updateService(c) {
       this.runAction(c.hostId, 'duo', 'update', { stack: c.stack, service: c.service });
