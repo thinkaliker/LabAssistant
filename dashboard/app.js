@@ -522,6 +522,32 @@ function app() {
           }
         }
       };
+      // Reconcile on stream error. A finished job's stream is closed by the server; if we never
+      // saw its terminal state (it settled and was pruned before we subscribed, or the connection
+      // dropped mid-flight), EventSource would silently auto-reconnect forever and the chip would
+      // stick in the queue until a full page reload. So on error, ask the job store for the truth:
+      // gone or terminal means retire it; still-live means let EventSource reconnect and resume.
+      es.onerror = () => {
+        if (this.isTerminalJob(rec.state)) { es.close(); return; }
+        fetch(`/api/v1/jobs/${jobId}`)
+          .then(r => r.ok ? r.json() : { state: 'gone' })
+          .then(j => {
+            if (j.state === 'gone') {
+              // No longer in the store: finished and pruned before we observed it. Drop the chip
+              // without faking a failure, and close the panel if it was the one on screen.
+              es.close();
+              this.jobs = this.jobs.filter(x => x.id !== jobId);
+              if (this.job.id === jobId) this.jobPanelOpen = false;
+              this.refresh();
+            } else if (j.state === 'needs_sudo_password' || this.isTerminalJob(j.state)) {
+              es.close();
+              this.refresh();
+              this.finishJob(rec, j.state);
+            }
+            // still queued/running: leave es alone so it reconnects and resumes streaming.
+          })
+          .catch(() => {});
+      };
     },
     // adoptIfIdle brings a job to the front when nothing live is showing (first run, or the
     // previously shown job has finished), so a job that was queued behind another surfaces on
