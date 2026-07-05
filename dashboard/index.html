@@ -30,6 +30,23 @@
       padding-right: 1.5rem;
     }
 
+    /* Compose editor: a half-width panel that fills the viewport height (sticky under the
+       navbar), with the CodeMirror area flexing to take all the leftover space. */
+    .compose-panel {
+      position: sticky;
+      top: 5rem;
+      height: calc(100vh - 6rem);
+      display: flex;
+      flex-direction: column;
+    }
+    .compose-editor-wrap {
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+    .compose-panel .CodeMirror {
+      height: 100%;
+    }
+
     .CodeMirror {
       height: 60vh;
       border: 1px solid var(--bulma-border);
@@ -447,7 +464,7 @@
         </div>
         <div class="columns">
           <!-- Stack list (shrinks when the compose editor is open) -->
-          <div class="column" :class="compose.open ? 'is-7' : 'is-12'">
+          <div class="column" :class="compose.open ? 'is-6' : 'is-12'">
             <template x-if="services.stacks.length===0">
               <p class="has-text-grey">No compose stacks reported. Add a host which contains a docker compose stack
                 first.</p>
@@ -495,8 +512,8 @@
           </div>
 
           <!-- Compose editor panel (right side) -->
-          <div class="column is-5" x-show="compose.open" x-cloak>
-            <div class="box" style="position:sticky; top:5rem;">
+          <div class="column is-6" x-show="compose.open" x-cloak>
+            <div class="box compose-panel">
               <div class="level is-mobile mb-1">
                 <div class="level-left">
                   <div class="level-item has-text-weight-semibold" x-text="'Edit compose: '+compose.stack"></div>
@@ -510,7 +527,7 @@
                 <div class="notification is-warning is-light is-size-7 py-2">This stack is built from multiple compose
                   files; editing is disabled to avoid clobbering them.</div>
               </template>
-              <div x-show="!compose.multiFile">
+              <div x-show="!compose.multiFile" class="compose-editor-wrap">
                 <textarea x-ref="composeEditor"></textarea>
               </div>
               <p class="help is-danger mt-2" x-show="compose.error" x-text="compose.error"></p>
