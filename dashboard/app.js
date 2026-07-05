@@ -24,7 +24,7 @@ function app() {
     hostSort: 'name', // 'name' | 'ip' — how the Hosts list is ordered
     addHostOpen: false,
     taskOpen: false,
-    newHost: { name: '', ip: '', sshUser: '', sshPassword: '', tailscale: false, connMode: 'dial_home', connPort: null },
+    newHost: { name: '', ip: '', sshUser: '', sshPassword: '', tailscale: false, connMode: 'manager_dial', connPort: null },
     newTask: { name: '', schedule: '', module: '', action: '', hostIds: [], misfire: 'skip', interHostDelaySeconds: 0, enabled: true, allowDestructive: false },
     job: { open: false, state: '', progress: 0, log: [] },
     jobPanelHeight: 0, // px override for the docked job panel (0 = CSS default of 33vh)
@@ -131,16 +131,32 @@ function app() {
       this.cfg.open = false;
     },
     hostName(id) { const h = this.hosts.find(x => x.id === id); return h ? h.name : id; },
+    // ipKey turns an IP into a zero-padded string so a plain string compare orders octets
+    // numerically (so .10 sorts after .9).
+    ipKey(ip) { return (ip || '').split('.').map(o => String(parseInt(o, 10) || 0).padStart(3, '0')).join('.'); },
     // sortedHosts returns a stable copy of hosts ordered by the chosen key so the list
     // doesn't reshuffle as the backend returns hosts in map/enroll order.
     sortedHosts() {
-      const key = (ip) => (ip || '').split('.').map(o => String(parseInt(o, 10) || 0).padStart(3, '0')).join('.');
       return [...this.hosts].sort((a, b) => {
         if (this.hostSort === 'ip') {
-          const c = key(a.ip).localeCompare(key(b.ip));
+          const c = this.ipKey(a.ip).localeCompare(this.ipKey(b.ip));
           if (c !== 0) return c;
         }
         return (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
+      });
+    },
+    // sortByHost orders any host-tagged list (items carry hostId/hostName) by the same
+    // hostSort key used for the Hosts page, so Services and Updates stay in sync. label(item)
+    // supplies a secondary key (stack/service) so rows under one host keep a stable order.
+    sortByHost(list, label) {
+      const hostOf = (id) => this.hosts.find(x => x.id === id) || {};
+      return [...(list || [])].sort((a, b) => {
+        const ha = hostOf(a.hostId), hb = hostOf(b.hostId);
+        let c;
+        if (this.hostSort === 'ip') c = this.ipKey(ha.ip).localeCompare(this.ipKey(hb.ip));
+        else c = (a.hostName || ha.name || '').localeCompare(b.hostName || hb.name || '', undefined, { sensitivity: 'base' });
+        if (c !== 0) return c;
+        return label ? label(a).localeCompare(label(b), undefined, { sensitivity: 'base' }) : 0;
       });
     },
     openTask() {
@@ -508,7 +524,7 @@ function app() {
       if (!r.ok) { alert('enroll failed'); return; }
       const { jobId } = await r.json();
       this.addHostOpen = false;
-      this.newHost = { name: '', ip: '', sshUser: '', sshPassword: '', tailscale: false, connMode: 'dial_home', connPort: null };
+      this.newHost = { name: '', ip: '', sshUser: '', sshPassword: '', tailscale: false, connMode: 'manager_dial', connPort: null };
       this.page = 'hosts';
       await this.refresh();
       this.watchJob(jobId);

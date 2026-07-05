@@ -424,7 +424,16 @@
 
       <!-- Services -->
       <div x-show="page==='services'">
-        <h1 class="title">Services</h1>
+        <div class="level is-mobile">
+          <div class="level-left"><h1 class="title">Services</h1></div>
+          <div class="level-right" x-show="services.stacks.length>1">
+            <div class="level-item field has-addons mb-0">
+              <p class="control"><span class="button is-small is-static">Sort by host</span></p>
+              <p class="control"><button class="button is-small" :class="hostSort==='name' && 'is-info is-selected'" @click="hostSort='name'">Name</button></p>
+              <p class="control"><button class="button is-small" :class="hostSort==='ip' && 'is-info is-selected'" @click="hostSort='ip'">IP</button></p>
+            </div>
+          </div>
+        </div>
         <div class="columns">
           <!-- Stack list (shrinks when the compose editor is open) -->
           <div class="column" :class="compose.open ? 'is-7' : 'is-12'">
@@ -432,7 +441,7 @@
               <p class="has-text-grey">No compose stacks reported. Add a host which contains a docker compose stack
                 first.</p>
             </template>
-            <template x-for="st in services.stacks" :key="st.hostId+'/'+st.name">
+            <template x-for="st in sortByHost(services.stacks, s => s.name)" :key="st.hostId+'/'+st.name">
               <div class="box">
                 <div class="level is-mobile">
                   <div class="level-left">
@@ -514,7 +523,12 @@
             <h1 class="title">Updates</h1>
           </div>
           <div class="level-right">
-            <button class="button is-link is-light" @click="checkAllUpdates()">Check all hosts</button>
+            <div class="level-item field has-addons mb-0" x-show="updates.os.length>1 || updates.containers.length>1">
+              <p class="control"><span class="button is-small is-static">Sort by host</span></p>
+              <p class="control"><button class="button is-small" :class="hostSort==='name' && 'is-info is-selected'" @click="hostSort='name'">Name</button></p>
+              <p class="control"><button class="button is-small" :class="hostSort==='ip' && 'is-info is-selected'" @click="hostSort='ip'">IP</button></p>
+            </div>
+            <div class="level-item"><button class="button is-link is-light" @click="checkAllUpdates()">Check all hosts</button></div>
           </div>
         </div>
 
@@ -522,7 +536,7 @@
         <template x-if="updates.os.length===0">
           <p class="has-text-grey">No hosts reporting package updates.</p>
         </template>
-        <template x-for="o in updates.os" :key="o.hostId">
+        <template x-for="o in sortByHost(updates.os)" :key="o.hostId">
           <div class="box">
             <div class="level is-mobile">
               <div class="level-left">
@@ -575,7 +589,7 @@
             </tr>
           </thead>
           <tbody>
-            <template x-for="c in updates.containers" :key="c.hostId+'/'+c.stack+'/'+c.service">
+            <template x-for="c in sortByHost(updates.containers, x => x.stack+'/'+x.service)" :key="c.hostId+'/'+c.stack+'/'+c.service">
               <tr>
                 <td class="is-size-7" x-text="c.hostName"></td>
                 <td x-text="c.stack"></td>
@@ -983,8 +997,8 @@
         <div class="field mt-4">
           <label class="label">Connection</label>
           <div class="select is-fullwidth"><select x-model="newHost.connMode">
-            <option value="dial_home">Associate dials the manager (default)</option>
-            <option value="manager_dial">Manager dials the associate</option>
+            <option value="manager_dial">Manager connects to associate (default)</option>
+            <option value="dial_home">Associate connects to manager</option>
           </select></div>
           <p class="help" x-show="newHost.connMode==='manager_dial'">The associate listens and the manager connects to it. Allow inbound TCP on the host firewall from the manager.</p>
         </div>
