@@ -38,6 +38,10 @@ type Deps struct {
 	ModConfig  *modconfig.Store
 	CA         *ca.CA
 	RotateCert func(hostID string) error
+	// Instance is a per-process marker the dashboard polls to detect a manager restart.
+	Instance string
+	// SelfUpdate runs the manager's own update (pull, rebuild, restart) on the control host.
+	SelfUpdate func() error
 }
 
 // Router returns the /api/v1 handler.
@@ -87,6 +91,7 @@ func Router(d Deps) http.Handler {
 	mux.HandleFunc("PUT /api/v1/hosts/{id}/modules/{name}/config", d.putModuleConfig)
 	mux.HandleFunc("GET /api/v1/backup", d.backup)
 	mux.HandleFunc("POST /api/v1/restore", d.restore)
+	mux.HandleFunc("POST /api/v1/manager/update", d.managerUpdate)
 
 	return d.authMiddleware(mux)
 }
@@ -174,6 +179,23 @@ func (d Deps) runAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusAccepted, out)
+}
+
+// managerUpdate triggers the manager's own update on the control host (pull, rebuild,
+// restart). The restart drops the process, so the caller is told to expect a re-login.
+func (d Deps) managerUpdate(w http.ResponseWriter, r *http.Request) {
+	if d.SelfUpdate == nil {
+		writeErr(w, http.StatusNotImplemented, "unsupported", "self-update is not available")
+		return
+	}
+	if err := d.SelfUpdate(); err != nil {
+		writeErr(w, http.StatusInternalServerError, "error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{
+		"status": "updating",
+		"detail": "manager is pulling, rebuilding, and restarting; sign in again once it is back",
+	})
 }
 
 func (d Deps) listJobs(w http.ResponseWriter, r *http.Request) {

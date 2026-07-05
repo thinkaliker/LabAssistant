@@ -11,7 +11,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"google.golang.org/grpc"
@@ -40,6 +42,8 @@ import (
 // App holds the manager's wired subsystems.
 type App struct {
 	cfg       config.Config
+	layout    paths.Layout
+	instance  string
 	ca        *ca.CA
 	store     *state.Store
 	jobs      *jobs.Registry
@@ -162,7 +166,11 @@ func NewApp(layout paths.Layout, cfg config.Config) (*App, error) {
 	}
 
 	return &App{
-		cfg:       cfg,
+		cfg:    cfg,
+		layout: layout,
+		// instance changes every process start; the dashboard polls it to notice when the
+		// manager restarted underneath it (e.g. after a self-update) and prompt re-login.
+		instance:  fmt.Sprintf("%d", time.Now().UnixNano()),
 		ca:        authority,
 		store:     store,
 		jobs:      jr,
@@ -231,6 +239,42 @@ func (a *App) Serve(ctx context.Context) error {
 		_ = httpSrv.Close()
 		return err
 	}
+}
+
+// selfUpdate runs `scripts/manage.sh update` (git pull, rebuild, restart) for the manager on
+// its own host. It is spawned detached in a new session so the pull+build run to completion
+// independently of this process; the script's final `systemctl restart` then tears this
+// manager down on purpose, which is why the dashboard must re-login afterwards.
+func (a *App) selfUpdate() error {
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	// A standard deploy builds bin/manager inside the checkout, so the repo root is two
+	// levels up and scripts/manage.sh drives the update lifecycle.
+	checkout := filepath.Dir(filepath.Dir(exe))
+	script := filepath.Join(checkout, "scripts", "manage.sh")
+	if !fileExists(script) {
+		return fmt.Errorf("update script not found at %s", script)
+	}
+	logPath := filepath.Join(a.layout.Data, "manager-update.log")
+	logf, err := os.Create(logPath)
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command("bash", script, "update")
+	cmd.Dir = checkout
+	cmd.Stdout = logf
+	cmd.Stderr = logf
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := cmd.Start(); err != nil {
+		logf.Close()
+		return err
+	}
+	slog.Info("manager self-update started", "script", script, "log", logPath)
+	a.aud.Record("manager_update", "", "manager", "manager self-update triggered from dashboard", nil)
+	go func() { _ = cmd.Wait(); logf.Close() }()
+	return nil
 }
 
 // rotateCert issues a fresh client certificate for a connected host and pushes it down the

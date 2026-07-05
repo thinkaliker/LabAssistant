@@ -147,6 +147,9 @@ func (d Deps) session(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]any{
 		"authRequired":  required,
 		"authenticated": authed,
+		// instance changes on every manager restart; the dashboard polls this to notice a
+		// restart underneath it and prompt the user to sign in again.
+		"instance": d.Instance,
 	}
 	// Only disclose the username to authenticated callers; this endpoint is public so the
 	// dashboard can detect whether a login is needed before any credentials are presented.

@@ -36,6 +36,10 @@ function app() {
     login: { username: '', password: '' },
     loginError: '',
     settings: { logLevel: 'info', defaultTimezone: '' },
+    managerUpdating: false,
+    managerUpdateError: '',
+    instanceId: '', // manager process marker; a change means it restarted underneath us
+    stale: false, // manager restarted, so this page's session/state is no longer valid
     tokens: [],
     newTokenName: '',
     newTokenAudit: false,
@@ -51,6 +55,7 @@ function app() {
         const r = await fetch('/api/v1/auth/session');
         if (!r.ok) { this.needsLogin = true; return; }
         const s = await r.json();
+        this.instanceId = s.instance || '';
         this.authUser = s.authRequired ? (s.username || '') : '';
         if (s.authRequired && !s.authenticated) { this.needsLogin = true; return; }
       } catch (e) {
@@ -66,7 +71,20 @@ function app() {
       this.refresh();
       const es = new EventSource('/api/v1/events');
       es.onmessage = () => this.refresh();
+      // Poll the manager's instance marker (public endpoint, works in auth and open mode) so a
+      // restart underneath us surfaces the stale banner even when the SSE stream can't reconnect.
+      clearInterval(this._instanceTimer);
+      this._instanceTimer = setInterval(() => this.checkInstance(), 10000);
     },
+    async checkInstance() {
+      if (this.stale) return;
+      try {
+        const s = await (await fetch('/api/v1/auth/session')).json();
+        if (this.instanceId && s.instance && s.instance !== this.instanceId) this.stale = true;
+        else if (s.authRequired && !s.authenticated) this.stale = true;
+      } catch (e) { /* manager down mid-restart; next tick retries */ }
+    },
+    reloadForLogin() { window.location.reload(); },
     async doLogin() {
       const r = await fetch('/api/v1/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(this.login) });
       if (!r.ok) { this.loginError = 'Invalid credentials'; return; }
@@ -103,6 +121,33 @@ function app() {
     async saveSettings() {
       await fetch('/api/v1/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(this.settings) });
       this.refresh();
+    },
+    async updateManager() {
+      if (this.managerUpdating) return;
+      this.managerUpdateError = '';
+      this.managerUpdating = true;
+      try {
+        const r = await fetch('/api/v1/manager/update', { method: 'POST' });
+        if (!r.ok) {
+          const e = await r.json().catch(() => ({}));
+          this.managerUpdateError = (e.error && e.error.message) || 'Failed to start update.';
+          this.managerUpdating = false;
+          return;
+        }
+        // The restart will change the instance marker; the poller then flips the stale banner.
+        // Speed that up by polling more aggressively for a bit.
+        this._pollStaleUntilRestart();
+      } catch (e) {
+        this.managerUpdateError = 'Failed to reach the manager.';
+        this.managerUpdating = false;
+      }
+    },
+    _pollStaleUntilRestart() {
+      let n = 0;
+      const t = setInterval(() => {
+        if (this.stale || n++ > 120) { clearInterval(t); return; }
+        this.checkInstance();
+      }, 2000);
     },
     async createToken() {
       const r = await fetch('/api/v1/auth/tokens', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: this.newTokenName, auditAccess: this.newTokenAudit }) });

@@ -270,6 +270,18 @@
     </div>
   </nav>
 
+  <!-- Stale-manager banner: shown when the manager process restarted underneath this page
+       (detected by a change in its instance marker), so the session/state is no longer valid. -->
+  <div x-show="stale" x-cloak
+       style="position:fixed; top:0; left:0; right:0; z-index:40;">
+    <div class="notification is-warning is-radiusless mb-0 py-3">
+      <div class="container is-flex is-align-items-center is-justify-content-space-between">
+        <span><strong>The manager restarted.</strong> This page is out of date — sign in again to reconnect.</span>
+        <button class="button is-warning is-inverted is-outlined" @click="reloadForLogin()">Log in again</button>
+      </div>
+    </div>
+  </div>
+
   <section class="section" x-show="ready && !needsLogin" x-cloak
            :style="job.open ? ('padding-bottom:' + ((jobPanelHeight || Math.round(window.innerHeight * 0.33)) + 24) + 'px') : ''">
     <div class="container">
@@ -749,6 +761,17 @@
             </div>
           </div>
           <button class="button is-primary" @click="saveSettings()">Save</button>
+
+          <hr>
+          <h3 class="title is-6 mb-2">Update manager</h3>
+          <p class="is-size-7 has-text-grey mb-3">Pull the latest code, rebuild, and restart the manager
+            on this control host. The manager will drop offline briefly, so
+            <strong>you will need to sign in again</strong> once it is back.</p>
+          <button class="button is-warning" :class="managerUpdating && 'is-loading'"
+            :disabled="managerUpdating" @click="updateManager()">Update &amp; restart manager</button>
+          <p class="help is-danger mt-2" x-show="managerUpdateError" x-text="managerUpdateError"></p>
+          <p class="help is-info mt-2" x-show="managerUpdating">Updating — the manager is rebuilding and will
+            restart. You will be asked to sign in again.</p>
         </div>
 
         <div class="box">
