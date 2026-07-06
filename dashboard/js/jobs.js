@@ -25,15 +25,21 @@ export const jobs = {
     // jobs show up in the queue indicator; the panel displays one at a time.
     const rec = { id: jobId, label: label || ('job ' + String(jobId).slice(0, 6)), state: 'queued', progress: 0, log: [] };
     this.jobs.push(rec);
+    // Mutate the record through the reactive array element, NOT the raw `rec`: Alpine wraps
+    // pushed elements in a reactive proxy, and mutating the raw object bypasses the proxy's set
+    // trap, so the log panel never repaints. `this.jobs.find` returns the same cached proxy that
+    // `this.job` holds, so pushing to live().log updates the on-screen log line-by-line.
+    const live = () => this.jobs.find(j => j.id === jobId) || rec;
     // Adopt the new job on screen when nothing live is showing (or the panel is closed);
     // otherwise leave the current job up and let this one wait in the queue indicator.
     if (!this.jobPanelOpen || !this.job.id || this.isTerminalJob(this.job.state)) this.showJob(rec);
     const es = new EventSource(`/api/v1/jobs/${jobId}/events`);
     es.onmessage = (e) => {
       const ev = JSON.parse(e.data).payload;
+      const r = live();
       if (ev.kind === 'log' && ev.message) {
-        rec.log.push(ev.message);
-        if (rec.state === 'queued') rec.state = 'running';
+        r.log.push(ev.message);
+        if (r.state === 'queued') r.state = 'running';
         this.adoptIfIdle(rec);
         // Only steal focus/scroll for the job actually on screen. jobStick is driven by the
         // user's own scrolling (see onJobScroll), so a fast burst can't stop the autoscroll.
@@ -43,13 +49,13 @@ export const jobs = {
         }
       }
       if (ev.kind === 'progress') {
-        rec.progress = ev.progress;
-        if (rec.state === 'queued') rec.state = 'running';
+        r.progress = ev.progress;
+        if (r.state === 'queued') r.state = 'running';
         this.adoptIfIdle(rec);
         if (this.job.id === rec.id) this.jobPanelOpen = true;
       }
       if (ev.kind === 'state') {
-        rec.state = ev.state;
+        r.state = ev.state;
         if (ev.state === 'needs_sudo_password' || this.isTerminalJob(ev.state)) {
           es.close();
           this.refresh();
