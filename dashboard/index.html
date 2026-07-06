@@ -858,7 +858,8 @@
         <div class="field">
           <label class="label">Target hosts</label>
           <template x-for="h in taskHostsSorted()" :key="h.id">
-            <label class="checkbox mr-3"><input type="checkbox" :value="h.id" @change="toggleTaskHost(h.id)"> <span
+            <label class="checkbox mr-3"><input type="checkbox" :value="h.id"
+                :checked="newTask.hostIds.includes(h.id)" @change="toggleTaskHost(h.id)"> <span
                 x-text="h.name"></span></label>
           </template>
         </div>
