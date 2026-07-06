@@ -5,9 +5,11 @@
   <script src="/vendor/codemirror/lint.min.js"></script>
   <script src="/vendor/js-yaml.min.js"></script>
   <script src="/vendor/codemirror/yaml-lint.min.js"></script>
-  <!-- App component, split across dashboard/js/ and merged in main.js. A module is deferred, so
-       it runs before DOMContentLoaded and defines window.app() before Alpine initializes. -->
+  <!-- App component, split across dashboard/js/ and merged in main.js. A module is always
+       deferred; Alpine must load AFTER it (both deferred, executed in document order) so
+       window.app() is defined before Alpine.start() walks x-data="app()". -->
   <script type="module" src="/js/main.js"></script>
+  <script defer src="/vendor/alpine-3.14.9.min.js"></script>
 </body>
 
 </html>
