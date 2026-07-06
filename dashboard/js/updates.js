@@ -84,7 +84,15 @@ export const updates = {
   // { approval } so the caller can surface the pending-approvals banner once at the end.
   async runUpdate(hostId, mod, action, params) {
     const out = await this.dispatchSilent(hostId, mod, action, params);
-    if (out && out.jobId) { await this.awaitJob(out.jobId); return { approval: false }; }
+    if (out && out.jobId) {
+      // Stream the job into the docked panel so its progress/log is visible, and independently
+      // await it so this action's slot in runHostUpdates' serial loop completes before the next.
+      // watchJob opens an SSE reader; awaitJob polls the same job — the two don't conflict.
+      const label = params && params.stack ? `${mod} ${action} ${params.stack}` : `${mod} ${action}`;
+      this.watchJob(out.jobId, label);
+      await this.awaitJob(out.jobId);
+      return { approval: false };
+    }
     if (out && out.approvalId) return { approval: true };
     return { approval: false };
   },
