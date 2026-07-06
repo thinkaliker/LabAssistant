@@ -1,0 +1,55 @@
+      <!-- Scheduler -->
+      <div x-show="page==='scheduler'">
+        <div class="level">
+          <div class="level-left">
+            <h1 class="title">Scheduler</h1>
+          </div>
+          <div class="level-right"><button class="button is-primary" @click="openTask()">Add Task</button></div>
+        </div>
+        <template x-if="tasks.length===0">
+          <p class="has-text-grey">No scheduled tasks.</p>
+        </template>
+        <table class="table is-fullwidth" x-show="tasks.length>0">
+          <thead>
+            <tr>
+              <th></th>
+              <th>Name</th>
+              <th>Schedule</th>
+              <th>Action</th>
+              <th>Hosts</th>
+              <th>Last run</th>
+              <th>Next run</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="t in tasks" :key="t.id">
+              <tr>
+                <td><span class="tag" :class="t.enabled ? 'is-success' : 'is-light'"
+                    x-text="t.enabled?'on':'off'"></span></td>
+                <td class="has-text-weight-semibold" x-text="t.name"></td>
+                <td><code x-text="t.schedule"></code></td>
+                <td>
+                  <span x-text="`${t.module} ${t.action}`"></span>
+                  <span class="tag is-danger is-light" x-show="t.allowDestructive">destructive</span>
+                </td>
+                <td x-text="(t.hostIds||[]).length"></td>
+                <td class="is-size-7">
+                  <span class="tag" x-show="t.lastStatus"
+                    :class="{'is-success':t.lastStatus==='dispatched','is-danger':t.lastStatus==='failed','is-warning':t.lastStatus==='skipped'}"
+                    x-text="t.lastStatus" :title="t.lastError||''"></span>
+                  <span x-show="!t.lastStatus" class="has-text-grey">—</span>
+                </td>
+                <td class="is-size-7" x-text="t.nextRun ? new Date(t.nextRun).toLocaleString() : '—'"></td>
+                <td class="has-text-right">
+                  <div class="buttons are-small is-right">
+                    <button class="button is-info" @click="editTask(t)">edit</button>
+                    <button class="button is-danger" @click="removeTask(t.id)">delete</button>
+                  </div>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+

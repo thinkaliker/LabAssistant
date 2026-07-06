@@ -1,0 +1,81 @@
+      <!-- Settings -->
+      <div x-show="page==='settings'">
+        <h1 class="title">Settings</h1>
+
+        <div class="box">
+          <h2 class="subtitle">Manager</h2>
+          <div class="columns">
+            <div class="column field">
+              <label class="label">Log level</label>
+              <div class="control">
+                <div class="select"><select x-model="settings.logLevel">
+                    <option>debug</option>
+                    <option>info</option>
+                    <option>warn</option>
+                    <option>error</option>
+                  </select></div>
+              </div>
+            </div>
+            <div class="column field">
+              <label class="label">Default timezone</label>
+              <div class="control"><input class="input" x-model="settings.defaultTimezone"
+                  placeholder="America/Los_Angeles"></div>
+            </div>
+          </div>
+          <button class="button is-primary" @click="saveSettings()">Save</button>
+
+          <hr>
+          <h3 class="title is-6 mb-2">Update manager</h3>
+          <p class="is-size-7 has-text-grey mb-3">Pull the latest code, rebuild, and restart the manager
+            on this control host. The manager will drop offline briefly, so
+            <strong>you will need to sign in again</strong> once it is back.
+          </p>
+          <button class="button is-warning" :class="managerUpdating && 'is-loading'" :disabled="managerUpdating"
+            @click="updateManager()">Update &amp; restart manager</button>
+          <p class="help is-danger mt-2" x-show="managerUpdateError" x-text="managerUpdateError"></p>
+          <p class="help is-info mt-2" x-show="managerUpdating">Updating — the manager is rebuilding and will
+            restart. You will be asked to sign in again.</p>
+        </div>
+
+        <div class="box">
+          <h2 class="subtitle">API Tokens</h2>
+          <div class="field has-addons">
+            <div class="control is-expanded"><input class="input" x-model="newTokenName" placeholder="token name"></div>
+            <div class="control"><button class="button is-link" @click="createToken()">Create</button></div>
+          </div>
+          <label class="checkbox is-size-7 has-text-grey mb-2">
+            <input type="checkbox" x-model="newTokenAudit"> Grant audit-log read access
+          </label>
+          <div class="notification is-success" x-show="newTokenValue">
+            <button class="delete" @click="newTokenValue=''"></button>
+            Copy now (shown once): <code x-text="newTokenValue"></code>
+          </div>
+          <table class="table is-fullwidth is-narrow" x-show="tokens.length>0">
+            <tbody>
+              <template x-for="t in tokens" :key="t.id">
+                <tr>
+                  <td x-text="t.name||'(unnamed)'"></td>
+                  <td><span class="tag is-info is-light" x-show="t.auditAccess">audit</span></td>
+                  <td class="is-size-7 has-text-grey" x-text="new Date(t.createdAt).toLocaleString()"></td>
+                  <td class="has-text-right"><button class="button is-small is-danger is-light"
+                      @click="revokeToken(t.id)">revoke</button></td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="box">
+          <h2 class="subtitle">Backup</h2>
+          <div class="buttons">
+            <button class="button" @click="downloadBackup()">Download backup</button>
+            <label class="button">
+              Restore from file…
+              <input type="file" accept="application/json" style="display:none" @change="restoreBackup($event)">
+            </label>
+          </div>
+          <p class="is-size-7 has-text-grey">Backup includes the CA private key — keep it secret. Restore requires a
+            manager restart.</p>
+        </div>
+      </div>
+

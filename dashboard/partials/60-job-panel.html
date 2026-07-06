@@ -1,0 +1,26 @@
+  <!-- Job output: a panel docked to the lower third of the viewport (not a modal, so the page
+       behind stays usable). Drag the top edge to resize; output autoscrolls to the latest line. -->
+  <div class="job-panel" x-ref="jobPanel" x-show="jobPanelOpen" x-cloak x-transition.opacity
+    :style="jobPanelHeight ? ('height:' + jobPanelHeight + 'px') : ''">
+    <div class="job-panel-resize" @pointerdown="startJobResize($event)" title="Drag to resize"></div>
+    <header class="job-panel-head">
+      <span class="has-text-weight-semibold">Job</span>
+      <span class="tag ml-2" :class="statusClass(job.state)" x-text="job.state"></span>
+      <span class="is-size-7 has-text-grey ml-2" x-show="job.label" x-text="job.label"></span>
+      <!-- Queue indicator: every active job as a clickable chip. Click one to bring its log up;
+           the chip on screen is highlighted. Jobs run serially per host, parallel across hosts. -->
+      <div class="job-queue ml-4" x-show="jobs.length>1">
+        <span class="is-size-7 has-text-grey mr-2" x-text="jobs.length+' jobs'"></span>
+        <template x-for="j in jobs" :key="j.id">
+          <button class="tag is-clickable mr-1" :class="[statusClass(j.state), j.id===job.id ? 'is-current' : '']"
+            @click="selectJob(j)" :title="j.label+' — '+j.state" x-text="j.label"></button>
+        </template>
+      </div>
+      <button class="delete" @click="jobPanelOpen=false" aria-label="close"></button>
+    </header>
+    <div class="job-panel-body">
+      <progress class="progress is-link mb-2" :value="job.progress" max="1" x-show="job.state==='running'"></progress>
+      <pre class="job-panel-log" x-ref="jobLog" @scroll="onJobScroll($event)" x-text="job.log.join('\n')"></pre>
+    </div>
+  </div>
+

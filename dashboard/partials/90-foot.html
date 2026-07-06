@@ -1,0 +1,13 @@
+  <!-- CodeMirror (YAML editing + linting) for the compose editor; loaded before the app module so
+       the CodeMirror/jsyaml globals exist when the editor opens. -->
+  <script src="/vendor/codemirror/codemirror.min.js"></script>
+  <script src="/vendor/codemirror/yaml.min.js"></script>
+  <script src="/vendor/codemirror/lint.min.js"></script>
+  <script src="/vendor/js-yaml.min.js"></script>
+  <script src="/vendor/codemirror/yaml-lint.min.js"></script>
+  <!-- App component, split across dashboard/js/ and merged in main.js. A module is deferred, so
+       it runs before DOMContentLoaded and defines window.app() before Alpine initializes. -->
+  <script type="module" src="/js/main.js"></script>
+</body>
+
+</html>

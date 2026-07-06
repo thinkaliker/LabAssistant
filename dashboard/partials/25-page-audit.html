@@ -1,0 +1,38 @@
+      <!-- Audit -->
+      <div x-show="page==='audit'">
+        <h1 class="title">Audit Log</h1>
+        <div class="notification is-warning" x-show="auditError" x-text="auditError"></div>
+        <template x-if="!auditError && audit.length===0">
+          <p class="has-text-grey">No audit entries.</p>
+        </template>
+        <table class="table is-fullwidth is-narrow" x-show="audit.length>0">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Type</th>
+              <th>Host</th>
+              <th>Actor</th>
+              <th>Summary</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="e in auditPageSlice()" :key="e.id">
+              <tr>
+                <td class="is-size-7" x-text="new Date(e.time).toLocaleString()"></td>
+                <td><span class="tag is-light" x-text="e.type"></span></td>
+                <td class="is-size-7" x-text="e.hostId ? hostName(e.hostId) : '—'"></td>
+                <td class="is-size-7" x-text="e.actor"></td>
+                <td x-text="e.summary"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+        <nav class="mt-3" style="display:flex;align-items:center;justify-content:space-between"
+          x-show="auditPages() > 1">
+          <button class="button is-small" :disabled="auditPage<=1" @click="auditPage--">Previous</button>
+          <span class="is-size-7 has-text-grey"
+            x-text="`Page ${auditPage} of ${auditPages()} · ${audit.length} entries`"></span>
+          <button class="button is-small" :disabled="auditPage>=auditPages()" @click="auditPage++">Next</button>
+        </nav>
+      </div>
+

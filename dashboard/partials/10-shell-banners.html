@@ -1,0 +1,47 @@
+  <section class="section app-section" x-show="ready && !needsLogin" x-cloak
+    :style="jobPanelOpen ? ('padding-bottom:' + ((jobPanelHeight || Math.round(window.innerHeight * 0.33)) + 24) + 'px') : ''">
+    <div class="container is-fluid app-container">
+
+      <!-- Pending approvals (visible on every page) -->
+      <template x-if="approvals.length > 0">
+        <div class="notification is-warning">
+          <p class="has-text-weight-semibold mb-2">Pending approvals</p>
+          <template x-for="ap in approvals" :key="ap.id">
+            <div class="level is-mobile">
+              <div class="level-left">
+                <div class="level-item" x-text="`${ap.module} ${ap.action}`"></div>
+                <div class="level-item is-size-7" x-text="hostName(ap.hostId)"></div>
+                <div class="level-item"><span class="tag is-danger" x-show="ap.destructive">destructive</span></div>
+              </div>
+              <div class="level-right">
+                <div class="level-item buttons are-small">
+                  <button class="button is-success" @click="confirmApproval(ap.id)">Confirm</button>
+                  <button class="button is-light" @click="rejectApproval(ap.id)">Reject</button>
+                </div>
+              </div>
+            </div>
+          </template>
+        </div>
+      </template>
+
+      <!-- Sudo password prompts (visible on every page) -->
+      <template x-if="sudoPrompts.length > 0">
+        <div class="notification is-danger is-light">
+          <p class="has-text-weight-semibold mb-2">Sudo password required</p>
+          <template x-for="sp in sudoPrompts" :key="sp.id">
+            <div class="level is-mobile">
+              <div class="level-left">
+                <div class="level-item" x-text="`${sp.module} ${sp.action}`"></div>
+                <div class="level-item is-size-7" x-text="hostName(sp.hostId)"></div>
+              </div>
+              <div class="level-right">
+                <div class="level-item buttons are-small">
+                  <button class="button is-primary" @click="openSudo(sp)">Provide password</button>
+                  <button class="button is-light" @click="cancelSudo(sp.id)">Cancel</button>
+                </div>
+              </div>
+            </div>
+          </template>
+        </div>
+      </template>
+

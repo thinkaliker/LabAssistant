@@ -1,0 +1,200 @@
+  <!-- Module config modal -->
+  <div class="modal" :class="cfg.open && 'is-active'">
+    <div class="modal-background" @click="cfg.open=false"></div>
+    <div class="modal-card">
+      <header class="modal-card-head">
+        <p class="modal-card-title" x-text="'Configure '+cfg.module"></p>
+      </header>
+      <section class="modal-card-body">
+        <template x-if="cfg.fields.length===0">
+          <p class="has-text-grey">This module has no configurable settings.</p>
+        </template>
+        <template x-for="f in cfg.fields" :key="f.key">
+          <div class="field">
+            <label class="label" x-text="f.title||f.key"></label>
+            <div class="control"><input class="input" :type="f.secret?'password':'text'" x-model="cfg.values[f.key]">
+            </div>
+          </div>
+        </template>
+      </section>
+      <footer class="modal-card-foot">
+        <button class="button is-primary" @click="saveModuleConfig()" x-show="cfg.fields.length>0">Save</button>
+        <button class="button" @click="cfg.open=false">Close</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Action params modal -->
+  <div class="modal" :class="act.open && 'is-active'">
+    <div class="modal-background" @click="act.open=false"></div>
+    <div class="modal-card">
+      <header class="modal-card-head">
+        <p class="modal-card-title" x-text="act.module+' '+act.action"></p>
+      </header>
+      <section class="modal-card-body">
+        <div class="notification is-warning is-light" x-show="act.destructive">
+          This is a destructive action — it will be queued for approval before it runs.
+        </div>
+        <template x-for="f in act.fields" :key="f.key">
+          <div class="field">
+            <label class="label">
+              <span x-text="f.title"></span>
+              <span class="has-text-danger" x-show="f.required">*</span>
+            </label>
+            <div class="control"><input class="input" x-model="act.values[f.key]" @keydown.enter="submitAction()"></div>
+          </div>
+        </template>
+        <p class="help is-danger" x-show="act.error" x-text="act.error"></p>
+      </section>
+      <footer class="modal-card-foot">
+        <button class="button" :class="act.destructive ? 'is-danger' : 'is-primary'"
+          @click="submitAction()">Run</button>
+        <button class="button" @click="act.open=false">Cancel</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Sudo password modal -->
+  <div class="modal" :class="sudoModal.open && 'is-active'">
+    <div class="modal-background" @click="sudoModal.open=false"></div>
+    <div class="modal-card">
+      <header class="modal-card-head">
+        <p class="modal-card-title">Sudo password</p>
+      </header>
+      <section class="modal-card-body">
+        <p class="mb-3">
+          Enter the sudo password for <strong x-text="hostName(sudoModal.hostId)"></strong> to run
+          <strong x-text="`${sudoModal.module} ${sudoModal.action}`"></strong>.
+          It is sent to the host over the encrypted stream, used once, and never stored.
+        </p>
+        <div class="field">
+          <div class="control">
+            <input class="input" type="password" x-model="sudoModal.password" autocomplete="off" x-ref="sudoInput"
+              @keydown.enter="submitSudo()">
+          </div>
+        </div>
+        <p class="help is-danger" x-show="sudoModal.error" x-text="sudoModal.error"></p>
+      </section>
+      <footer class="modal-card-foot">
+        <button class="button is-primary" @click="submitSudo()">Submit</button>
+        <button class="button" @click="sudoModal.open=false">Cancel</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Add Task modal -->
+  <div class="modal" :class="taskOpen && 'is-active'">
+    <div class="modal-background" @click="taskOpen=false"></div>
+    <div class="modal-card">
+      <header class="modal-card-head">
+        <p class="modal-card-title" x-text="editingTaskId ? 'Edit Task' : 'Add Task'"></p>
+      </header>
+      <section class="modal-card-body">
+        <div class="field"><label class="label">Name</label>
+          <div class="control"><input class="input" x-model="newTask.name" placeholder="weekly updates"></div>
+        </div>
+        <div class="field">
+          <div class="level is-mobile mb-1">
+            <div class="level-left"><label class="label mb-0">Schedule (cron)</label></div>
+            <div class="level-right">
+              <button type="button" class="button is-small is-ghost" @click="toggleCronFields()"
+                x-text="cronFields ? 'use cron string' : 'use fields'"></button>
+            </div>
+          </div>
+          <div class="control" x-show="!cronFields">
+            <input class="input" x-model="newTask.schedule" placeholder="0 3 * * 0">
+          </div>
+          <div class="columns is-mobile is-gapless" x-show="cronFields">
+            <div class="column mr-2"><input class="input" x-model="cronParts.m" @input="syncCron()" placeholder="*">
+              <p class="help">min 0-59</p>
+            </div>
+            <div class="column mr-2"><input class="input" x-model="cronParts.h" @input="syncCron()" placeholder="*">
+              <p class="help">hour 0-23</p>
+            </div>
+            <div class="column mr-2"><input class="input" x-model="cronParts.dom" @input="syncCron()" placeholder="*">
+              <p class="help">day 1-31</p>
+            </div>
+            <div class="column mr-2"><input class="input" x-model="cronParts.mon" @input="syncCron()" placeholder="*">
+              <p class="help">month 1-12</p>
+            </div>
+            <div class="column"><input class="input" x-model="cronParts.dow" @input="syncCron()" placeholder="*">
+              <p class="help">dow 0-6</p>
+            </div>
+          </div>
+        </div>
+        <div class="columns">
+          <div class="column field"><label class="label">Module</label>
+            <div class="control">
+              <div class="select is-fullwidth">
+                <select x-model="newTask.module" @change="newTask.action=''">
+                  <option value="" disabled>select module</option>
+                  <template x-for="m in taskModuleNames()" :key="m">
+                    <option :value="m" x-text="m"></option>
+                  </template>
+                </select>
+              </div>
+            </div>
+          </div>
+          <div class="column field"><label class="label">Action</label>
+            <div class="control">
+              <div class="select is-fullwidth">
+                <select x-model="newTask.action" :disabled="!newTask.module">
+                  <option value="" disabled>select action</option>
+                  <template x-for="a in taskModuleActions()" :key="a">
+                    <option :value="a" x-text="a"></option>
+                  </template>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="field">
+          <label class="label">Target hosts</label>
+          <template x-for="h in taskHostsSorted()" :key="h.id">
+            <label class="checkbox mr-3"><input type="checkbox" :value="h.id"
+                :checked="newTask.hostIds.includes(h.id)" @change="toggleTaskHost(h.id)"> <span
+                x-text="h.name"></span></label>
+          </template>
+        </div>
+        <div class="columns">
+          <div class="column field">
+            <label class="label">Misfire</label>
+            <div class="control">
+              <div class="select is-fullwidth"><select x-model="newTask.misfire">
+                  <option value="skip">skip</option>
+                  <option value="catchup">catchup</option>
+                  <option value="retry">retry</option>
+                </select></div>
+            </div>
+          </div>
+          <div class="column field"><label class="label">Inter-host delay (s)</label>
+            <div class="control"><input class="input" type="number" x-model.number="newTask.interHostDelaySeconds">
+            </div>
+          </div>
+        </div>
+        <label class="checkbox mr-4"><input type="checkbox" x-model="newTask.enabled"> Enabled</label>
+        <label class="checkbox"><input type="checkbox" x-model="newTask.allowDestructive"> Allow destructive</label>
+      </section>
+      <footer class="modal-card-foot">
+        <button class="button is-primary" @click="submitTask()"
+          :disabled="!newTask.name || !newTask.schedule || !newTask.module || !newTask.action"
+          x-text="editingTaskId ? 'Save' : 'Create'"></button>
+        <button class="button" @click="taskOpen=false">Cancel</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Log viewer modal -->
+  <div class="modal" :class="logView.open && 'is-active'">
+    <div class="modal-background" @click="closeLogs()"></div>
+    <div class="modal-card">
+      <header class="modal-card-head">
+        <p class="modal-card-title" x-text="'Logs: '+logView.title"></p>
+      </header>
+      <section class="modal-card-body">
+        <pre style="max-height:360px;overflow:auto" x-text="logView.lines.join('\n')"></pre>
+      </section>
+      <footer class="modal-card-foot"><button class="button" @click="closeLogs()">Close</button></footer>
+    </div>
+  </div>
+

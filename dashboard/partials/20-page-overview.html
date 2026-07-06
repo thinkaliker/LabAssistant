@@ -1,0 +1,35 @@
+      <!-- Overview -->
+      <div x-show="page==='overview'">
+        <h1 class="title">Overview</h1>
+        <div class="columns">
+          <div class="column">
+            <div class="box has-text-centered" style="height:100%">
+              <p class="heading">Nodes</p>
+              <p class="title" x-text="`${overview.hosts?.online ?? 0}/${overview.hosts?.total ?? 0}`"></p>
+              <p class="is-size-7 has-text-grey">online / total</p>
+            </div>
+          </div>
+          <div class="column">
+            <div class="box has-text-centered" style="height:100%">
+              <p class="heading">Services Running</p>
+              <p class="title" x-text="overview.services?.running ?? 0"></p>
+              <p class="is-size-7 has-text-grey">containers up</p>
+            </div>
+          </div>
+          <div class="column">
+            <div class="box has-text-centered" style="height:100%">
+              <p class="heading">RAM Used</p>
+              <p class="title" x-text="humanBytes(overview.resources?.memUsedBytes ?? 0)"></p>
+              <p class="is-size-7 has-text-grey">across all hosts</p>
+            </div>
+          </div>
+          <div class="column">
+            <div class="box has-text-centered" style="height:100%">
+              <p class="heading">Updates Available</p>
+              <p class="title" x-text="overview.updates?.packages ?? 0"></p>
+              <p class="is-size-7 has-text-grey">packages</p>
+            </div>
+          </div>
+        </div>
+      </div>
+

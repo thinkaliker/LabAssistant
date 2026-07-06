@@ -1,0 +1,109 @@
+      <!-- Hosts -->
+      <div x-show="page==='hosts'">
+        <div class="level is-mobile">
+          <div class="level-left">
+            <h1 class="title">Hosts</h1>
+          </div>
+          <div class="level-right" x-show="hosts.length>1">
+            <div class="level-item field has-addons mb-0">
+              <p class="control"><span class="button is-small is-static">Sort</span></p>
+              <p class="control"><button class="button is-small" :class="hostSort==='name' && 'is-info is-selected'"
+                  @click="hostSort='name'">Name</button></p>
+              <p class="control"><button class="button is-small" :class="hostSort==='ip' && 'is-info is-selected'"
+                  @click="hostSort='ip'">IP</button></p>
+            </div>
+          </div>
+        </div>
+        <template x-if="hosts.length===0">
+          <p class="has-text-grey">No hosts yet. Enroll one with <code>manager enroll</code> or use the Add Hosts
+            button.</p>
+        </template>
+        <template x-for="h in sortedHosts()" :key="h.id">
+          <div class="box">
+            <div class="level is-mobile" style="cursor:pointer" @click="toggle(h.id)">
+              <div class="level-left">
+                <div class="level-item">
+                  <span class="tag" :class="statusClass(h.status)" x-text="h.status"></span>
+                </div>
+                <div class="level-item has-text-weight-semibold" x-text="h.name"></div>
+                <div class="level-item is-size-7 has-text-grey" x-text="h.ip"></div>
+                <div class="level-item" x-show="h.connMode==='manager_dial'"><span class="tag is-info"
+                    title="Manager dials this host">manager-dial</span></div>
+                <div class="level-item" x-show="hostUpdates(h)>0"><span class="tag is-warning"
+                    :title="hostUpdates(h)+' update(s) available'"
+                    x-text="hostUpdates(h)+(hostUpdates(h)===1?' update':' updates')"></span></div>
+              </div>
+              <div class="level-right">
+                <div class="level-item is-size-7 has-text-grey"
+                  x-text="h.health ? `cpu ${h.health.cpuPercent||0}% · mem ${h.health.memPercent||0}%` : '—'"></div>
+                <div class="level-item" x-text="expanded===h.id ? '▾' : '▸'"></div>
+              </div>
+            </div>
+
+            <div x-show="expanded===h.id" class="mt-3">
+              <!-- Host vitals: CPU, memory (used/free/%), and per-mount disk (used/free/total). -->
+              <template x-if="h.health">
+                <div class="box has-background-light mb-3">
+                  <div class="columns is-mobile is-multiline mb-1">
+                    <div class="column is-narrow">
+                      <p class="heading mb-1">CPU</p>
+                      <p x-text="`${h.health.cpuPercent||0}%`"></p>
+                    </div>
+                    <div class="column is-narrow">
+                      <p class="heading mb-1">Memory</p>
+                      <p
+                        x-text="`${humanBytes(h.health.memUsedBytes)} used · ${humanBytes((h.health.memTotalBytes||0)-(h.health.memUsedBytes||0))} free · ${h.health.memPercent||0}%`">
+                      </p>
+                    </div>
+                    <div class="column is-narrow" x-show="h.health.uptimeSeconds">
+                      <p class="heading mb-1">Uptime</p>
+                      <p x-text="humanUptime(h.health.uptimeSeconds)"></p>
+                    </div>
+                  </div>
+                  <template x-if="h.health.disks && h.health.disks.length">
+                    <div>
+                      <p class="heading mb-1">Disk</p>
+                      <template x-for="d in h.health.disks" :key="d.mount">
+                        <p class="is-size-7">
+                          <span class="has-text-weight-semibold" x-text="d.mount"></span>
+                          <span class="ml-2"
+                            x-text="`${humanBytes(d.usedBytes)} used · ${humanBytes((d.totalBytes||0)-(d.usedBytes||0))} free · ${humanBytes(d.totalBytes)} total (${pct(d.usedBytes, d.totalBytes)}%)`"></span>
+                        </p>
+                      </template>
+                    </div>
+                  </template>
+                </div>
+              </template>
+              <template x-if="!h.modules || h.modules.length===0">
+                <p class="has-text-grey is-size-7">No modules reported (host offline?).</p>
+              </template>
+              <template x-for="m in (h.modules||[])" :key="m.name">
+                <div class="box has-background-light">
+                  <div class="level is-mobile mb-2">
+                    <div class="level-left">
+                      <div class="level-item has-text-weight-semibold" x-text="m.name"></div>
+                      <div class="level-item is-size-7 has-text-grey" x-text="'v'+m.version"></div>
+                      <div class="level-item is-size-7" x-text="capabilities(m)"></div>
+                    </div>
+                  </div>
+                  <div class="buttons are-small">
+                    <template x-for="a in (m.actions||[])" :key="a.name">
+                      <button class="button is-small" :class="a.destructive ? 'is-danger' : 'is-link'"
+                        :disabled="h.status!=='online'" @click="startAction(h.id, m.name, a)"
+                        x-text="`${m.name} ${a.name}`"></button>
+                    </template>
+                    <button class="button is-small" @click="openConfig(h.id, m)">⚙ config</button>
+                  </div>
+                </div>
+              </template>
+              <div class="has-text-right">
+                <button class="button is-small is-info is-outlined" @click="openEditHost(h)">Edit host</button>
+                <button class="button is-small is-link is-outlined" x-show="h.status!=='online'"
+                  @click="openRevive(h)">Revive associate</button>
+                <button class="button is-small is-danger is-outlined" @click="openUninstall(h)">Uninstall host</button>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+

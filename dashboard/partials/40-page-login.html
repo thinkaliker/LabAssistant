@@ -1,0 +1,37 @@
+  <!-- Login page (standalone — fully replaces the dashboard until authenticated) -->
+  <section class="hero is-fullheight is-light" x-show="ready && needsLogin" x-cloak>
+    <div class="hero-body">
+      <div class="container">
+        <div class="columns is-centered">
+          <div class="column is-5-tablet is-4-desktop is-3-widescreen">
+            <div class="box">
+              <p class="has-text-centered mb-2">
+                <svg viewBox="0 0 24 24" width="56" height="56" aria-hidden="true">
+                  <path d="M9.5 9H14.5L20 19H4z" fill="#00d1b2"/>
+                  <path d="M9.5 3h5M9.5 3v6L4 19h16L14.5 9V3" fill="none" stroke="#0f9d8f"
+                        stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
+                </svg>
+              </p>
+              <h1 class="title is-4 has-text-centered mb-1">LabAssistant</h1>
+              <div class="field">
+                <label class="label">Username</label>
+                <div class="control"><input class="input" x-model="login.username" autofocus @keydown.enter="doLogin()">
+                </div>
+              </div>
+              <div class="field">
+                <label class="label">Password</label>
+                <div class="control"><input class="input" type="password" x-model="login.password"
+                    @keydown.enter="doLogin()"></div>
+              </div>
+              <p class="help is-danger" x-show="loginError" x-text="loginError"></p>
+              <div class="field mt-5">
+                <div class="control"><button class="button is-primary is-fullwidth" @click="doLogin()">Sign in</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+

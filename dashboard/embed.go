@@ -4,7 +4,14 @@ package dashboard
 
 import "embed"
 
-// Assets holds the embedded dashboard files, served at the manager's web root.
+// index.html is generated from partials/ by gen.go; run `go generate ./dashboard` after editing
+// a partial. The generated index.html is committed so this embed and a plain `go build` work
+// without a mandatory generate step.
 //
-//go:embed index.html app.js favicon.svg stylesheet.css vendor
+//go:generate go run gen.go
+
+// Assets holds the embedded dashboard files, served at the manager's web root. The app component
+// lives under js/ (ES modules merged by js/main.js).
+//
+//go:embed index.html js favicon.svg stylesheet.css vendor
 var Assets embed.FS

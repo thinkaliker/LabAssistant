@@ -1,4 +1,6 @@
 <!DOCTYPE html>
+<!-- Generated from dashboard/partials/ by gen.go. Do not edit by hand — edit the
+     partials, then run `go generate ./dashboard`. -->
 <html lang="en">
 
 <head>
@@ -1092,14 +1094,16 @@
     </div>
   </div>
 
-  <!-- CodeMirror (YAML editing + linting) for the compose editor; loaded before app.js so the
-       CodeMirror/jsyaml globals exist when the editor opens. -->
+  <!-- CodeMirror (YAML editing + linting) for the compose editor; loaded before the app module so
+       the CodeMirror/jsyaml globals exist when the editor opens. -->
   <script src="/vendor/codemirror/codemirror.min.js"></script>
   <script src="/vendor/codemirror/yaml.min.js"></script>
   <script src="/vendor/codemirror/lint.min.js"></script>
   <script src="/vendor/js-yaml.min.js"></script>
   <script src="/vendor/codemirror/yaml-lint.min.js"></script>
-  <script src="/app.js"></script>
+  <!-- App component, split across dashboard/js/ and merged in main.js. A module is deferred, so
+       it runs before DOMContentLoaded and defines window.app() before Alpine initializes. -->
+  <script type="module" src="/js/main.js"></script>
 </body>
 
 </html>

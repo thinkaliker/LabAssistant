@@ -1,0 +1,100 @@
+      <!-- Services -->
+      <div x-show="page==='services'">
+        <div class="level is-mobile">
+          <div class="level-left">
+            <h1 class="title">Services</h1>
+          </div>
+          <div class="level-right" x-show="services.stacks.length>1">
+            <div class="level-item field has-addons mb-0">
+              <p class="control"><span class="button is-small is-static">Sort by host</span></p>
+              <p class="control"><button class="button is-small" :class="hostSort==='name' && 'is-info is-selected'"
+                  @click="hostSort='name'">Name</button></p>
+              <p class="control"><button class="button is-small" :class="hostSort==='ip' && 'is-info is-selected'"
+                  @click="hostSort='ip'">IP</button></p>
+            </div>
+          </div>
+        </div>
+        <div class="columns">
+          <!-- Stack list (shrinks when the compose editor is open) -->
+          <div class="column" :class="compose.open ? 'is-6' : 'is-12'">
+            <template x-if="services.stacks.length===0">
+              <p class="has-text-grey">No compose stacks reported. Add a host which contains a docker compose stack
+                first.</p>
+            </template>
+            <template x-for="st in sortByHost(services.stacks, s => s.name)" :key="st.hostId+'/'+st.name">
+              <div class="box">
+                <div class="level is-mobile svc-stack-head">
+                  <div class="level-left">
+                    <div class="level-item"><span class="tag" :class="statusClass(st.status)" x-text="st.status"></span>
+                    </div>
+                    <div class="level-item has-text-weight-semibold" x-text="st.name"></div>
+                    <div class="level-item is-size-7 has-text-grey" x-text="st.hostName"></div>
+                  </div>
+                  <div class="level-right">
+                    <div class="level-item buttons are-small">
+                      <button class="button is-info" @click="editCompose(st)">edit compose</button>
+                      <button class="button is-success" @click="svcAction(st,'','start')">start</button>
+                      <button class="button is-danger" @click="svcAction(st,'','stop')">stop</button>
+                      <button class="button is-warning" @click="svcAction(st,'','restart')">restart</button>
+                    </div>
+                  </div>
+                </div>
+                <table class="table is-fullwidth is-narrow svc-table">
+                  <tbody>
+                    <template x-for="sv in st.services" :key="sv.name">
+                      <tr>
+                        <td><span class="tag" :class="svcClass(sv)"
+                            :title="sv.status + (sv.health ? ' ('+sv.health+')' : '')" x-text="svcLabel(sv)"></span>
+                        </td>
+                        <td class="has-text-weight-semibold" x-text="sv.name"></td>
+                        <td class="is-size-7 has-text-grey" x-text="sv.image"></td>
+                        <td><span class="tag is-warning" x-show="svcUpdate(sv)">update</span></td>
+                        <td class="has-text-right">
+                          <div class="buttons are-small is-right">
+                            <button class="button is-success" @click="svcAction(st,sv.name,'start')">start</button>
+                            <button class="button is-danger" @click="svcAction(st,sv.name,'stop')">stop</button>
+                            <button class="button is-warning" @click="svcAction(st,sv.name,'restart')">restart</button>
+                            <button class="button" x-show="sv.hasLogs" @click="openLogs(st,sv.name)">logs</button>
+                          </div>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </template>
+          </div>
+
+          <!-- Compose editor panel (right side) -->
+          <div class="column is-6" x-show="compose.open" x-cloak>
+            <div class="box compose-panel">
+              <div class="level is-mobile mb-1">
+                <div class="level-left">
+                  <div class="level-item has-text-weight-semibold" x-text="'Edit compose: '+compose.stack"></div>
+                </div>
+                <div class="level-right">
+                  <div class="level-item"><button class="delete" @click="closeCompose()"></button></div>
+                </div>
+              </div>
+              <p class="is-size-7 has-text-grey mb-2" x-text="compose.path || ''"></p>
+              <template x-if="compose.multiFile">
+                <div class="notification is-warning is-light is-size-7 py-2">This stack is built from multiple compose
+                  files; editing is disabled to avoid clobbering them.</div>
+              </template>
+              <div x-show="!compose.multiFile" class="compose-editor-wrap">
+                <textarea x-ref="composeEditor"></textarea>
+              </div>
+              <p class="help is-danger mt-2" x-show="compose.error" x-text="compose.error"></p>
+              <p class="help is-success mt-2" x-show="compose.status" x-text="compose.status"></p>
+              <div class="buttons mt-3">
+                <button class="button is-primary" :disabled="compose.loading || compose.multiFile || compose.busy"
+                  @click="saveCompose()">Save</button>
+                <button class="button is-warning" :disabled="compose.loading || compose.multiFile || compose.busy"
+                  @click="saveAndRedeploy()">Save &amp; redeploy</button>
+                <button class="button" @click="closeCompose()">Close</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
