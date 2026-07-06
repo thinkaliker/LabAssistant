@@ -57,7 +57,7 @@ export const misc = {
       let ev; try { ev = JSON.parse(e.data); } catch { return; }
       if (ev.kind === 'log' && ev.message) {
         live().log.push(ev.message);
-        if (this.job.id === rec.id && this.jobStick) this.$nextTick(() => { const el = this.$refs.jobLog; if (el) el.scrollTop = el.scrollHeight; });
+        if (this.job.id === rec.id && this.jobStick) this.$nextTick(() => this.scrollJobToBottom());
       }
     };
     es.onerror = () => {

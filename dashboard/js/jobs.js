@@ -15,7 +15,19 @@ export const jobs = {
   showJob(rec) {
     this.job = rec;
     this.jobStick = true;
-    this.$nextTick(() => { const el = this.$refs.jobLog; if (el) el.scrollTop = el.scrollHeight; });
+    // Swapping the panel to a different job's log fires a scroll event as the browser clamps
+    // scrollTop to the new (shorter) content. Mark it programmatic so onJobScroll doesn't read
+    // it as the user scrolling up and detach autoscroll — which would freeze the next job's log.
+    this._autoScroll = true;
+    this.$nextTick(() => this.scrollJobToBottom());
+  },
+  // scrollJobToBottom pins the log to the newest line and flags the resulting scroll event as
+  // programmatic (consumed once by onJobScroll) so it isn't mistaken for a user detach.
+  scrollJobToBottom() {
+    const el = this.$refs.jobLog;
+    if (!el) return;
+    this._autoScroll = true;
+    el.scrollTop = el.scrollHeight;
   },
   // selectJob is the user clicking a queue chip to bring that job's log to the front.
   selectJob(rec) { this.showJob(rec); this.jobPanelOpen = true; },
@@ -45,7 +57,7 @@ export const jobs = {
         // user's own scrolling (see onJobScroll), so a fast burst can't stop the autoscroll.
         if (this.job.id === rec.id) {
           this.jobPanelOpen = true;
-          if (this.jobStick) this.$nextTick(() => { const el = this.$refs.jobLog; if (el) el.scrollTop = el.scrollHeight; });
+          if (this.jobStick) this.$nextTick(() => this.scrollJobToBottom());
         }
       }
       if (ev.kind === 'progress') {
@@ -114,6 +126,9 @@ export const jobs = {
   // the bottom re-pins; scrolling up to read history releases the pin. Programmatic scrolls
   // land at the bottom, so they simply keep jobStick true.
   onJobScroll(e) {
+    // Consume one scroll event caused by our own programmatic scroll (autoscroll or job switch)
+    // so it isn't misread as a user detaching from the bottom.
+    if (this._autoScroll) { this._autoScroll = false; return; }
     const el = e.target;
     this.jobStick = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
   },
