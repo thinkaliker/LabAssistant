@@ -85,12 +85,14 @@ export const updates = {
   async runUpdate(hostId, mod, action, params) {
     const out = await this.dispatchSilent(hostId, mod, action, params);
     if (out && out.jobId) {
-      // Stream the job into the docked panel so its progress/log is visible, and independently
-      // await it so this action's slot in runHostUpdates' serial loop completes before the next.
-      // watchJob opens an SSE reader; awaitJob polls the same job — the two don't conflict.
+      // Stream the job into the docked panel so its progress/log is visible, and await the same
+      // stream so this action's slot in runHostUpdates' serial loop completes before the next.
+      // watchJob's returned promise resolves off the SSE's terminal event — no second polling
+      // channel. On plain HTTP/1.1 the browser caps connections per origin (~6); a poll loop on
+      // top of the long-lived SSE used to exhaust the pool when several jobs ran at once, so
+      // later fetches hung and the loading spinner never cleared. One channel per job avoids it.
       const label = params && params.stack ? `${mod} ${action} ${params.stack}` : `${mod} ${action}`;
-      this.watchJob(out.jobId, label);
-      await this.awaitJob(out.jobId);
+      await this.watchJob(out.jobId, label);
       return { approval: false };
     }
     if (out && out.approvalId) return { approval: true };

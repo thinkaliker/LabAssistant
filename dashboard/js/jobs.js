@@ -31,12 +31,20 @@ export const jobs = {
   },
   // selectJob is the user clicking a queue chip to bring that job's log to the front.
   selectJob(rec) { this.showJob(rec); this.jobPanelOpen = true; },
+  // watchJob opens the job's event stream and returns a promise that resolves with the job's
+  // final state once it settles (terminal, needs-sudo, or gone). Callers that want to serialize
+  // on completion await it INSTEAD of opening a second polling channel — on plain HTTP/1.1 the
+  // browser caps concurrent connections per origin (~6), so a long-lived SSE plus a poll loop
+  // per job quickly exhausts the pool and starves every later fetch. One channel per job keeps
+  // the serial update loop to a single open connection at a time.
   watchJob(jobId, label) {
     // Each job gets its OWN record so overlapping jobs (e.g. several started in a row, or
     // parallel jobs across hosts) don't cross-contaminate one shared log. All non-terminal
     // jobs show up in the queue indicator; the panel displays one at a time.
     const rec = { id: jobId, label: label || ('job ' + String(jobId).slice(0, 6)), state: 'queued', progress: 0, log: [] };
     this.jobs.push(rec);
+    let settle;
+    const done = new Promise(res => { settle = res; }); // resolves once, when the job settles
     // Mutate the record through the reactive array element, NOT the raw `rec`: Alpine wraps
     // pushed elements in a reactive proxy, and mutating the raw object bypasses the proxy's set
     // trap, so the log panel never repaints. `this.jobs.find` returns the same cached proxy that
@@ -72,6 +80,7 @@ export const jobs = {
           es.close();
           this.refresh();
           this.finishJob(rec, ev.state);
+          settle(ev.state);
         }
       }
     };
@@ -81,7 +90,7 @@ export const jobs = {
     // stick in the queue until a full page reload. So on error, ask the job store for the truth:
     // gone or terminal means retire it; still-live means let EventSource reconnect and resume.
     es.onerror = () => {
-      if (this.isTerminalJob(rec.state)) { es.close(); return; }
+      if (this.isTerminalJob(rec.state)) { es.close(); settle(rec.state); return; }
       fetch(`/api/v1/jobs/${jobId}`)
         .then(r => r.ok ? r.json() : { state: 'gone' })
         .then(j => {
@@ -92,15 +101,18 @@ export const jobs = {
             this.jobs = this.jobs.filter(x => x.id !== jobId);
             if (this.job.id === jobId) this.jobPanelOpen = false;
             this.refresh();
+            settle('gone');
           } else if (j.state === 'needs_sudo_password' || this.isTerminalJob(j.state)) {
             es.close();
             this.refresh();
             this.finishJob(rec, j.state);
+            settle(j.state);
           }
           // still queued/running: leave es alone so it reconnects and resumes streaming.
         })
         .catch(() => {});
     };
+    return done;
   },
   // adoptIfIdle brings a job to the front when nothing live is showing (first run, or the
   // previously shown job has finished), so a job that was queued behind another surfaces on
