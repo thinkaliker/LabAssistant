@@ -36,11 +36,11 @@
               </div>
               <div class="level-right">
                 <div class="level-item buttons are-small">
-                  <button class="button" :class="checkingHosts.includes(hu.hostId) && 'is-loading'"
-                    :disabled="!hostOnline(hu.hostId) || checkingHosts.includes(hu.hostId)"
+                  <button class="button" :class="hostChecking(hu.hostId) && 'is-loading'"
+                    :disabled="!hostOnline(hu.hostId) || hostChecking(hu.hostId)"
                     @click="checkHost(hu.hostId)">check for updates</button>
-                  <button class="button is-warning" :class="updatingHosts.includes(hu.hostId) && 'is-loading'"
-                    :disabled="!hostOnline(hu.hostId) || updatingHosts.includes(hu.hostId) || ((!hu.os || hu.os.count===0) && hu.containers.length===0)"
+                  <button class="button is-warning" :class="hostUpdating(hu.hostId) && 'is-loading'"
+                    :disabled="!hostOnline(hu.hostId) || hostUpdating(hu.hostId) || ((!hu.os || hu.os.count===0) && hu.containers.length===0)"
                     @click="applyAllUpdates(hu)">apply all updates</button>
                 </div>
               </div>
@@ -52,8 +52,8 @@
               </div>
               <div class="level-right" x-show="hu.os && hu.os.count>0">
                 <div class="level-item"><button class="button is-warning is-small"
-                    :class="updatingHosts.includes(hu.hostId) && 'is-loading'"
-                    :disabled="!hostOnline(hu.hostId) || updatingHosts.includes(hu.hostId)"
+                    :class="hostUpdating(hu.hostId) && 'is-loading'"
+                    :disabled="!hostOnline(hu.hostId) || hostUpdating(hu.hostId)"
                     @click="updateHostPackages(hu)">update host packages</button></div>
               </div>
             </div>
@@ -85,8 +85,8 @@
               </div>
               <div class="level-right" x-show="hu.containers.length>0">
                 <div class="level-item"><button class="button is-warning is-small"
-                    :class="updatingHosts.includes(hu.hostId) && 'is-loading'"
-                    :disabled="!hostOnline(hu.hostId) || updatingHosts.includes(hu.hostId)"
+                    :class="hostUpdating(hu.hostId) && 'is-loading'"
+                    :disabled="!hostOnline(hu.hostId) || hostUpdating(hu.hostId)"
                     @click="updateContainers(hu)">update containers</button></div>
               </div>
             </div>
@@ -115,8 +115,8 @@
                         <span class="has-text-grey" x-show="!c.current">—</span>
                       </td>
                       <td class="has-text-right"><button class="button is-small is-warning"
-                          :class="updatingHosts.includes(c.hostId) && 'is-loading'"
-                          :disabled="!hostOnline(c.hostId) || updatingHosts.includes(c.hostId)"
+                          :class="hostUpdating(c.hostId) && 'is-loading'"
+                          :disabled="!hostOnline(c.hostId) || hostUpdating(c.hostId)"
                           @click="updateService(c)">update</button></td>
                     </tr>
                   </template>

@@ -44,6 +44,20 @@ export const updates = {
     for (const r of rows) r.containers = this.sortByHost(r.containers, x => x.stack + '/' + x.service);
     return rows;
   },
+  // hostUpdating reports whether a host has OS/container update work in flight: either a local
+  // apply/update loop this session (updatingHosts) OR a matching job still running on the manager.
+  // The job check is what makes the button spinner survive a page refresh — recoverJobs re-adopts
+  // in-flight jobs into this.jobs, so a reload mid-apply still shows the host as busy until it
+  // finishes. hostChecking is the same idea for check-updates jobs.
+  hostUpdating(id) {
+    return this.updatingHosts.includes(id) ||
+      this.jobs.some(j => j.hostId === id && !this.isTerminalJob(j.state) &&
+        ((j.module === 'qup' && j.action === 'apply') || (j.module === 'duo' && j.action === 'update')));
+  },
+  hostChecking(id) {
+    return this.checkingHosts.includes(id) ||
+      this.jobs.some(j => j.hostId === id && !this.isTerminalJob(j.state) && j.action === 'check-updates');
+  },
   shortDigest(d) {
     if (!d) return '';
     const h = String(d).replace(/^sha256:/, '');
@@ -60,7 +74,7 @@ export const updates = {
   // button looked dead. checkingHosts drives the button's loading state.
   async checkHost(hostId) {
     const h = this.hosts.find(x => x.id === hostId);
-    if (!h || this.checkingHosts.includes(hostId)) return;
+    if (!h || this.hostChecking(hostId)) return;
     this.checkingHosts.push(hostId);
     try {
       const mods = (h.modules || []).map(m => m.name);
@@ -92,7 +106,7 @@ export const updates = {
       // top of the long-lived SSE used to exhaust the pool when several jobs ran at once, so
       // later fetches hung and the loading spinner never cleared. One channel per job avoids it.
       const label = params && params.stack ? `${mod} ${action} ${params.stack}` : `${mod} ${action}`;
-      await this.watchJob(out.jobId, label);
+      await this.watchJob(out.jobId, label, { hostId, module: mod, action });
       return { approval: false };
     }
     if (out && out.approvalId) return { approval: true };
@@ -102,7 +116,7 @@ export const updates = {
   // refreshes so applied updates drop out of the list. If any action was gated behind an
   // approval, it scrolls the pending-approvals banner into view so the user isn't left guessing.
   async runHostUpdates(hostId, actions) {
-    if (this.updatingHosts.includes(hostId)) return;
+    if (this.hostUpdating(hostId)) return;
     this.updatingHosts.push(hostId);
     try {
       let approval = false;

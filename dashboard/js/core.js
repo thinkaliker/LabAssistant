@@ -15,6 +15,10 @@ export const core = {
   stale: false, // manager restarted, so this page's session/state is no longer valid
 
   async init() {
+    // Tear the live feed down cleanly when the page goes away (refresh/close/navigate) so the
+    // server frees this client's SSE subscription promptly instead of waiting on a socket timeout.
+    // pagehide covers the bfcache case that a plain unload listener misses.
+    window.addEventListener('pagehide', () => this.disconnect());
     try {
       const r = await fetch('/api/v1/auth/session');
       if (!r.ok) { this.needsLogin = true; return; }
@@ -33,12 +37,49 @@ export const core = {
   },
   start() {
     this.refresh();
-    const es = new EventSource('/api/v1/events');
-    es.onmessage = () => this.refresh();
+    this.connectEvents();
+    // Re-adopt any jobs still running server-side (e.g. after a refresh mid-run) so they aren't
+    // orphaned: their progress resumes in the panel and their completion is observed again.
+    this.recoverJobs();
     // Poll the manager's instance marker (public endpoint, works in auth and open mode) so a
     // restart underneath us surfaces the stale banner even when the SSE stream can't reconnect.
     clearInterval(this._instanceTimer);
     this._instanceTimer = setInterval(() => this.checkInstance(), 10000);
+  },
+  // disconnect closes this client's streams and timers so nothing keeps ticking or holding a
+  // server subscription after the page is gone (or before start() reopens them).
+  disconnect() {
+    if (this._events) { this._events.close(); this._events = null; }
+    this.closeLogs();
+    clearTimeout(this._refreshTimer);
+    clearInterval(this._instanceTimer);
+  },
+  // connectEvents opens the single multiplexed live feed that drives the whole UI. The manager
+  // publishes every kind of update onto this one stream (job progress/log/state, host changes,
+  // approvals, sudo prompts, audit, tasks), so one browser connection covers everything — no
+  // per-job stream and no per-request polling, which on plain HTTP/1.1 would otherwise exhaust
+  // the ~6-connection-per-origin cap. Job events update the job records in place (see
+  // onJobEvent); every other kind coalesces into a single debounced refresh, so a burst of
+  // events costs one reload instead of one full refresh per message.
+  connectEvents() {
+    if (this._events) this._events.close();
+    const es = new EventSource('/api/v1/events');
+    this._events = es;
+    es.onmessage = (e) => {
+      let msg;
+      try { msg = JSON.parse(e.data); } catch { return; }
+      if (msg.type === 'job_event') { this.onJobEvent(msg.payload); return; }
+      this.refreshSoon();
+    };
+    // A dropped/reconnected feed may have skipped a watched job's terminal event; reconcile the
+    // in-flight waiters against the job store so their promises (and the loading spinners they
+    // gate) can't hang after a gap. EventSource auto-reconnects on its own.
+    es.onerror = () => { this.reconcileJobs(); };
+  },
+  // refreshSoon coalesces a burst of state-change events into one refresh on the next tick.
+  refreshSoon() {
+    clearTimeout(this._refreshTimer);
+    this._refreshTimer = setTimeout(() => this.refresh(), 250);
   },
   async checkInstance() {
     if (this.stale) return;

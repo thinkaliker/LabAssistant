@@ -7,8 +7,16 @@ export const actions = {
   act: { open: false, hostId: '', module: '', action: '', destructive: false, fields: [], values: {}, error: '' },
 
   async confirmApproval(id) {
+    // Capture the approval before refresh drops it, so the job chip/panel names the actual
+    // module, action, and host instead of a generic "approved action".
+    const ap = this.approvals.find(a => a.id === id);
     const r = await fetch(`/api/v1/approvals/${id}/confirm`, { method: 'POST' });
-    if (r.ok) { const { jobId } = await r.json(); this.refresh(); if (jobId) this.watchJob(jobId, 'approved action'); }
+    if (r.ok) {
+      const { jobId } = await r.json();
+      this.refresh();
+      if (jobId) this.watchJob(jobId, ap ? `${ap.module} ${ap.action}` : 'approved action',
+        ap ? { hostId: ap.hostId, module: ap.module, action: ap.action } : undefined);
+    }
   },
   async rejectApproval(id) {
     await fetch(`/api/v1/approvals/${id}/reject`, { method: 'POST' });

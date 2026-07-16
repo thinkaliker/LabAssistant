@@ -225,6 +225,7 @@ func (a *App) Serve(ctx context.Context) error {
 	a.dialer.Start(ctx)
 	go a.scheduler.Start(ctx)
 	go a.certRotationLoop(ctx)
+	go a.jobReaperLoop(ctx)
 	// Local associates run as children of this process, so a manager restart (e.g.
 	// `manage update`) kills them. Bring any that are down back up on start.
 	go a.qm.ReviveLocalOrphans(ctx)
@@ -369,6 +370,25 @@ func (a *App) rotateCert(hostID string) error {
 const certRenewThreshold = 30 * 24 * time.Hour
 
 // certRotationLoop periodically rotates certificates that are near expiry.
+// jobReaperLoop periodically drops long-finished jobs so the in-memory registry doesn't grow
+// without bound over the manager's lifetime. The retention window keeps recently-settled jobs
+// around long enough for the dashboard to display and recover them after a refresh.
+func (a *App) jobReaperLoop(ctx context.Context) {
+	const retain = time.Hour
+	t := time.NewTicker(10 * time.Minute)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if n := a.jobs.Prune(retain); n > 0 {
+				slog.Debug("pruned finished jobs", "count", n)
+			}
+		}
+	}
+}
+
 func (a *App) certRotationLoop(ctx context.Context) {
 	t := time.NewTicker(time.Hour)
 	defer t.Stop()

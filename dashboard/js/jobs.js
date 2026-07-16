@@ -31,89 +31,115 @@ export const jobs = {
   },
   // selectJob is the user clicking a queue chip to bring that job's log to the front.
   selectJob(rec) { this.showJob(rec); this.jobPanelOpen = true; },
-  // watchJob opens the job's event stream and returns a promise that resolves with the job's
-  // final state once it settles (terminal, needs-sudo, or gone). Callers that want to serialize
-  // on completion await it INSTEAD of opening a second polling channel — on plain HTTP/1.1 the
-  // browser caps concurrent connections per origin (~6), so a long-lived SSE plus a poll loop
-  // per job quickly exhausts the pool and starves every later fetch. One channel per job keeps
-  // the serial update loop to a single open connection at a time.
-  watchJob(jobId, label) {
-    // Each job gets its OWN record so overlapping jobs (e.g. several started in a row, or
-    // parallel jobs across hosts) don't cross-contaminate one shared log. All non-terminal
-    // jobs show up in the queue indicator; the panel displays one at a time.
-    const rec = { id: jobId, label: label || ('job ' + String(jobId).slice(0, 6)), state: 'queued', progress: 0, log: [] };
-    this.jobs.push(rec);
-    let settle;
-    const done = new Promise(res => { settle = res; }); // resolves once, when the job settles
-    // Mutate the record through the reactive array element, NOT the raw `rec`: Alpine wraps
-    // pushed elements in a reactive proxy, and mutating the raw object bypasses the proxy's set
-    // trap, so the log panel never repaints. `this.jobs.find` returns the same cached proxy that
-    // `this.job` holds, so pushing to live().log updates the on-screen log line-by-line.
-    const live = () => this.jobs.find(j => j.id === jobId) || rec;
-    // Adopt the new job on screen when nothing live is showing (or the panel is closed);
-    // otherwise leave the current job up and let this one wait in the queue indicator.
+  // watchJob starts showing a job in the docked panel and returns a promise that resolves with
+  // the job's final state once it settles (terminal, needs-sudo, or gone). Its progress/log/state
+  // events arrive on the shared /api/v1/events feed and are applied by onJobEvent — there is NO
+  // per-job connection, so any number of jobs can be watched at once without touching the
+  // browser's per-origin connection cap. Callers that serialize on completion await this promise.
+  watchJob(jobId, label, meta) {
+    // One record per job so overlapping jobs don't cross-contaminate a shared log. Reuse an
+    // existing record if a feed event already created it (a race where the first event lands
+    // before this call). Push once, then hold the reactive proxy Alpine returns from find —
+    // mutating the raw pushed object bypasses the proxy's set trap and the panel never repaints.
+    // hostId/module/action (meta) let page code tell whether a host has work in flight (see
+    // updates.js hostUpdating) so a per-host loading spinner can survive a page refresh.
+    let rec = this.jobs.find(j => j.id === jobId);
+    if (!rec) {
+      this.jobs.push({
+        id: jobId, label: label || ('job ' + String(jobId).slice(0, 6)), state: 'queued', progress: 0, log: [],
+        hostId: (meta && meta.hostId) || '', module: (meta && meta.module) || '', action: (meta && meta.action) || '',
+      });
+      rec = this.jobs.find(j => j.id === jobId);
+    } else if (meta) {
+      rec.hostId = meta.hostId || rec.hostId;
+      rec.module = meta.module || rec.module;
+      rec.action = meta.action || rec.action;
+    }
+    // Adopt the job on screen when nothing live is showing (or the panel is closed); otherwise
+    // leave the current job up and let this one wait in the queue indicator.
     if (!this.jobPanelOpen || !this.job.id || this.isTerminalJob(this.job.state)) this.showJob(rec);
-    const es = new EventSource(`/api/v1/jobs/${jobId}/events`);
-    es.onmessage = (e) => {
-      const ev = JSON.parse(e.data).payload;
-      const r = live();
-      if (ev.kind === 'log' && ev.message) {
-        r.log.push(ev.message);
-        if (r.state === 'queued') r.state = 'running';
-        this.adoptIfIdle(rec);
-        // Only steal focus/scroll for the job actually on screen. jobStick is driven by the
-        // user's own scrolling (see onJobScroll), so a fast burst can't stop the autoscroll.
-        if (this.job.id === rec.id) {
-          this.jobPanelOpen = true;
-          if (this.jobStick) this.$nextTick(() => this.scrollJobToBottom());
-        }
-      }
-      if (ev.kind === 'progress') {
-        r.progress = ev.progress;
-        if (r.state === 'queued') r.state = 'running';
-        this.adoptIfIdle(rec);
-        if (this.job.id === rec.id) this.jobPanelOpen = true;
-      }
-      if (ev.kind === 'state') {
-        r.state = ev.state;
-        if (ev.state === 'needs_sudo_password' || this.isTerminalJob(ev.state)) {
-          es.close();
-          this.refresh();
-          this.finishJob(rec, ev.state);
-          settle(ev.state);
-        }
-      }
-    };
-    // Reconcile on stream error. A finished job's stream is closed by the server; if we never
-    // saw its terminal state (it settled and was pruned before we subscribed, or the connection
-    // dropped mid-flight), EventSource would silently auto-reconnect forever and the chip would
-    // stick in the queue until a full page reload. So on error, ask the job store for the truth:
-    // gone or terminal means retire it; still-live means let EventSource reconnect and resume.
-    es.onerror = () => {
-      if (this.isTerminalJob(rec.state)) { es.close(); settle(rec.state); return; }
-      fetch(`/api/v1/jobs/${jobId}`)
-        .then(r => r.ok ? r.json() : { state: 'gone' })
-        .then(j => {
-          if (j.state === 'gone') {
-            // No longer in the store: finished and pruned before we observed it. Drop the chip
-            // without faking a failure, and close the panel if it was the one on screen.
-            es.close();
-            this.jobs = this.jobs.filter(x => x.id !== jobId);
-            if (this.job.id === jobId) this.jobPanelOpen = false;
-            this.refresh();
-            settle('gone');
-          } else if (j.state === 'needs_sudo_password' || this.isTerminalJob(j.state)) {
-            es.close();
-            this.refresh();
-            this.finishJob(rec, j.state);
-            settle(j.state);
-          }
-          // still queued/running: leave es alone so it reconnects and resumes streaming.
-        })
-        .catch(() => {});
-    };
-    return done;
+    // Already settled (e.g. a very fast job): resolve immediately.
+    if (rec.state === 'needs_sudo_password' || this.isTerminalJob(rec.state)) return Promise.resolve(rec.state);
+    (this._jobWaiters ||= {});
+    return new Promise(res => { this._jobWaiters[jobId] = res; });
   },
+  // onJobEvent applies one job event from the multiplexed feed to the matching record. Only jobs
+  // with a record (created by watchJob) are tracked; events for any other job are ignored so
+  // background or other-tab activity doesn't hijack this session's panel.
+  onJobEvent(ev) {
+    const r = this.jobs.find(j => j.id === ev.jobId);
+    if (!r) return;
+    if (ev.kind === 'log' && ev.message) {
+      r.log.push(ev.message);
+      if (r.state === 'queued') r.state = 'running';
+      this.adoptIfIdle(r);
+      // Only steal focus/scroll for the job actually on screen. jobStick is driven by the user's
+      // own scrolling (see onJobScroll), so a fast burst can't stop the autoscroll.
+      if (this.job.id === r.id) {
+        this.jobPanelOpen = true;
+        if (this.jobStick) this.$nextTick(() => this.scrollJobToBottom());
+      }
+    } else if (ev.kind === 'progress') {
+      r.progress = ev.progress;
+      if (r.state === 'queued') r.state = 'running';
+      this.adoptIfIdle(r);
+      if (this.job.id === r.id) this.jobPanelOpen = true;
+    } else if (ev.kind === 'state') {
+      r.state = ev.state;
+      if (ev.state === 'needs_sudo_password' || this.isTerminalJob(ev.state)) {
+        this.refreshSoon();
+        this.finishJob(r, ev.state);
+        this.settleJob(r.id, ev.state);
+      }
+    }
+  },
+  // settleJob resolves the watchJob promise for a job once (if anything is awaiting it).
+  settleJob(jobId, state) {
+    const w = this._jobWaiters && this._jobWaiters[jobId];
+    if (w) { delete this._jobWaiters[jobId]; w(state); }
+  },
+  // recoverJobs re-adopts jobs still running on the manager after a page (re)load, so refreshing
+  // mid-run doesn't orphan them: each reappears in the queue/panel and its completion is watched
+  // again. The live feed is forward-only, so log lines printed before the reload aren't replayed —
+  // but new output, progress, and the final state all resume.
+  async recoverJobs() {
+    let list;
+    try { list = await (await fetch('/api/v1/jobs')).json(); } catch { return; }
+    for (const j of (list || [])) {
+      if (this.isTerminalJob(j.state)) continue; // finished already; nothing to watch
+      if (this.jobs.some(x => x.id === j.id)) continue; // already tracked this session
+      this.watchJob(j.id, `${j.module} ${j.action}`, { hostId: j.hostId, module: j.module, action: j.action });
+      const r = this.jobs.find(x => x.id === j.id);
+      if (r) r.state = j.state; // reflect real state now (watchJob seeds 'queued')
+    }
+  },
+  // reconcileJobs is the safety net for a dropped/reconnected event feed: it asks the job store
+  // for the truth about every job still being awaited so a terminal state missed during the gap
+  // can't leave a promise (and the loading spinner it gates) hanging until a page reload.
+  async reconcileJobs() {
+    if (!this._jobWaiters || !Object.keys(this._jobWaiters).length) return;
+    let list;
+    try { list = await (await fetch('/api/v1/jobs')).json(); } catch { return; }
+    const byId = new Map((list || []).map(j => [j.id, j]));
+    for (const id of Object.keys(this._jobWaiters)) {
+      const j = byId.get(id);
+      if (!j) { // pruned before we observed its end: retire the chip without faking a failure.
+        this.jobs = this.jobs.filter(x => x.id !== id);
+        if (this.job.id === id) this.jobPanelOpen = false;
+        this.settleJob(id, 'gone');
+        continue;
+      }
+      if (j.state === 'needs_sudo_password' || this.isTerminalJob(j.state)) {
+        const r = this.jobs.find(x => x.id === id);
+        if (r) { r.state = j.state; this.finishJob(r, j.state); }
+        this.settleJob(id, j.state);
+      }
+    }
+  },
+  // jobTitle labels a job chip/header with its action and, when the host is known, the host it
+  // runs on — so the queue reads "qup apply · web01" instead of a generic label. Callers that
+  // already fold the host into the label (enroll/uninstall/…) pass no hostId, so nothing doubles.
+  jobTitle(j) { return j && j.hostId ? `${j.label} · ${this.hostName(j.hostId)}` : (j ? j.label : ''); },
   // adoptIfIdle brings a job to the front when nothing live is showing (first run, or the
   // previously shown job has finished), so a job that was queued behind another surfaces on
   // its own once it starts producing output.

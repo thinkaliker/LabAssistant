@@ -134,6 +134,34 @@ func (r *Registry) List() []View {
 	return out
 }
 
+// terminal reports whether a job state string is final (no further events will come).
+func terminal(state string) bool {
+	return state == module.JobSucceeded.String() ||
+		state == module.JobFailed.String() ||
+		state == module.JobTimedOut.String()
+}
+
+// Prune deletes terminal jobs last updated before the cutoff, bounding the in-memory registry so
+// finished jobs don't accumulate for the manager's whole lifetime. Queued, running, and
+// needs-sudo jobs are always kept so the dashboard can still show and recover them. Returns the
+// number removed.
+func (r *Registry) Prune(olderThan time.Duration) int {
+	cutoff := time.Now().Add(-olderThan)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	removed := 0
+	for id, j := range r.m {
+		j.mu.Lock()
+		stale := terminal(j.State) && j.UpdatedAt.Before(cutoff)
+		j.mu.Unlock()
+		if stale {
+			delete(r.m, id)
+			removed++
+		}
+	}
+	return removed
+}
+
 // AddEvent appends a progress/log event and publishes it to the job and aggregate feeds.
 func (r *Registry) AddEvent(jobID string, ev Event) {
 	j, ok := r.Get(jobID)
