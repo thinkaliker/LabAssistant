@@ -6,11 +6,18 @@ export const scheduler = {
   editingTaskId: null, // null = creating a new task, otherwise the id being edited
   cronFields: false, // Add Task: false = raw cron string, true = 5 separate fields
   cronParts: { m: '*', h: '*', dom: '*', mon: '*', dow: '*' },
-  newTask: { name: '', schedule: '', module: '', action: '', hostIds: [], misfire: 'skip', interHostDelaySeconds: 0, enabled: true, allowDestructive: false },
+  // params has no editor in this modal; it is carried through an edit untouched. Dropping it
+  // used to turn a scoped task (duo update of one stack) into a whole-host run that recreated
+  // every container on the next fire — and dropping timezone moved the fire time to the
+  // manager's own zone.
+  newTask: { name: '', schedule: '', timezone: '', module: '', action: '', hostIds: [], params: null, misfire: 'skip', interHostDelaySeconds: 0, enabled: true, allowDestructive: false },
 
+  blankTask() {
+    return { name: '', schedule: '', timezone: '', module: '', action: '', hostIds: [], params: null, misfire: 'skip', interHostDelaySeconds: 0, enabled: true, allowDestructive: false };
+  },
   openTask() {
     this.editingTaskId = null;
-    this.newTask = { name: '', schedule: '', module: '', action: '', hostIds: [], misfire: 'skip', interHostDelaySeconds: 0, enabled: true, allowDestructive: false };
+    this.newTask = this.blankTask();
     this.cronFields = false;
     this.cronParts = { m: '*', h: '*', dom: '*', mon: '*', dow: '*' };
     this.taskOpen = true;
@@ -19,8 +26,11 @@ export const scheduler = {
   editTask(t) {
     this.editingTaskId = t.id;
     this.newTask = {
-      name: t.name || '', schedule: t.schedule || '', module: t.module || '', action: t.action || '',
-      hostIds: [...(t.hostIds || [])], misfire: t.misfire || 'skip',
+      name: t.name || '', schedule: t.schedule || '', timezone: t.timezone || '',
+      module: t.module || '', action: t.action || '',
+      hostIds: [...(t.hostIds || [])],
+      params: t.params ?? null,
+      misfire: t.misfire || 'skip',
       interHostDelaySeconds: t.interHostDelaySeconds || 0, enabled: !!t.enabled, allowDestructive: !!t.allowDestructive,
     };
     this.cronFields = false;
@@ -66,13 +76,18 @@ export const scheduler = {
   async submitTask() {
     const editing = this.editingTaskId;
     const url = editing ? `/api/v1/tasks/${editing}` : '/api/v1/tasks';
-    const r = await fetch(url, { method: editing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(this.newTask) });
+    const body = { ...this.newTask };
+    // Omit params entirely when there are none rather than sending null: the manager merges a
+    // task update over the stored task, so an absent key preserves what is there.
+    if (body.params === null || body.params === undefined) delete body.params;
+    const r = await fetch(url, { method: editing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!r.ok) { const e = await r.json().catch(() => ({})); alert((editing ? 'update' : 'create') + ' failed: ' + (e.error?.message || r.status)); return; }
     this.taskOpen = false;
     this.refresh();
   },
   async removeTask(id) {
-    await fetch(`/api/v1/tasks/${id}`, { method: 'DELETE' });
+    const r = await fetch(`/api/v1/tasks/${id}`, { method: 'DELETE' });
+    if (!r.ok) alert('delete failed: ' + r.status);
     this.refresh();
   },
 };

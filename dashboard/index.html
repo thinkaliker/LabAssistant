@@ -61,12 +61,14 @@
     </div>
   </nav>
 
-  <!-- Stale-manager banner: shown when the manager process restarted underneath this page
-       (detected by a change in its instance marker), so the session/state is no longer valid. -->
-  <div x-show="stale" x-cloak style="position:fixed; top:0; left:0; right:0; z-index:40;">
+  <!-- Stale-page banner: the manager restarted underneath this page (detected by a change in
+       its instance marker) or the session expired, so this page's state is no longer valid.
+       Suppressed on the login page, where a deliberate logout would otherwise be announced as
+       a restart. -->
+  <div x-show="stale && !needsLogin" x-cloak style="position:fixed; top:0; left:0; right:0; z-index:40;">
     <div class="notification is-warning is-radiusless mb-0 py-3">
       <div class="container is-flex is-align-items-center is-justify-content-space-between">
-        <span><strong>The manager restarted.</strong> This page is out of date — sign in again to reconnect.</span>
+        <span x-text="staleMessage()"></span>
         <button class="button is-warning is-inverted is-outlined" @click="reloadForLogin()">Log in again</button>
       </div>
     </div>
@@ -75,6 +77,15 @@
   <section class="section app-section" x-show="ready && !needsLogin" x-cloak
     :style="jobPanelOpen ? ('padding-bottom:' + ((jobPanelHeight || Math.round(window.innerHeight * 0.33)) + 24) + 'px') : ''">
     <div class="container is-fluid app-container">
+
+      <!-- Partial-refresh notice: one or more endpoints failed to read, so some panels are
+           showing older values. Without this the page just quietly stopped updating. -->
+      <template x-if="refreshError">
+        <div class="notification is-warning is-light py-2">
+          <span class="is-size-7" x-text="refreshError"></span>
+          <button class="button is-small is-warning ml-3" @click="refresh()">Retry</button>
+        </div>
+      </template>
 
       <!-- Pending approvals (visible on every page) -->
       <template x-if="approvals.length > 0">
@@ -879,6 +890,11 @@
             <div class="control"><input class="input" type="number" x-model.number="newTask.interHostDelaySeconds">
             </div>
           </div>
+          <div class="column field"><label class="label">Timezone</label>
+            <div class="control"><input class="input" x-model="newTask.timezone"
+                :placeholder="settings.defaultTimezone || 'manager default'"></div>
+            <p class="help">IANA name, e.g. Europe/London. Blank uses the manager default.</p>
+          </div>
         </div>
         <label class="checkbox mr-4"><input type="checkbox" x-model="newTask.enabled"> Enabled</label>
         <label class="checkbox"><input type="checkbox" x-model="newTask.allowDestructive"> Allow destructive</label>
@@ -900,6 +916,7 @@
         <p class="modal-card-title" x-text="'Logs: '+logView.title"></p>
       </header>
       <section class="modal-card-body">
+        <p class="is-size-7 has-text-grey mb-2" x-show="logView.status" x-text="logView.status"></p>
         <pre style="max-height:360px;overflow:auto" x-text="logView.lines.join('\n')"></pre>
       </section>
       <footer class="modal-card-foot"><button class="button" @click="closeLogs()">Close</button></footer>

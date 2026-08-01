@@ -21,6 +21,11 @@ type Event struct {
 	Progress float64   `json:"progress,omitempty"`
 	State    string    `json:"state,omitempty"`
 	At       time.Time `json:"at"`
+
+	// Seq is this event's position in the job's own event stream, recorded so the SSE handler
+	// can tell where a replayed backlog ends and live messages begin. It is transport
+	// bookkeeping, not part of the payload the dashboard sees.
+	Seq uint64 `json:"-"`
 }
 
 // Job is a dispatched action and its accumulated state.
@@ -67,10 +72,13 @@ func (j *Job) Snapshot() View {
 }
 
 // Subscribe returns buffered events plus a live channel and cancel for new events.
-func (j *Job) Subscribe() (backlog []Event, ch <-chan []byte, cancel func()) {
+// Taking the backlog and the live subscription under the same lock AddEvent holds keeps them
+// gapless: without it an event published in between belonged to neither, and a job's terminal
+// state could vanish for that subscriber.
+func (j *Job) Subscribe() (backlog []Event, ch <-chan events.Message, cancel func()) {
 	j.mu.Lock()
+	defer j.mu.Unlock()
 	backlog = append(backlog, j.log...)
-	j.mu.Unlock()
 	c, cancel := j.broker.Subscribe()
 	return backlog, c, cancel
 }
@@ -172,7 +180,12 @@ func (r *Registry) AddEvent(jobID string, ev Event) {
 	if ev.At.IsZero() {
 		ev.At = time.Now()
 	}
+	data := encode("job_event", ev)
+
+	// Publish to the job's own broker while still holding j.mu, so the event lands in the log
+	// and on the wire as one step — see Subscribe.
 	j.mu.Lock()
+	ev.Seq = j.broker.Publish(data)
 	j.log = append(j.log, ev)
 	if ev.Kind == "state" && ev.State != "" {
 		j.State = ev.State
@@ -180,8 +193,6 @@ func (r *Registry) AddEvent(jobID string, ev Event) {
 	j.UpdatedAt = ev.At
 	j.mu.Unlock()
 
-	data := encode("job_event", ev)
-	j.broker.Publish(data)
 	r.global.Publish(data)
 }
 

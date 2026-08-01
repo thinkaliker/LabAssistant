@@ -59,12 +59,14 @@
     </div>
   </nav>
 
-  <!-- Stale-manager banner: shown when the manager process restarted underneath this page
-       (detected by a change in its instance marker), so the session/state is no longer valid. -->
-  <div x-show="stale" x-cloak style="position:fixed; top:0; left:0; right:0; z-index:40;">
+  <!-- Stale-page banner: the manager restarted underneath this page (detected by a change in
+       its instance marker) or the session expired, so this page's state is no longer valid.
+       Suppressed on the login page, where a deliberate logout would otherwise be announced as
+       a restart. -->
+  <div x-show="stale && !needsLogin" x-cloak style="position:fixed; top:0; left:0; right:0; z-index:40;">
     <div class="notification is-warning is-radiusless mb-0 py-3">
       <div class="container is-flex is-align-items-center is-justify-content-space-between">
-        <span><strong>The manager restarted.</strong> This page is out of date — sign in again to reconnect.</span>
+        <span x-text="staleMessage()"></span>
         <button class="button is-warning is-inverted is-outlined" @click="reloadForLogin()">Log in again</button>
       </div>
     </div>

@@ -171,6 +171,11 @@
             <div class="control"><input class="input" type="number" x-model.number="newTask.interHostDelaySeconds">
             </div>
           </div>
+          <div class="column field"><label class="label">Timezone</label>
+            <div class="control"><input class="input" x-model="newTask.timezone"
+                :placeholder="settings.defaultTimezone || 'manager default'"></div>
+            <p class="help">IANA name, e.g. Europe/London. Blank uses the manager default.</p>
+          </div>
         </div>
         <label class="checkbox mr-4"><input type="checkbox" x-model="newTask.enabled"> Enabled</label>
         <label class="checkbox"><input type="checkbox" x-model="newTask.allowDestructive"> Allow destructive</label>
@@ -192,6 +197,7 @@
         <p class="modal-card-title" x-text="'Logs: '+logView.title"></p>
       </header>
       <section class="modal-card-body">
+        <p class="is-size-7 has-text-grey mb-2" x-show="logView.status" x-text="logView.status"></p>
         <pre style="max-height:360px;overflow:auto" x-text="logView.lines.join('\n')"></pre>
       </section>
       <footer class="modal-card-foot"><button class="button" @click="closeLogs()">Close</button></footer>

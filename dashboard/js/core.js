@@ -13,6 +13,8 @@ export const core = {
   settings: { logLevel: 'info', defaultTimezone: '' },
   instanceId: '', // manager process marker; a change means it restarted underneath us
   stale: false, // manager restarted, so this page's session/state is no longer valid
+  staleReason: '', // 'restart' | 'auth' — which of the two invalidated this page
+  refreshError: '', // set when a refresh couldn't read part of the state (showing older values)
 
   async init() {
     // Tear the live feed down cleanly when the page goes away (refresh/close/navigate) so the
@@ -36,6 +38,8 @@ export const core = {
     this.start();
   },
   start() {
+    this.stale = false;
+    this.staleReason = '';
     this.refresh();
     this.connectEvents();
     // Re-adopt any jobs still running server-side (e.g. after a refresh mid-run) so they aren't
@@ -51,8 +55,20 @@ export const core = {
   disconnect() {
     if (this._events) { this._events.close(); this._events = null; }
     this.closeLogs();
+    this.closeManagerUpdateStream();
     clearTimeout(this._refreshTimer);
     clearInterval(this._instanceTimer);
+    clearInterval(this._staleTimer);
+    for (const id of (this._timers || [])) clearTimeout(id);
+    this._timers = new Set();
+  },
+  // _later is setTimeout that disconnect() can cancel, so deferred work (retiring a finished
+  // job chip, say) doesn't fire against a torn-down page.
+  _later(fn, ms) {
+    const timers = (this._timers ||= new Set());
+    const id = setTimeout(() => { timers.delete(id); fn(); }, ms);
+    timers.add(id);
+    return id;
   },
   // connectEvents opens the single multiplexed live feed that drives the whole UI. The manager
   // publishes every kind of update onto this one stream (job progress/log/state, host changes,
@@ -68,6 +84,10 @@ export const core = {
     es.onmessage = (e) => {
       let msg;
       try { msg = JSON.parse(e.data); } catch { return; }
+      // The manager sends resync when this subscriber's buffer overflowed, or its reconnect
+      // landed past the replay window: events were dropped, so re-read everything rather than
+      // keep running on a feed that may have lost a host change or a job's terminal state.
+      if (msg.type === 'resync') { this.refresh(); this.reconcileJobs(); return; }
       if (msg.type === 'job_event') { this.onJobEvent(msg.payload); return; }
       this.refreshSoon();
     };
@@ -82,12 +102,30 @@ export const core = {
     this._refreshTimer = setTimeout(() => this.refresh(), 250);
   },
   async checkInstance() {
-    if (this.stale) return;
+    if (this.stale || this.needsLogin) return;
     try {
-      const s = await (await fetch('/api/v1/auth/session')).json();
-      if (this.instanceId && s.instance && s.instance !== this.instanceId) this.stale = true;
-      else if (s.authRequired && !s.authenticated) this.stale = true;
+      const r = await fetch('/api/v1/auth/session');
+      if (!r.ok) return;
+      const s = await r.json();
+      if (this.instanceId && s.instance && s.instance !== this.instanceId) this.markStale('restart');
+      else if (s.authRequired && !s.authenticated) this.markStale('auth');
     } catch (e) { /* manager down mid-restart; next tick retries */ }
+  },
+  // markStale freezes this page: nothing it still holds open (feed, timers, log streams) can
+  // produce trustworthy state any more, and leaving them running only generates failed requests
+  // behind the banner.
+  markStale(reason) {
+    if (this.stale) return;
+    this.stale = true;
+    this.staleReason = reason;
+    this.disconnect();
+  },
+  // The two ways a page goes stale need different words: a restart lost the manager's
+  // in-memory state, an expiry only ended this session.
+  staleMessage() {
+    return this.staleReason === 'auth'
+      ? 'Your session ended. Sign in again to reconnect.'
+      : 'The manager restarted. This page is out of date — sign in again to reconnect.';
   },
   reloadForLogin() { window.location.reload(); },
   async doLogin() {
@@ -95,30 +133,92 @@ export const core = {
     if (!r.ok) { this.loginError = 'Invalid credentials'; return; }
     const data = await r.json().catch(() => ({}));
     this.authUser = data.username || this.login.username;
-    this.loginError = ''; this.login.password = ''; this.needsLogin = false; this.start();
+    this.loginError = ''; this.login.password = ''; this.needsLogin = false;
+    // init() may have bailed before reading the instance marker (session endpoint unreachable
+    // at load). Without it checkInstance can never detect a restart, so pick it up now.
+    if (!this.instanceId) {
+      try { this.instanceId = (await (await fetch('/api/v1/auth/session')).json()).instance || ''; }
+      catch (e) { /* the poller will keep trying */ }
+    }
+    this.start();
   },
   async logout() {
     await fetch('/api/v1/auth/logout', { method: 'POST' });
+    // Tear the live plumbing down before flipping to the login form. Left running, the instance
+    // poller sees the now-unauthenticated session on its next tick and raises the stale banner —
+    // so a deliberate logout announced "The manager restarted" over the login page.
+    this.disconnect();
     this.authUser = ''; this.needsLogin = true;
+    this.stale = false; this.staleReason = ''; this.refreshError = '';
   },
-  async refresh() {
+  // refresh re-reads every page's state. It is single-flight: two callers never run overlapping
+  // passes, which used to interleave and let an older response land last and overwrite newer
+  // status. A caller that arrives while a pass is running gets a *fresh* pass queued behind it
+  // (not the in-flight one, whose data predates the change it is refreshing for), so
+  // `await refresh()` always resolves on state read after the caller asked for it.
+  refresh() {
+    if (this._refreshing) {
+      this._refreshQueued ||= this._refreshing.then(() => this.refresh());
+      return this._refreshQueued;
+    }
+    const p = this._doRefresh().finally(() => { this._refreshing = null; this._refreshQueued = null; });
+    this._refreshing = p;
+    return p;
+  },
+  // _load reads one endpoint, falling back to the value already on screen. Keeping the last
+  // known-good value means one failing endpoint degrades to a stale panel instead of a blank
+  // one — and, unlike the previous single try/catch around every fetch, it no longer aborts
+  // each remaining read, which silently froze the whole dashboard on one bad response.
+  async _load(path, current, failed) {
     try {
-      this.overview = await (await fetch('/api/v1/overview')).json();
-      this.hosts = await (await fetch('/api/v1/hosts')).json();
-      this.services = await (await fetch('/api/v1/services')).json();
-      this.updates = await (await fetch('/api/v1/updates')).json();
-      this.tasks = await (await fetch('/api/v1/tasks')).json();
-      this.approvals = await (await fetch('/api/v1/approvals')).json();
-      this.sudoPrompts = await (await fetch('/api/v1/sudo')).json();
+      const r = await fetch(path);
+      if (!r.ok) { failed.push(path); return current; }
+      return await r.json();
+    } catch (e) { failed.push(path); return current; }
+  },
+  async _doRefresh() {
+    // Sequential on purpose: the live feed already holds one of the browser's ~6 connections
+    // per origin, and firing all of these at once alongside job polls exhausts the rest.
+    const failed = [];
+    const quiet = []; // failures not worth a banner (endpoint is credential-gated)
+    this.overview = await this._load('/api/v1/overview', this.overview, failed);
+    this.hosts = await this._load('/api/v1/hosts', this.hosts, failed);
+    this.services = await this._load('/api/v1/services', this.services, failed);
+    this.updates = await this._load('/api/v1/updates', this.updates, failed);
+    this.tasks = await this._load('/api/v1/tasks', this.tasks, failed);
+    this.approvals = await this._load('/api/v1/approvals', this.approvals, failed);
+    this.sudoPrompts = await this._load('/api/v1/sudo', this.sudoPrompts, failed);
+    await this._loadAudit();
+    this.settings = await this._load('/api/v1/settings', this.settings, failed);
+    this.tokens = await this._load('/api/v1/auth/tokens', this.tokens, quiet);
+    this.refreshError = failed.length
+      ? `Couldn't refresh ${failed.length === 1 ? 'one part' : failed.length + ' parts'} of the dashboard — showing the last values read successfully.`
+      : '';
+  },
+  // Audit has its own error line on the audit page (it is permission-gated per credential), so
+  // it reports there rather than through the general refresh banner.
+  async _loadAudit() {
+    try {
       const ar = await fetch('/api/v1/audit');
-      if (ar.ok) { this.audit = await ar.json(); this.auditError = ''; if (this.auditPage > this.auditPages()) this.auditPage = this.auditPages(); }
-      else { this.audit = []; this.auditError = ar.status === 403 ? 'Audit access not permitted for this credential.' : 'Failed to load audit log.'; }
-      this.settings = await (await fetch('/api/v1/settings')).json();
-      this.tokens = await (await fetch('/api/v1/auth/tokens')).json();
-    } catch (e) { console.error(e); }
+      if (ar.ok) {
+        this.audit = await ar.json();
+        this.auditError = '';
+        if (this.auditPage > this.auditPages()) this.auditPage = this.auditPages();
+        return;
+      }
+      this.audit = [];
+      this.auditError = ar.status === 403 ? 'Audit access not permitted for this credential.' : 'Failed to load audit log.';
+    } catch (e) {
+      this.audit = [];
+      this.auditError = 'Failed to load audit log.';
+    }
   },
   async saveSettings() {
-    await fetch('/api/v1/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(this.settings) });
+    const r = await fetch('/api/v1/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(this.settings) });
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({}));
+      alert('Failed to save settings: ' + ((e.error && e.error.message) || r.status));
+    }
     this.refresh();
   },
   hostName(id) { const h = this.hosts.find(x => x.id === id); return h ? h.name : id; },

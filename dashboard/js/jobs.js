@@ -1,15 +1,28 @@
 // Job queue + docked log panel: the live job records, their SSE streaming/reconciliation, the
 // panel resize handling, and the container log viewer.
+
+// Bounds on the holding area for events that arrive before their job has a record (see
+// bufferJobEvent). Dispatch-to-record is one HTTP round trip, so the window needs to be
+// generous, not long; the caps stop another tab's activity accumulating here indefinitely.
+const pendingTTL = 30000;
+const maxPendingJobs = 50;
+const maxPendingEvents = 1000;
+
 export const jobs = {
   job: { id: '', label: '', state: '', progress: 0, log: [] }, // the job currently on screen
   jobs: [], // all active jobs (queued/running + briefly-settled), shown in the queue indicator
   jobPanelOpen: false, // whether the docked log panel is visible
   jobStick: true, // keep the job log pinned to the newest line until the user scrolls up
   jobPanelHeight: 0, // px override for the docked job panel (0 = CSS default of 33vh)
-  logView: { open: false, title: '', lines: [], es: null },
+  logView: { open: false, title: '', lines: [], es: null, status: '' },
 
   // isTerminalJob reports whether a job state is final (no more events will come).
   isTerminalJob(s) { return s === 'succeeded' || s === 'failed' || s === 'timed_out'; },
+  // isSettledJob adds the states that produce no further events without being job terminals: a
+  // sudo hand-off is waiting on the user, and 'restarting' marks the manager self-update, whose
+  // stream ends with the process. The panel treats all of them as "done with this one" so a
+  // later job can take the foreground — otherwise a self-update pinned the panel for good.
+  isSettledJob(s) { return this.isTerminalJob(s) || s === 'needs_sudo_password' || s === 'restarting'; },
   // showJob puts a job's record on screen without forcing the panel open — opening is lazy
   // (see the event handler) so a sudo hand-off or silent success doesn't flash the panel.
   showJob(rec) {
@@ -36,18 +49,21 @@ export const jobs = {
   // events arrive on the shared /api/v1/events feed and are applied by onJobEvent — there is NO
   // per-job connection, so any number of jobs can be watched at once without touching the
   // browser's per-origin connection cap. Callers that serialize on completion await this promise.
-  watchJob(jobId, label, meta) {
-    // One record per job so overlapping jobs don't cross-contaminate a shared log. Reuse an
-    // existing record if a feed event already created it (a race where the first event lands
-    // before this call). Push once, then hold the reactive proxy Alpine returns from find —
-    // mutating the raw pushed object bypasses the proxy's set trap and the panel never repaints.
-    // hostId/module/action (meta) let page code tell whether a host has work in flight (see
-    // updates.js hostUpdating) so a per-host loading spinner can survive a page refresh.
+  // adoptJob creates (or updates) the panel record for a job, without attaching a completion
+  // waiter. watchJob layers the promise on top; recoverJobs uses it bare, so re-adopting jobs
+  // after a reload no longer registers resolvers nobody ever awaits.
+  adoptJob(jobId, label, meta) {
+    // One record per job so overlapping jobs don't cross-contaminate a shared log. Push once,
+    // then hold the reactive proxy Alpine returns from find — mutating the raw pushed object
+    // bypasses the proxy's set trap and the panel never repaints. hostId/module/action (meta)
+    // let page code tell whether a host has work in flight (see updates.js hostUpdating) so a
+    // per-host loading spinner can survive a page refresh.
     let rec = this.jobs.find(j => j.id === jobId);
     if (!rec) {
       this.jobs.push({
         id: jobId, label: label || ('job ' + String(jobId).slice(0, 6)), state: 'queued', progress: 0, log: [],
         hostId: (meta && meta.hostId) || '', module: (meta && meta.module) || '', action: (meta && meta.action) || '',
+        sawEvent: false, retiring: false,
       });
       rec = this.jobs.find(j => j.id === jobId);
     } else if (meta) {
@@ -55,20 +71,56 @@ export const jobs = {
       rec.module = meta.module || rec.module;
       rec.action = meta.action || rec.action;
     }
+    // Drain events the feed delivered before this record existed. The manager creates a job and
+    // hands it to the associate before the dispatch response gets back here, so a job's first
+    // log lines — and, for a fast one, its terminal state — routinely arrive while there is
+    // still nothing to apply them to. They used to be discarded, which lost the head of every
+    // log and left quick jobs waiting on a completion that had already happened.
+    const buf = this._pendingEvents && this._pendingEvents[jobId];
+    if (buf) {
+      delete this._pendingEvents[jobId];
+      for (const ev of buf.events) this.applyJobEvent(rec, ev);
+    }
+    return rec;
+  },
+  watchJob(jobId, label, meta) {
+    const rec = this.adoptJob(jobId, label, meta);
     // Adopt the job on screen when nothing live is showing (or the panel is closed); otherwise
     // leave the current job up and let this one wait in the queue indicator.
-    if (!this.jobPanelOpen || !this.job.id || this.isTerminalJob(this.job.state)) this.showJob(rec);
-    // Already settled (e.g. a very fast job): resolve immediately.
-    if (rec.state === 'needs_sudo_password' || this.isTerminalJob(rec.state)) return Promise.resolve(rec.state);
+    if (!this.jobPanelOpen || !this.job.id || this.isSettledJob(this.job.state)) this.showJob(rec);
+    // Already settled — a very fast job, or one whose whole life arrived in the drain above.
+    // Re-run the panel decision now that it is the job on screen, then resolve.
+    if (this.isSettledJob(rec.state)) { this.finishJob(rec, rec.state); return Promise.resolve(rec.state); }
     (this._jobWaiters ||= {});
-    return new Promise(res => { this._jobWaiters[jobId] = res; });
+    // A list, not a single slot: when two callers watch the same job, the one that registered
+    // first used to be overwritten and its await never resolved, stranding the loading state
+    // it gated (see updates.js runHostUpdates, whose finally then never ran).
+    return new Promise(res => { (this._jobWaiters[jobId] ||= []).push(res); });
   },
-  // onJobEvent applies one job event from the multiplexed feed to the matching record. Only jobs
-  // with a record (created by watchJob) are tracked; events for any other job are ignored so
-  // background or other-tab activity doesn't hijack this session's panel.
+  // onJobEvent routes one job event from the multiplexed feed. Events for a job with no record
+  // yet are held briefly rather than dropped — see adoptJob's drain.
   onJobEvent(ev) {
+    if (!ev || !ev.jobId) return;
     const r = this.jobs.find(j => j.id === ev.jobId);
-    if (!r) return;
+    if (r) { this.applyJobEvent(r, ev); return; }
+    this.bufferJobEvent(ev);
+  },
+  // bufferJobEvent parks an event for a job this session hasn't started tracking yet. Entries
+  // expire so activity from another tab (whose jobs we never adopt) can't pile up here.
+  bufferJobEvent(ev) {
+    const now = Date.now();
+    const buf = (this._pendingEvents ||= {});
+    for (const id of Object.keys(buf)) {
+      if (now - buf[id].at > pendingTTL) delete buf[id];
+    }
+    if (!buf[ev.jobId] && Object.keys(buf).length >= maxPendingJobs) return;
+    const entry = (buf[ev.jobId] ||= { at: now, events: [] });
+    if (entry.events.length >= maxPendingEvents) entry.events.shift();
+    entry.events.push(ev);
+  },
+  // applyJobEvent folds one event into a job's record.
+  applyJobEvent(r, ev) {
+    r.sawEvent = true;
     if (ev.kind === 'log' && ev.message) {
       r.log.push(ev.message);
       if (r.state === 'queued') r.state = 'running';
@@ -93,10 +145,12 @@ export const jobs = {
       }
     }
   },
-  // settleJob resolves the watchJob promise for a job once (if anything is awaiting it).
+  // settleJob resolves every watchJob promise for a job, once.
   settleJob(jobId, state) {
-    const w = this._jobWaiters && this._jobWaiters[jobId];
-    if (w) { delete this._jobWaiters[jobId]; w(state); }
+    const ws = this._jobWaiters && this._jobWaiters[jobId];
+    if (!ws) return;
+    delete this._jobWaiters[jobId];
+    for (const w of ws) w(state);
   },
   // recoverJobs re-adopts jobs still running on the manager after a page (re)load, so refreshing
   // mid-run doesn't orphan them: each reappears in the queue/panel and its completion is watched
@@ -104,13 +158,19 @@ export const jobs = {
   // but new output, progress, and the final state all resume.
   async recoverJobs() {
     let list;
-    try { list = await (await fetch('/api/v1/jobs')).json(); } catch { return; }
+    try {
+      const r = await fetch('/api/v1/jobs');
+      if (!r.ok) return;
+      list = await r.json();
+    } catch { return; }
     for (const j of (list || [])) {
       if (this.isTerminalJob(j.state)) continue; // finished already; nothing to watch
       if (this.jobs.some(x => x.id === j.id)) continue; // already tracked this session
-      this.watchJob(j.id, `${j.module} ${j.action}`, { hostId: j.hostId, module: j.module, action: j.action });
-      const r = this.jobs.find(x => x.id === j.id);
-      if (r) r.state = j.state; // reflect real state now (watchJob seeds 'queued')
+      const rec = this.adoptJob(j.id, `${j.module} ${j.action}`, { hostId: j.hostId, module: j.module, action: j.action });
+      // j.state is a snapshot from before this fetch returned, so only seed from it when
+      // nothing newer has landed. Writing it unconditionally rolled a job that finished during
+      // the fetch back to 'running', where it stayed — its terminal event was already spent.
+      if (!rec.sawEvent) rec.state = j.state;
     }
   },
   // reconcileJobs is the safety net for a dropped/reconnected event feed: it asks the job store
@@ -119,7 +179,11 @@ export const jobs = {
   async reconcileJobs() {
     if (!this._jobWaiters || !Object.keys(this._jobWaiters).length) return;
     let list;
-    try { list = await (await fetch('/api/v1/jobs')).json(); } catch { return; }
+    try {
+      const r = await fetch('/api/v1/jobs');
+      if (!r.ok) return;
+      list = await r.json();
+    } catch { return; }
     const byId = new Map((list || []).map(j => [j.id, j]));
     for (const id of Object.keys(this._jobWaiters)) {
       const j = byId.get(id);
@@ -129,7 +193,7 @@ export const jobs = {
         this.settleJob(id, 'gone');
         continue;
       }
-      if (j.state === 'needs_sudo_password' || this.isTerminalJob(j.state)) {
+      if (this.isSettledJob(j.state)) {
         const r = this.jobs.find(x => x.id === id);
         if (r) { r.state = j.state; this.finishJob(r, j.state); }
         this.settleJob(id, j.state);
@@ -144,7 +208,7 @@ export const jobs = {
   // previously shown job has finished), so a job that was queued behind another surfaces on
   // its own once it starts producing output.
   adoptIfIdle(rec) {
-    if (this.job.id !== rec.id && (!this.job.id || this.isTerminalJob(this.job.state))) this.showJob(rec);
+    if (this.job.id !== rec.id && (!this.job.id || this.isSettledJob(this.job.state))) this.showJob(rec);
   },
   // finishJob settles a terminal job: decide whether the panel stays up, then retire it from
   // the queue indicator. A still-queued job takes over the panel later via adoptIfIdle.
@@ -154,11 +218,16 @@ export const jobs = {
       // closed. A failure, or a success with output, is worth showing.
       this.jobPanelOpen = !(state === 'needs_sudo_password' || (state === 'succeeded' && rec.log.length === 0));
     }
+    // The panel decision above re-runs whenever a job settles again — a reconcile after the
+    // live event, or a drain that completed before the job reached the screen. Retiring must
+    // not, or each pass would arm another timer against the same record.
+    if (rec.retiring) return;
+    rec.retiring = true;
     // Drop it from the indicator: sudo hand-offs immediately, others after a beat so the user
     // sees them settle. If it's still the shown job, the log stays up until the panel closes.
     const retire = () => { this.jobs = this.jobs.filter(j => j.id !== rec.id); };
     if (state === 'needs_sudo_password') retire();
-    else setTimeout(retire, 4000);
+    else this._later(retire, 4000);
   },
   // onJobScroll re-arms or releases autoscroll from the user's scroll position: at (or near)
   // the bottom re-pins; scrolling up to read history releases the pin. Programmatic scrolls
@@ -193,15 +262,33 @@ export const jobs = {
   openLogs(stack, service) {
     this.closeLogs();
     const title = service ? `${stack.name}/${service}` : stack.name;
-    this.logView = { open: true, title, lines: [], es: null };
+    this.logView = { open: true, title, lines: [], es: null, status: 'Connecting…' };
     const q = new URLSearchParams({ module: 'duo', stack: stack.name });
     if (service) q.set('service', service);
     const es = new EventSource(`/api/v1/hosts/${stack.hostId}/logs?${q.toString()}`);
-    es.onmessage = (e) => { this.logView.lines.push(e.data); if (this.logView.lines.length > 500) this.logView.lines.shift(); };
+    let failures = 0;
+    es.onopen = () => { failures = 0; this.logView.status = ''; };
+    es.onmessage = (e) => {
+      failures = 0;
+      this.logView.status = '';
+      this.logView.lines.push(e.data);
+      if (this.logView.lines.length > 500) this.logView.lines.shift();
+    };
+    // Without a handler here the stream can die — host offline, or the manager refusing the
+    // open with 409 — and EventSource retries forever in silence, leaving an empty modal and
+    // no hint that anything is wrong. Say what happened, and stop after repeated failures.
+    es.onerror = () => {
+      if (++failures >= 5) {
+        es.close();
+        this.logView.status = 'Log stream disconnected — close and reopen to retry.';
+        return;
+      }
+      this.logView.status = 'Log stream interrupted — reconnecting…';
+    };
     this.logView.es = es;
   },
   closeLogs() {
-    if (this.logView.es) this.logView.es.close();
-    this.logView = { open: false, title: '', lines: [], es: null };
+    if (this.logView && this.logView.es) this.logView.es.close();
+    this.logView = { open: false, title: '', lines: [], es: null, status: '' };
   },
 };

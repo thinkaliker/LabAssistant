@@ -30,7 +30,15 @@ func (d Deps) createTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d Deps) updateTask(w http.ResponseWriter, r *http.Request) {
-	var t scheduler.Task
+	// Decode over the task as it stands rather than into a zero value, so fields the client
+	// left out keep their current value instead of being cleared. A dashboard save used to
+	// omit params and timezone, which silently widened a scoped task (e.g. "duo update of the
+	// media stack") into a whole-host run and moved its fire time to the manager's zone.
+	t, ok := d.Scheduler.Get(r.PathValue("id"))
+	if !ok {
+		writeErr(w, http.StatusNotFound, "not_found", "task not found")
+		return
+	}
 	if err := json.NewDecoder(r.Body).Decode(&t); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_request", "invalid JSON")
 		return

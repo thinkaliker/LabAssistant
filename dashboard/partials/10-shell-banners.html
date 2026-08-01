@@ -2,6 +2,15 @@
     :style="jobPanelOpen ? ('padding-bottom:' + ((jobPanelHeight || Math.round(window.innerHeight * 0.33)) + 24) + 'px') : ''">
     <div class="container is-fluid app-container">
 
+      <!-- Partial-refresh notice: one or more endpoints failed to read, so some panels are
+           showing older values. Without this the page just quietly stopped updating. -->
+      <template x-if="refreshError">
+        <div class="notification is-warning is-light py-2">
+          <span class="is-size-7" x-text="refreshError"></span>
+          <button class="button is-small is-warning ml-3" @click="refresh()">Retry</button>
+        </div>
+      </template>
+
       <!-- Pending approvals (visible on every page) -->
       <template x-if="approvals.length > 0">
         <div class="notification is-warning">

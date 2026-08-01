@@ -38,13 +38,17 @@ export const services = {
     try {
       const out = await this.dispatchSilent(st.hostId, 'duo', 'read-compose', { stack: st.name });
       if (!out || !out.jobId) { alert('Could not start compose read.'); return; }
-      const job = await this.awaitJob(out.jobId);
-      if (job && job.state === 'needs_sudo_password') { this.refresh(); return; }
-      this.openComposeFromJob(job);
+      const res = await this.awaitJob(out.jobId);
+      if (res.job && res.job.state === 'needs_sudo_password') { this.refresh(); return; }
+      this.openComposeFromJob(res);
     } catch (e) { console.error(e); alert('Error loading compose file.'); }
   },
-  openComposeFromJob(job) {
+  // Takes an awaitJob result, so a read that is merely slow can be reported as such instead of
+  // as an "unknown error".
+  openComposeFromJob(res) {
+    const job = res && res.job;
     if (!job || job.state !== 'succeeded' || !job.result) {
+      if (res && res.timedOut) { alert('Still reading the compose file — check the job panel, then try again.'); return; }
       alert('Failed to read compose file: ' + ((job && job.error) || 'unknown error'));
       return;
     }
@@ -91,8 +95,12 @@ export const services = {
   async writeCompose(content) {
     const out = await this.dispatchSilent(this.compose.hostId, 'duo', 'write-compose', { stack: this.compose.stack, content });
     if (!out || !out.jobId) { this.compose.error = 'Could not start save.'; return false; }
-    const job = await this.awaitJob(out.jobId);
+    const res = await this.awaitJob(out.jobId);
+    const job = res.job;
     if (job && job.state === 'needs_sudo_password') { this.compose.error = 'Sudo password required — provide it in the banner above, then save again.'; this.refresh(); return false; }
+    // A slow write is not a failed one. Calling it "Save failed" invited the user to save
+    // again, writing the file twice.
+    if (res.timedOut) { this.compose.error = 'Save is still running — watch the job panel, and re-read the file before saving again.'; return false; }
     if (!job || job.state !== 'succeeded') { this.compose.error = (job && job.error) || 'Save failed (see validation message).'; return false; }
     return true;
   },

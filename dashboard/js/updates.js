@@ -13,19 +13,29 @@ export const updates = {
     if (!r.ok) return null;
     return r.json().catch(() => null);
   },
-  // awaitJob polls a job until it reaches a terminal state, returning the snapshot (or null).
-  async awaitJob(jobId, timeoutMs = 30000) {
+  // awaitJob polls a job until it reaches a terminal state. It returns { job, timedOut, gone }
+  // rather than a bare snapshot-or-null because those outcomes are not interchangeable: a
+  // timeout means "still running", which callers must not report as a failure — doing so
+  // invited a retry of an action (a compose write) that had in fact already run.
+  async awaitJob(jobId, timeoutMs = 120000) {
     const terminal = ['succeeded', 'failed', 'timed_out', 'needs_sudo_password'];
     const start = Date.now();
+    // Back off rather than hammer at a fixed 300ms: the live feed already holds one of the
+    // browser's ~6 connections per origin, and several of these at once starved the rest.
+    let wait = 300;
     while (Date.now() - start < timeoutMs) {
-      const r = await fetch(`/api/v1/jobs/${jobId}`);
-      if (r.ok) {
-        const j = await r.json();
-        if (terminal.includes(j.state)) return j;
-      }
-      await new Promise(res => setTimeout(res, 300));
+      try {
+        const r = await fetch(`/api/v1/jobs/${jobId}`);
+        if (r.status === 404) return { job: null, timedOut: false, gone: true };
+        if (r.ok) {
+          const j = await r.json();
+          if (terminal.includes(j.state)) return { job: j, timedOut: false, gone: false };
+        }
+      } catch (e) { /* transient; keep polling until the deadline */ }
+      await new Promise(res => setTimeout(res, wait));
+      wait = Math.min(2000, Math.round(wait * 1.5));
     }
-    return null;
+    return { job: null, timedOut: true, gone: false };
   },
   // updateHosts merges the flat os/containers projections into one row per host so the
   // Updates page can show each host's package and container image updates together in its
@@ -49,14 +59,16 @@ export const updates = {
   // The job check is what makes the button spinner survive a page refresh — recoverJobs re-adopts
   // in-flight jobs into this.jobs, so a reload mid-apply still shows the host as busy until it
   // finishes. hostChecking is the same idea for check-updates jobs.
+  // Settled, not merely terminal: a job parked on a sudo prompt is waiting for the user, not
+  // working. Counting it as in-flight left the host's button spinning with nothing to finish it.
   hostUpdating(id) {
     return this.updatingHosts.includes(id) ||
-      this.jobs.some(j => j.hostId === id && !this.isTerminalJob(j.state) &&
+      this.jobs.some(j => j.hostId === id && !this.isSettledJob(j.state) &&
         ((j.module === 'qup' && j.action === 'apply') || (j.module === 'duo' && j.action === 'update')));
   },
   hostChecking(id) {
     return this.checkingHosts.includes(id) ||
-      this.jobs.some(j => j.hostId === id && !this.isTerminalJob(j.state) && j.action === 'check-updates');
+      this.jobs.some(j => j.hostId === id && !this.isSettledJob(j.state) && j.action === 'check-updates');
   },
   shortDigest(d) {
     if (!d) return '';
@@ -72,7 +84,7 @@ export const updates = {
   // so freshly-found updates actually appear. Without the await+refresh the fire-and-forget
   // dispatch completed on the associate but the page never re-read the module status, so the
   // button looked dead. checkingHosts drives the button's loading state.
-  async checkHost(hostId) {
+  async checkHost(hostId, opts) {
     const h = this.hosts.find(x => x.id === hostId);
     if (!h || this.hostChecking(hostId)) return;
     this.checkingHosts.push(hostId);
@@ -83,13 +95,24 @@ export const updates = {
       if (mods.includes('duo')) dispatched.push(this.dispatchSilent(hostId, 'duo', 'check-updates'));
       const outs = await Promise.all(dispatched);
       await Promise.all(outs.map(o => (o && o.jobId) ? this.awaitJob(o.jobId) : null));
-      await this.refresh();
+      // checkAllUpdates suppresses the per-host refresh and does one at the end instead.
+      if (!opts || opts.refresh !== false) await this.refresh();
     } finally {
       this.checkingHosts = this.checkingHosts.filter(x => x !== hostId);
     }
   },
+  // checkAllUpdates walks the online hosts a few at a time. Fanning out to every host at once
+  // meant a job poll plus a full refresh (nine requests) per host, on top of the live feed —
+  // well past the browser's ~6 connections per origin, so requests hung and the button's
+  // loading state outlived the work. One refresh at the end covers every host's results.
   async checkAllUpdates() {
-    await Promise.all(this.hosts.filter(h => h.status === 'online').map(h => this.checkHost(h.id)));
+    const online = this.hosts.filter(h => h.status === 'online');
+    let next = 0;
+    const worker = async () => {
+      while (next < online.length) await this.checkHost(online[next++].id, { refresh: false });
+    };
+    await Promise.all(Array.from({ length: Math.min(3, Math.max(1, online.length)) }, worker));
+    await this.refresh();
   },
   // runUpdate dispatches one destructive apply/update action, waits for the job to reach a
   // terminal state, and reports whether it queued an approval instead of running. Both apply

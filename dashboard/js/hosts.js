@@ -27,14 +27,23 @@ export const hosts = {
   },
   async openConfig(hostId, m) {
     this.cfg = { open: true, hostId, module: m.name, fields: [], values: {} };
-    const r = await (await fetch(`/api/v1/hosts/${hostId}/modules/${m.name}/config`)).json();
+    const resp = await fetch(`/api/v1/hosts/${hostId}/modules/${m.name}/config`);
+    if (!resp.ok) { this.cfg.open = false; alert('Could not read module config: ' + resp.status); return; }
+    const r = await resp.json();
     const props = (r.schema && JSON.parse(typeof r.schema === 'string' ? r.schema : JSON.stringify(r.schema)).properties) || {};
     this.cfg.fields = Object.entries(props).map(([key, v]) => ({ key, title: v.title, secret: !!v.secret }));
     this.cfg.values = r.config || {};
   },
   async saveModuleConfig() {
-    await fetch(`/api/v1/hosts/${this.cfg.hostId}/modules/${this.cfg.module}/config`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(this.cfg.values) });
+    const r = await fetch(`/api/v1/hosts/${this.cfg.hostId}/modules/${this.cfg.module}/config`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(this.cfg.values) });
+    // Closing regardless read as success even when the save was rejected.
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({}));
+      alert('save failed: ' + ((e.error && e.error.message) || r.status));
+      return;
+    }
     this.cfg.open = false;
+    this.refresh();
   },
   toggle(id) { this.expanded = this.expanded === id ? null : id; },
   openUninstall(h) {
@@ -123,12 +132,12 @@ export const hosts = {
       body: JSON.stringify(body),
     });
     if (!r.ok) { alert('enroll failed'); return; }
-    const { jobId } = await r.json();
+    const { jobId } = await r.json().catch(() => ({}));
     const hostName = this.newHost.name;
     this.addHostOpen = false;
     this.newHost = { name: '', ip: '', sshUser: '', sshPassword: '', tailscale: false, connMode: 'manager_dial', connPort: null };
     this.page = 'hosts';
     await this.refresh();
-    this.watchJob(jobId, 'enroll ' + hostName);
+    if (jobId) this.watchJob(jobId, 'enroll ' + hostName);
   },
 };
