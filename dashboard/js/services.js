@@ -45,10 +45,10 @@ export const services = {
   },
   // Takes an awaitJob result, so a read that is merely slow can be reported as such instead of
   // as an "unknown error".
-  openComposeFromJob(res) {
-    const job = res && res.job;
+  openComposeFromJob(outcome) {
+    const job = outcome && outcome.job;
     if (!job || job.state !== 'succeeded' || !job.result) {
-      if (res && res.timedOut) { alert('Still reading the compose file — check the job panel, then try again.'); return; }
+      if (outcome && outcome.timedOut) { alert('Still reading the compose file — check the job panel, then try again.'); return; }
       alert('Failed to read compose file: ' + ((job && job.error) || 'unknown error'));
       return;
     }
