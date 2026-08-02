@@ -4,6 +4,7 @@ export const updates = {
   updates: { os: [], containers: [] },
   checkingHosts: [], // host ids with an in-flight check-updates, for button loading state
   updatingHosts: [], // host ids with an in-flight apply/update, for button loading state
+  lastChecked: {}, // hostId -> epoch ms of the last completed check, for "checked HH:MM"
 
   // dispatchSilent fires an action without opening the job modal; returns {jobId|approvalId} or null.
   async dispatchSilent(hostId, mod, action, params) {
@@ -80,21 +81,39 @@ export const updates = {
   isDigest(d) { return /^sha256:[0-9a-f]{64}$/.test(String(d || '')); },
   // A service has a genuine, actionable update only when both digests are real.
   svcUpdate(sv) { return !!sv.updateAvailable && this.isDigest(sv.currentDigest) && this.isDigest(sv.latestDigest); },
+  // checkedAgo renders when a host was last checked this session, so a check that finds nothing
+  // new still reads as having run. A check whose result is "no change" is otherwise invisible:
+  // the page redraws identically and the button looks dead.
+  checkedAgo(hostId) {
+    const t = this.lastChecked[hostId];
+    if (!t) return '';
+    return 'checked ' + new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  },
   // checkHost runs qup/duo check-updates and waits for the jobs to finish before refreshing,
   // so freshly-found updates actually appear. Without the await+refresh the fire-and-forget
   // dispatch completed on the associate but the page never re-read the module status, so the
   // button looked dead. checkingHosts drives the button's loading state.
+  //
+  // opts.watch streams the jobs into the docked panel (a single host's check, where the log is
+  // the feedback the user is waiting on). checkAllUpdates leaves it off and polls silently:
+  // adopting a job per host would fill the panel with a dozen logs at once.
   async checkHost(hostId, opts) {
     const h = this.hosts.find(x => x.id === hostId);
     if (!h || this.hostChecking(hostId)) return;
     this.checkingHosts.push(hostId);
     try {
-      const mods = (h.modules || []).map(m => m.name);
-      const dispatched = [];
-      if (mods.includes('qup')) dispatched.push(this.dispatchSilent(hostId, 'qup', 'check-updates'));
-      if (mods.includes('duo')) dispatched.push(this.dispatchSilent(hostId, 'duo', 'check-updates'));
-      const outs = await Promise.all(dispatched);
-      await Promise.all(outs.map(o => (o && o.jobId) ? this.awaitJob(o.jobId) : null));
+      const mods = (h.modules || []).map(m => m.name).filter(n => n === 'qup' || n === 'duo');
+      const outs = await Promise.all(mods.map(async mod => ({
+        mod, out: await this.dispatchSilent(hostId, mod, 'check-updates'),
+      })));
+      const watch = !!(opts && opts.watch);
+      await Promise.all(outs.map(({ mod, out }) => {
+        if (!out || !out.jobId) return null;
+        return watch
+          ? this.watchJob(out.jobId, `${mod} check-updates`, { hostId, module: mod, action: 'check-updates' })
+          : this.awaitJob(out.jobId);
+      }));
+      this.lastChecked[hostId] = Date.now();
       // checkAllUpdates suppresses the per-host refresh and does one at the end instead.
       if (!opts || opts.refresh !== false) await this.refresh();
     } finally {

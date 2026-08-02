@@ -47,6 +47,10 @@ type Enroll struct {
 	// AssociatePort is the default TCP port a manager-dial associate listens on and the
 	// manager dials. Per-host overrides are chosen at enroll time.
 	AssociatePort int `toml:"associate_port"`
+	// SSHKey is an optional private key the SSH installer authenticates with. Empty means
+	// the agent (SSH_AUTH_SOCK) and the standard ~/.ssh keys, falling back to the password
+	// supplied with the request.
+	SSHKey string `toml:"ssh_key"`
 }
 
 // Auth holds dashboard login settings. The password is stored only as a hash.

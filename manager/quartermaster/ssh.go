@@ -4,17 +4,20 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 )
 
 // SSHInstaller installs and removes the associate on a remote host over SSH. On install it
@@ -31,9 +34,84 @@ type SSHInstaller struct {
 	RemoteDir      string // remote staging directory (default: labassistant)
 	Port           int    // SSH port (default 22)
 	KnownHostsPath string // path to the TOFU known-hosts file
+	KeyPath        string // optional private key to authenticate with (default: the usual ~/.ssh keys)
 }
 
+// defaultKeyNames are the private keys tried, in order, when no key is configured — the same
+// files a plain `ssh host` would offer.
+var defaultKeyNames = []string{"id_ed25519", "id_ecdsa", "id_rsa"}
+
 const installDir = "/opt/labassistant"
+
+// authMethods builds the SSH auth methods to offer, keys first and password last — the same
+// preference order as the ssh client, so a key-based homelab needs no password typed into the
+// dashboard, while password-only hosts still work. Returned closers hold the agent connection
+// open for the handshake and are closed by the caller once the dial returns.
+//
+// A password, when given, doubles as the passphrase for an encrypted key: that is what the
+// operator is being asked for either way.
+func (s SSHInstaller) authMethods(p InstallParams) ([]ssh.AuthMethod, []io.Closer) {
+	var (
+		methods []ssh.AuthMethod
+		closers []io.Closer
+	)
+	if sock := os.Getenv("SSH_AUTH_SOCK"); sock != "" {
+		if conn, err := net.Dial("unix", sock); err == nil {
+			closers = append(closers, conn)
+			methods = append(methods, ssh.PublicKeysCallback(agent.NewClient(conn).Signers))
+		}
+	}
+	var signers []ssh.Signer
+	for _, path := range s.keyPaths() {
+		if signer, err := loadPrivateKey(path, p.SSHPassword); err == nil {
+			signers = append(signers, signer)
+		}
+	}
+	if len(signers) > 0 {
+		methods = append(methods, ssh.PublicKeys(signers...))
+	}
+	if p.SSHPassword != "" {
+		methods = append(methods, ssh.Password(p.SSHPassword))
+	}
+	return methods, closers
+}
+
+// keyPaths returns the private keys to try: the configured one if set, otherwise the standard
+// ~/.ssh keys that exist.
+func (s SSHInstaller) keyPaths() []string {
+	if s.KeyPath != "" {
+		return []string{s.KeyPath}
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	var paths []string
+	for _, name := range defaultKeyNames {
+		p := filepath.Join(home, ".ssh", name)
+		if _, err := os.Stat(p); err == nil {
+			paths = append(paths, p)
+		}
+	}
+	return paths
+}
+
+// loadPrivateKey parses a private key file, using passphrase for an encrypted key.
+func loadPrivateKey(path, passphrase string) (ssh.Signer, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	signer, err := ssh.ParsePrivateKey(b)
+	if err == nil {
+		return signer, nil
+	}
+	var needsPass *ssh.PassphraseMissingError
+	if errors.As(err, &needsPass) && passphrase != "" {
+		return ssh.ParsePrivateKeyWithPassphrase(b, []byte(passphrase))
+	}
+	return nil, err
+}
 
 // dial opens an SSH connection to the host using TOFU host-key verification.
 func (s SSHInstaller) dial(p InstallParams) (*ssh.Client, error) {
@@ -41,16 +119,20 @@ func (s SSHInstaller) dial(p InstallParams) (*ssh.Client, error) {
 	if port == 0 {
 		port = 22
 	}
+	methods, closers := s.authMethods(p)
+	defer func() {
+		for _, c := range closers {
+			_ = c.Close()
+		}
+	}()
+	if len(methods) == 0 {
+		return nil, fmt.Errorf("no SSH auth method (no usable key or agent, and no password given)")
+	}
 	cfg := &ssh.ClientConfig{
 		User:            p.SSHUser,
+		Auth:            methods,
 		HostKeyCallback: s.hostKeyCallback(),
 		Timeout:         15 * time.Second,
-	}
-	if p.SSHPassword != "" {
-		cfg.Auth = append(cfg.Auth, ssh.Password(p.SSHPassword))
-	}
-	if len(cfg.Auth) == 0 {
-		return nil, fmt.Errorf("no SSH auth method (provide a password)")
 	}
 	addr := net.JoinHostPort(p.IP, strconv.Itoa(port))
 	client, err := ssh.Dial("tcp", addr, cfg)
@@ -172,6 +254,91 @@ func (s SSHInstaller) Revive(ctx context.Context, p InstallParams, emit func(str
 		emit("service status: " + status)
 	}
 	return nil
+}
+
+// Upgrade replaces the associate (and helper) binaries on an already-installed host with the
+// manager's current builds and restarts the service. Enrollment was the only path that ever
+// shipped binaries, so a host kept whatever build it was enrolled with — hosts silently ran
+// months-old module code (stale digest parsing, missing fixes) while the manager was current.
+// The bundle is deliberately left alone: this changes the code, not the host's identity.
+func (s SSHInstaller) Upgrade(ctx context.Context, p InstallParams, emit func(string)) error {
+	if s.AssociateBin == "" {
+		return fmt.Errorf("no associate binary configured (set enroll.associate_bin in config.toml)")
+	}
+	remoteDir := s.RemoteDir
+	if remoteDir == "" {
+		remoteDir = "labassistant"
+	}
+
+	emit("ssh dial " + p.IP)
+	client, err := s.dial(p)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	if out, _ := sshOutput(client, "[ -x "+installDir+"/associate ] && echo yes || true"); out != "yes" {
+		return fmt.Errorf("associate is not installed at %s (enroll the host first)", installDir)
+	}
+	initSys := detectInit(client)
+	if initSys == "" {
+		return fmt.Errorf("no supported service manager found on host (need systemd or openrc)")
+	}
+	goos, goarch := detectPlatform(client, emit)
+
+	associateBin := resolveBinary(s.AssociateBin, goos, goarch)
+	if _, err := os.Stat(associateBin); err != nil {
+		return fmt.Errorf("associate binary %q not found: %w", associateBin, err)
+	}
+	sc, err := sftp.NewClient(client)
+	if err != nil {
+		return fmt.Errorf("sftp: %w", err)
+	}
+	defer sc.Close()
+
+	if err := sc.MkdirAll(remoteDir); err != nil {
+		return fmt.Errorf("mkdir %s: %w", remoteDir, err)
+	}
+	emit("uploading associate binary (" + associateBin + ")")
+	if err := uploadFile(sc, associateBin, path.Join(remoteDir, "associate"), 0o755); err != nil {
+		return err
+	}
+	if s.HelperBin != "" {
+		helperBin := resolveBinary(s.HelperBin, goos, goarch)
+		emit("uploading helper binary (" + helperBin + ")")
+		if err := uploadFile(sc, helperBin, path.Join(remoteDir, "associatehelper"), 0o755); err != nil {
+			return err
+		}
+	}
+
+	emit("swapping binaries and restarting " + initSys + " service")
+	if err := sshRun(client, upgradeScript(remoteDir, initSys), p.SSHPassword); err != nil {
+		return fmt.Errorf("upgrade: %w", err)
+	}
+	status, _ := sshOutput(client, statusCmd(initSys))
+	if status != "" {
+		emit("service status: " + status)
+	}
+	return nil
+}
+
+// upgradeScript swaps in the staged binaries and restarts the service. The running associate
+// holds its executable open, so the new file is written alongside and renamed over the old one
+// (`cp` into a busy binary fails with ETXTBSY on Linux).
+func upgradeScript(stageDir, initSys string) string {
+	lines := []string{
+		"set -e",
+		fmt.Sprintf("sudo cp %s/associate %s/associate.new", stageDir, installDir),
+		fmt.Sprintf("sudo mv %s/associate.new %s/associate", installDir, installDir),
+		fmt.Sprintf("[ -f %s/associatehelper ] && sudo cp %s/associatehelper %s/associatehelper.new && sudo mv %s/associatehelper.new %s/associatehelper || true",
+			stageDir, stageDir, installDir, installDir, installDir),
+	}
+	if initSys == "openrc" {
+		lines = append(lines, "sudo rc-service "+unitName+" restart")
+	} else {
+		lines = append(lines, "sudo systemctl restart "+unitName)
+	}
+	return strings.Join(append(lines, "rm -rf "+stageDir), "\n")
 }
 
 // reviveScript re-enables the associate on boot and starts it if it is not already running.

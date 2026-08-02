@@ -13,6 +13,7 @@ export const hosts = {
   cfg: { open: false, hostId: '', module: '', fields: [], values: {} },
   uninstall: { open: false, hostId: '', hostName: '', online: false, sshUser: '', sshPassword: '' },
   revive: { open: false, hostId: '', hostName: '', sshUser: '', sshPassword: '' },
+  upgrade: { open: false, hostId: '', hostName: '', sshUser: '', sshPassword: '' },
 
   // sortedHosts returns a stable copy of hosts ordered by the chosen key so the list
   // doesn't reshuffle as the backend returns hosts in map/enroll order.
@@ -75,6 +76,28 @@ export const hosts = {
     const hostName = this.revive.hostName;
     await this.refresh();
     if (jobId) this.watchJob(jobId, 'revive ' + hostName);
+  },
+  openUpgrade(h) {
+    this.upgrade = { open: true, hostId: h.id, hostName: h.name, sshUser: h.sshUser || '', sshPassword: '' };
+  },
+  // submitUpgrade pushes the manager's current associate build to the host. Hosts otherwise
+  // keep the binary they were enrolled with, so module fixes shipped with the manager never
+  // reach them.
+  async submitUpgrade() {
+    const body = { sshUser: this.upgrade.sshUser, sshPassword: this.upgrade.sshPassword };
+    const r = await fetch(`/api/v1/hosts/${this.upgrade.hostId}/upgrade`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    this.upgrade.open = false;
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({}));
+      alert('upgrade failed: ' + ((e.error && e.error.message) || r.status));
+      return;
+    }
+    const { jobId } = await r.json();
+    const hostName = this.upgrade.hostName;
+    await this.refresh();
+    if (jobId) this.watchJob(jobId, 'upgrade associate ' + hostName);
   },
   // hostUpdates totals a host's pending updates: qup package counts plus duo services with a
   // newer image. Mirrors the manager's overview tally, computed client-side from host modules.

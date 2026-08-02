@@ -35,8 +35,12 @@ type imageUpdate struct {
 	Latest  string `json:"latest"`  // registry digest
 }
 
+// hasUpdate reports a genuine, actionable update: both sides must be real sha256 digests.
+// Requiring only "non-empty and different" let a malformed registry read (an older associate
+// stored whole `imagetools inspect` output, "Name: ghcr.io/...") stand in as a latest digest,
+// which surfaced as a permanent phantom update nothing could install.
 func (u imageUpdate) hasUpdate() bool {
-	return u.Current != "" && u.Latest != "" && u.Current != u.Latest
+	return isSHA256Digest(u.Current) && isSHA256Digest(u.Latest) && u.Current != u.Latest
 }
 
 // Stack is a compose project and its services.
@@ -279,7 +283,8 @@ func (m *Module) IngestResult(action string, data json.RawMessage) {
 	switch action {
 	case "check-updates":
 		var d struct {
-			Images map[string]imageUpdate `json:"images"`
+			Images  map[string]imageUpdate `json:"images"`
+			Unknown []string               `json:"unknown"`
 		}
 		if json.Unmarshal(data, &d) != nil {
 			return
@@ -287,6 +292,11 @@ func (m *Module) IngestResult(action string, data json.RawMessage) {
 		m.mu.Lock()
 		for img, iu := range d.Images {
 			m.updates[img] = iu
+		}
+		// Images the helper checked without reaching a verdict: drop whatever we held for them,
+		// so a stale entry can't survive the check that failed to confirm it.
+		for _, img := range d.Unknown {
+			delete(m.updates, img)
 		}
 		m.mu.Unlock()
 	case "update":

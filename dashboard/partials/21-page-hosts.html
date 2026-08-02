@@ -100,6 +100,8 @@
                 <button class="button is-small is-info is-outlined" @click="openEditHost(h)">Edit host</button>
                 <button class="button is-small is-link is-outlined" x-show="h.status!=='online'"
                   @click="openRevive(h)">Revive associate</button>
+                <button class="button is-small is-warning is-outlined"
+                  @click="openUpgrade(h)">Upgrade associate</button>
                 <button class="button is-small is-danger is-outlined" @click="openUninstall(h)">Uninstall host</button>
               </div>
             </div>

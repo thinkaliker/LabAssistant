@@ -117,6 +117,7 @@ func NewApp(layout paths.Layout, cfg config.Config) (*App, error) {
 		AssociateBin:   assocBin,
 		HelperBin:      helperBin,
 		KnownHostsPath: layout.KnownHostsFile(),
+		KeyPath:        cfg.Enroll.SSHKey,
 	}
 	qm := quartermaster.New(authority, store, jr, aud, localInstaller, sshInstaller, cfg.Enroll.ManagerAddr, cfg.Enroll.ServerName, cfg.Enroll.AssociatePort)
 

@@ -165,6 +165,7 @@ Non-2xx responses use:
 | `GET /hosts/{id}` | Get host detail. |
 | `PUT /hosts/{id}` | Update editable host fields (ip, tailscale, ssh_user, enabled modules). |
 | `DELETE /hosts/{id}` | Remove a host (revokes its cert). |
+| `POST /hosts/{id}/upgrade` | Push the manager's current associate build to the host and restart it (keeps cert/bundle). Returns `{ "jobId": "..." }`. |
 | `GET /hosts/{id}/status` | Live health and per-module states. |
 | `GET /hosts/{id}/modules` | Enabled modules with manifests and detection results. |
 | `POST /hosts/{id}/modules/{name}:enable` | Enable a module on the host. |

@@ -163,6 +163,35 @@ func (d Deps) reviveHost(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]any{"jobId": jobID})
 }
 
+// upgradeRequest carries the SSH credentials used to push the new associate binaries.
+// They are transient (used only for the SSH bootstrap) and never persisted.
+type upgradeRequest struct {
+	SSHUser     string `json:"sshUser"`
+	SSHPassword string `json:"sshPassword"`
+}
+
+// upgradeHost replaces a host's associate binaries with the manager's current builds and
+// restarts the service, keeping the host's bundle and identity. Returns a progress job id.
+func (d Deps) upgradeHost(w http.ResponseWriter, r *http.Request) {
+	var req upgradeRequest
+	if r.ContentLength != 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", "invalid JSON")
+			return
+		}
+	}
+	jobID, err := d.QM.Upgrade(quartermaster.UpgradeRequest{
+		HostID:      r.PathValue("id"),
+		SSHUser:     req.SSHUser,
+		SSHPassword: req.SSHPassword,
+	})
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "not_found", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"jobId": jobID})
+}
+
 // deleteHost removes a host and revokes its client certificate.
 func (d Deps) deleteHost(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")

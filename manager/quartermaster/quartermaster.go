@@ -47,6 +47,12 @@ type Reviver interface {
 	Revive(ctx context.Context, p InstallParams, emit func(string)) error
 }
 
+// Upgrader replaces the associate binaries on an already-installed host and restarts it,
+// keeping the host's existing bundle and identity. Installers that support it implement it.
+type Upgrader interface {
+	Upgrade(ctx context.Context, p InstallParams, emit func(string)) error
+}
+
 // EnrollRequest describes a host to add.
 type EnrollRequest struct {
 	Name        string
@@ -140,6 +146,14 @@ type ReviveRequest struct {
 	SSHPassword string
 }
 
+// UpgradeRequest describes a host whose associate binaries should be replaced with the
+// manager's current builds. SSH credentials are transient and never persisted.
+type UpgradeRequest struct {
+	HostID      string
+	SSHUser     string
+	SSHPassword string
+}
+
 // New builds a Quartermaster. local installs the associate as a child process on the
 // manager box; ssh installs it on remote hosts. The mode is chosen per host at enroll.
 // associatePort is the default listen port baked into manager-dial bundles.
@@ -200,6 +214,41 @@ func (q *Quartermaster) Revive(req ReviveRequest) (jobID string, err error) {
 	job := q.jobs.Create(host.ID, "quartermaster", "revive", nil)
 	go q.runRevive(context.Background(), host, req, r, job.ID)
 	return job.ID, nil
+}
+
+// Upgrade pushes the manager's current associate build to a host and restarts it. Returns the
+// progress job id. Unlike enroll it issues no certificate and rewrites no bundle, so the host
+// keeps its identity and simply comes back on the new code.
+func (q *Quartermaster) Upgrade(req UpgradeRequest) (jobID string, err error) {
+	host, ok := q.store.Get(req.HostID)
+	if !ok {
+		return "", fmt.Errorf("host not found")
+	}
+	u, ok := q.installerFor(host.Mode, host.SSHUser).(Upgrader)
+	if !ok {
+		return "", fmt.Errorf("no upgrade path available for this host")
+	}
+	job := q.jobs.Create(host.ID, "quartermaster", "upgrade", nil)
+	go q.runUpgrade(context.Background(), host, req, u, job.ID)
+	return job.ID, nil
+}
+
+func (q *Quartermaster) runUpgrade(ctx context.Context, host state.Host, req UpgradeRequest, u Upgrader, jobID string) {
+	emit := func(msg string) { q.jobs.AddEvent(jobID, jobs.Event{Kind: "log", Message: msg}) }
+
+	emit("upgrading associate on " + host.Name)
+	err := u.Upgrade(ctx, InstallParams{
+		HostID: host.ID, IP: host.IP, SSHUser: req.SSHUser, SSHPassword: req.SSHPassword,
+	}, emit)
+	if err != nil {
+		emit("error: " + err.Error())
+		q.jobs.SetResult(jobID, module.JobFailed, nil, err.Error())
+		q.aud.Record("host_upgrade_failed", host.ID, "user", "associate upgrade failed: "+err.Error(), nil)
+		return
+	}
+	emit("associate restarted on the new build; awaiting reconnect")
+	q.jobs.SetResult(jobID, module.JobSucceeded, nil, "")
+	q.aud.Record("host_upgraded", host.ID, "user", "associate upgraded", nil)
 }
 
 // ReviveLocalOrphans restarts local-mode associates whose child process is gone. Local

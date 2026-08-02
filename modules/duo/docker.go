@@ -310,11 +310,13 @@ func (m *Module) checkUpdates(ctx context.Context, p actionParams, emit func(mod
 	}
 
 	results := map[string]imageUpdate{}
+	var unknown []string // checked this run, but no usable comparison — drop any prior verdict
 	updated := 0
 	for _, img := range images {
 		local := localRepoDigest(ctx, img)
 		remote := remoteDigest(ctx, img)
 		if local == "" || remote == "" {
+			unknown = append(unknown, img)
 			emit(module.Event{Kind: module.EventLog, Message: img + ": unknown (could not compare)"})
 			continue
 		}
@@ -328,15 +330,24 @@ func (m *Module) checkUpdates(ctx context.Context, p actionParams, emit func(mod
 		}
 	}
 
+	// Merge the fresh verdicts, and clear the ones this run could not establish. Merging alone
+	// let a stale entry outlive the check that disproved it: a bogus digest recorded by an
+	// older build stayed in the map (and in the reported status) forever, because a failed
+	// comparison wrote nothing over it.
 	m.mu.Lock()
 	for img, iu := range results {
 		m.updates[img] = iu
+	}
+	for _, img := range unknown {
+		delete(m.updates, img)
 	}
 	m.mu.Unlock()
 
 	emit(module.Event{Kind: module.EventLog, Message: fmt.Sprintf("%d image(s) with updates", updated)})
 	emit(module.Event{Kind: module.EventState, State: module.JobSucceeded})
-	data, _ := json.Marshal(map[string]any{"images": results, "checked": len(images), "updates": updated})
+	data, _ := json.Marshal(map[string]any{
+		"images": results, "unknown": unknown, "checked": len(images), "updates": updated,
+	})
 	return module.Result{State: module.JobSucceeded, Data: data}, nil
 }
 

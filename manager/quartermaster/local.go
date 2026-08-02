@@ -59,6 +59,27 @@ func (l LocalInstaller) Revive(ctx context.Context, p InstallParams, emit func(s
 	return l.spawn(dir, bundlePath, emit)
 }
 
+// Upgrade restarts a local associate child so it re-executes the manager's current associate
+// binary. There is nothing to upload — the child runs straight from AssociateBin, which a
+// manager update has already rebuilt — but the running process still holds the old code.
+func (l LocalInstaller) Upgrade(ctx context.Context, p InstallParams, emit func(string)) error {
+	dir := filepath.Join(l.WorkDir, p.HostID)
+	bundlePath := filepath.Join(dir, "bundle.json")
+	if _, err := os.Stat(bundlePath); err != nil {
+		return fmt.Errorf("associate is not installed locally (no bundle at %s)", bundlePath)
+	}
+	if b, err := os.ReadFile(filepath.Join(dir, "associate.pid")); err == nil {
+		if pid, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil && processAlive(pid) {
+			if proc, err := os.FindProcess(pid); err == nil {
+				_ = proc.Signal(syscall.SIGTERM)
+				emit("stopped local associate (pid " + strconv.Itoa(pid) + ")")
+			}
+		}
+	}
+	emit("restarting local associate on " + l.AssociateBin)
+	return l.spawn(dir, bundlePath, emit)
+}
+
 // spawn starts the associate as a detached child logging to associate.log and records its pid.
 func (l LocalInstaller) spawn(dir, bundlePath string, emit func(string)) error {
 	args := []string{"--bundle", bundlePath}

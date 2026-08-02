@@ -58,6 +58,7 @@ func Router(d Deps) http.Handler {
 	mux.HandleFunc("POST /api/v1/hosts/{id}/rotate-cert", d.rotateCert)
 	mux.HandleFunc("POST /api/v1/hosts/{id}/uninstall", d.uninstallHost)
 	mux.HandleFunc("POST /api/v1/hosts/{id}/revive", d.reviveHost)
+	mux.HandleFunc("POST /api/v1/hosts/{id}/upgrade", d.upgradeHost)
 	mux.HandleFunc("GET /api/v1/hosts/{id}/status", d.getHost)
 	mux.HandleFunc("GET /api/v1/hosts/{id}/modules", d.getModules)
 	mux.HandleFunc("POST /api/v1/hosts/{id}/modules/{name}/actions/{action}", d.runAction)
