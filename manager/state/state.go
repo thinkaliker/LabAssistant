@@ -56,6 +56,13 @@ type Host struct {
 	// deploy, it says whether the host needs an upgrade. Runtime only — never persisted,
 	// since a stale value would outlive the process that observed it.
 	AssociateVersion string `json:"associateVersion,omitempty"`
+	// AssociateCodeID is the fingerprint of the source that associate was built from. It is
+	// the field staleness is actually decided on: unlike AssociateVersion it does not move
+	// when a commit leaves the associate's own code untouched, so a manager update that only
+	// changed the dashboard does not mark the whole fleet as needing a push. Empty from an
+	// associate older than the stamp, or from an unstamped build. Runtime only, like
+	// AssociateVersion.
+	AssociateCodeID string `json:"associateCodeId,omitempty"`
 }
 
 // persisted is the durable subset of Host written to state.json (runtime fields excluded).
@@ -223,12 +230,13 @@ func (s *Store) update(id string, persist bool, fn func(*Host)) {
 }
 
 // SetOnline marks a host online and replaces its advertised modules (from Hello).
-func (s *Store) SetOnline(id, associateVersion string, modules []ModuleState) {
+func (s *Store) SetOnline(id, associateVersion, associateCodeID string, modules []ModuleState) {
 	s.update(id, false, func(h *Host) {
 		h.Status = StatusOnline
 		h.LastSeen = time.Now()
 		h.Modules = modules
 		h.AssociateVersion = associateVersion
+		h.AssociateCodeID = associateCodeID
 	})
 }
 

@@ -47,6 +47,9 @@ type Deps struct {
 	// AssociateBuild is the revision of the associate binary the manager deploys. Empty when
 	// that binary carries no VCS stamp, in which case nothing is flagged as out of date.
 	AssociateBuild string
+	// AssociateCodeID is the source fingerprint of that binary — what staleness is really
+	// decided on. See internal/build.AssociateStale.
+	AssociateCodeID string
 }
 
 // Router returns the /api/v1 handler.
@@ -62,6 +65,9 @@ func Router(d Deps) http.Handler {
 	mux.HandleFunc("POST /api/v1/hosts/{id}/uninstall", d.uninstallHost)
 	mux.HandleFunc("POST /api/v1/hosts/{id}/revive", d.reviveHost)
 	mux.HandleFunc("POST /api/v1/hosts/{id}/upgrade", d.upgradeHost)
+	// Fleet-wide, so no host id — it selects its own targets. Distinct path shape from
+	// /hosts/{id}/upgrade above, so the two patterns cannot overlap.
+	mux.HandleFunc("POST /api/v1/hosts/upgrade-stale", d.upgradeStale)
 	mux.HandleFunc("GET /api/v1/hosts/{id}/status", d.getHost)
 	mux.HandleFunc("GET /api/v1/hosts/{id}/modules", d.getModules)
 	mux.HandleFunc("POST /api/v1/hosts/{id}/modules/{name}/actions/{action}", d.runAction)
@@ -145,6 +151,13 @@ func (d Deps) overview(w http.ResponseWriter, r *http.Request) {
 		// The associate build the manager would deploy today. The dashboard compares it with
 		// each host's reported associateVersion to flag hosts still running an older build.
 		"associateBuild": d.AssociateBuild,
+		// The fingerprint of the associate code that build contains. The dashboard prefers it
+		// over associateBuild so a manager update that changed nothing the associate compiles
+		// does not light up the whole fleet as out of date.
+		"associateCodeId": d.AssociateCodeID,
+		// How many hosts the bulk upgrade would act on. Computed here rather than in the
+		// dashboard so the banner's count and the button's effect cannot disagree.
+		"staleAssociates": len(d.staleHosts()),
 		"resources": map[string]any{
 			"cpuPercent": resCPU, "memPercent": resMem, "memUsedBytes": memUsedBytes,
 		},

@@ -14,6 +14,9 @@ export const hosts = {
   uninstall: { open: false, hostId: '', hostName: '', online: false, sshUser: '', sshPassword: '' },
   revive: { open: false, hostId: '', hostName: '', sshUser: '', sshPassword: '' },
   upgrade: { open: false, hostId: '', hostName: '', sshUser: '', sshPassword: '' },
+  // Bulk associate upgrade. sshUser here is only a fallback for hosts with no stored user, so
+  // opening the modal cannot retarget a host that already knows its own account.
+  upgradeAll: { open: false, sshUser: '', sshPassword: '', busy: false, error: '' },
 
   // sortedHosts returns a stable copy of hosts ordered by the chosen key so the list
   // doesn't reshuffle as the backend returns hosts in map/enroll order.
@@ -77,16 +80,33 @@ export const hosts = {
     await this.refresh();
     if (jobId) this.watchJob(jobId, 'revive ' + hostName);
   },
-  // associateStale reports that a host runs a different associate build than the one the
-  // manager would deploy — i.e. it is missing whatever shipped with the manager since. Both
-  // sides must be known: an offline host reports no build, and a manager whose associate
-  // binary carries no VCS stamp has nothing to compare, and neither is evidence of staleness.
+  // associateStale reports that a host runs different associate code than the manager would
+  // deploy — i.e. it is missing whatever shipped with the manager since.
+  //
+  // The comparison prefers associateCodeId, a fingerprint of the associate's own source, over
+  // the commit. Comparing commits marked every host stale after any commit at all, including
+  // dashboard-only ones, which made the banner permanent and therefore ignorable. The commit
+  // is still the fallback for a host whose associate predates the fingerprint: it reports
+  // none, and an unknown build has to be assumed stale until one upgrade stamps it.
+  //
+  // Both sides of whichever pair is used must be known: an offline host reports nothing, and
+  // a manager with an unstamped associate binary has nothing to compare. Neither is evidence.
+  //
+  // Mirrors build.AssociateStale in the manager, which is what the bulk upgrade selects on.
   associateStale(h) {
-    const target = this.overview && this.overview.associateBuild;
-    return !!target && !!h.associateVersion && h.associateVersion !== target;
+    const o = this.overview || {};
+    if (o.associateCodeId && h.associateCodeId) return h.associateCodeId !== o.associateCodeId;
+    if (o.associateBuild && h.associateVersion) return h.associateVersion !== o.associateBuild;
+    return false;
   },
-  // staleAssociates counts hosts needing an upgrade, for the banner on every page.
-  staleAssociates() { return this.hosts.filter(h => this.associateStale(h)).length; },
+  // staleAssociates counts hosts needing an upgrade, for the banner on every page. The
+  // manager's own count is authoritative (it is what upgrade-stale acts on); the client-side
+  // tally is the fallback for an overview that has not loaded yet.
+  staleAssociates() {
+    const o = this.overview || {};
+    if (typeof o.staleAssociates === 'number') return o.staleAssociates;
+    return this.hosts.filter(h => this.associateStale(h)).length;
+  },
   openUpgrade(h) {
     this.upgrade = { open: true, hostId: h.id, hostName: h.name, sshUser: h.sshUser || '', sshPassword: '' };
   },
@@ -108,6 +128,44 @@ export const hosts = {
     const hostName = this.upgrade.hostName;
     await this.refresh();
     if (jobId) this.watchJob(jobId, 'upgrade associate ' + hostName);
+  },
+  openUpgradeAll() {
+    this.upgradeAll = { open: true, sshUser: '', sshPassword: '', busy: false, error: '' };
+  },
+  // submitUpgradeAll pushes the manager's associate build to every host the manager considers
+  // stale. The manager picks the targets, not this code: the button would otherwise upgrade a
+  // set that disagreed with the count next to it whenever the two staleness rules drifted.
+  //
+  // Each host gets its own job, and each is adopted into the docked panel, so a fleet upgrade
+  // is watchable host by host and a single failure is visible without hiding the rest.
+  async submitUpgradeAll() {
+    this.upgradeAll.busy = true;
+    this.upgradeAll.error = '';
+    try {
+      const body = { sshUser: this.upgradeAll.sshUser, sshPassword: this.upgradeAll.sshPassword };
+      const r = await fetch('/api/v1/hosts/upgrade-stale', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        this.upgradeAll.error = 'bulk upgrade failed: ' + ((e.error && e.error.message) || r.status);
+        return;
+      }
+      const out = await r.json().catch(() => ({}));
+      this.upgradeAll.open = false;
+      await this.refresh();
+      for (const s of (out.started || [])) this.watchJob(s.jobId, 'upgrade associate ' + s.hostName);
+      // Hosts the manager could not start an upgrade for (no SSH path, host vanished). Silence
+      // here would read as "all done" while those hosts stayed on old code.
+      const failed = out.failed || [];
+      if (failed.length) {
+        alert('Could not start an upgrade on:\n' + failed.map(f => `${f.hostName}: ${f.error}`).join('\n'));
+      } else if (!(out.started || []).length) {
+        alert('No host is running older associate code — nothing to upgrade.');
+      }
+    } finally {
+      this.upgradeAll.busy = false;
+    }
   },
   // hostUpdates totals a host's pending updates: qup package counts plus duo services with a
   // newer image. Mirrors the manager's overview tally, computed client-side from host modules.

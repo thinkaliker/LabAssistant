@@ -28,7 +28,7 @@
                 <div class="level-item has-text-weight-semibold" x-text="h.name"></div>
                 <div class="level-item is-size-7 has-text-grey" x-text="h.ip"></div>
                 <div class="level-item" x-show="associateStale(h)"><span class="tag is-danger"
-                    :title="`associate build ${h.associateVersion||'unknown'} — the manager deploys ${overview.associateBuild}. Upgrade to pick up module fixes.`">associate
+                    :title="`associate code ${h.associateCodeId||h.associateVersion||'unknown'} — the manager deploys ${overview.associateCodeId||overview.associateBuild}. Upgrade to pick up module fixes.`">associate
                     update required</span></div>
                 <div class="level-item" x-show="hostUpdates(h)>0"><span class="tag is-warning"
                     :title="hostUpdates(h)+' update(s) available'"
@@ -50,7 +50,7 @@
                 <span x-show="h.connMode==='manager_dial'"
                   x-text="' · manager-dial' + (h.connPort ? ' :'+h.connPort : '')"></span>
                 <span class="has-text-danger has-text-weight-semibold" x-show="associateStale(h)"
-                  x-text="' · out of date, manager deploys ' + overview.associateBuild"></span>
+                  x-text="' · out of date, manager deploys ' + (overview.associateCodeId || overview.associateBuild)"></span>
               </p>
               <div class="notification is-danger is-light py-2 px-3 is-size-7" x-show="associateStale(h)">
                 This host runs an older associate than the manager deploys, so module fixes shipped with the manager

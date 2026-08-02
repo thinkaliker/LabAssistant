@@ -188,3 +188,38 @@
     </div>
   </div>
 
+  <!-- Bulk associate upgrade modal -->
+  <div class="modal" :class="upgradeAll.open && 'is-active'">
+    <div class="modal-background" @click="upgradeAll.open=false"></div>
+    <div class="modal-card">
+      <header class="modal-card-head">
+        <p class="modal-card-title" x-text="'Upgrade '+staleAssociates()+' associate'+(staleAssociates()===1?'':'s')">
+        </p>
+      </header>
+      <section class="modal-card-body">
+        <p class="mb-3">Uploads this manager's associate (and helper) binaries to every host running older associate
+          code, and restarts each service. Hosts keep their certificates and bundles — only the code changes.</p>
+        <p class="mb-3 is-size-7 has-text-grey">Hosts already running the same associate code are skipped, even when
+          the manager itself is newer: a manager update that changed only the dashboard or manager-side code leaves
+          them alone.</p>
+        <p class="notification is-warning is-light">Each associate restarts, so jobs running on those hosts are
+          interrupted and the hosts drop offline for a few seconds while they reconnect.</p>
+        <div class="field"><label class="label">SSH User <span class="has-text-grey is-size-7">(fallback only — hosts
+              with a stored SSH user keep it)</span></label>
+          <div class="control"><input class="input" x-model="upgradeAll.sshUser"></div>
+        </div>
+        <div class="field"><label class="label">SSH Password <span class="has-text-grey is-size-7">(optional — leave
+              blank to use the manager's SSH key or agent; not stored)</span></label>
+          <div class="control"><input class="input" type="password" x-model="upgradeAll.sshPassword"
+              @keyup.enter="submitUpgradeAll()"></div>
+        </div>
+        <p class="help is-danger" x-show="upgradeAll.error" x-text="upgradeAll.error"></p>
+      </section>
+      <footer class="modal-card-foot">
+        <button class="button is-warning" :class="upgradeAll.busy && 'is-loading'" :disabled="upgradeAll.busy"
+          @click="submitUpgradeAll()">Upgrade all</button>
+        <button class="button" @click="upgradeAll.open=false">Cancel</button>
+      </footer>
+    </div>
+  </div>
+

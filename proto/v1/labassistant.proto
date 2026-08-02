@@ -73,6 +73,11 @@ message Hello {
   string host_id = 2;                // identity; must match the mTLS client cert
   string associate_version = 3;
   repeated ModuleInfo modules = 4;   // manifests + detection at connect time
+  // Fingerprint of the source this associate was built from (see internal/codefp). Unlike
+  // associate_version it moves only when code the associate compiles changes, so the manager
+  // can tell a real upgrade from a commit that touched only the dashboard. Empty from an
+  // unstamped build, and from associates older than this field.
+  string code_id = 5;
 }
 
 message HelloAck {

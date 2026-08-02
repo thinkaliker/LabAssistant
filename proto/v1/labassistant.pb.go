@@ -619,8 +619,13 @@ type Hello struct {
 	HostId           string                 `protobuf:"bytes,2,opt,name=host_id,json=hostId,proto3" json:"host_id,omitempty"`                             // identity; must match the mTLS client cert
 	AssociateVersion string                 `protobuf:"bytes,3,opt,name=associate_version,json=associateVersion,proto3" json:"associate_version,omitempty"`
 	Modules          []*ModuleInfo          `protobuf:"bytes,4,rep,name=modules,proto3" json:"modules,omitempty"` // manifests + detection at connect time
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Fingerprint of the source this associate was built from (see internal/codefp). Unlike
+	// associate_version it moves only when code the associate compiles changes, so the manager
+	// can tell a real upgrade from a commit that touched only the dashboard. Empty from an
+	// unstamped build, and from associates older than this field.
+	CodeId        string `protobuf:"bytes,5,opt,name=code_id,json=codeId,proto3" json:"code_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Hello) Reset() {
@@ -679,6 +684,13 @@ func (x *Hello) GetModules() []*ModuleInfo {
 		return x.Modules
 	}
 	return nil
+}
+
+func (x *Hello) GetCodeId() string {
+	if x != nil {
+		return x.CodeId
+	}
+	return ""
 }
 
 type HelloAck struct {
@@ -1792,12 +1804,13 @@ const file_v1_labassistant_proto_rawDesc = "" +
 	"\bcert_pem\x18\x01 \x01(\fR\acertPem\x12\x17\n" +
 	"\akey_pem\x18\x02 \x01(\fR\x06keyPem\"#\n" +
 	"\tUninstall\x12\x16\n" +
-	"\x06reason\x18\x01 \x01(\tR\x06reason\"\xaf\x01\n" +
+	"\x06reason\x18\x01 \x01(\tR\x06reason\"\xc8\x01\n" +
 	"\x05Hello\x12)\n" +
 	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12\x17\n" +
 	"\ahost_id\x18\x02 \x01(\tR\x06hostId\x12+\n" +
 	"\x11associate_version\x18\x03 \x01(\tR\x10associateVersion\x125\n" +
-	"\amodules\x18\x04 \x03(\v2\x1b.labassistant.v1.ModuleInfoR\amodules\"\xa8\x01\n" +
+	"\amodules\x18\x04 \x03(\v2\x1b.labassistant.v1.ModuleInfoR\amodules\x12\x17\n" +
+	"\acode_id\x18\x05 \x01(\tR\x06codeId\"\xa8\x01\n" +
 	"\bHelloAck\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12)\n" +
 	"\x10protocol_version\x18\x02 \x01(\rR\x0fprotocolVersion\x12\x18\n" +

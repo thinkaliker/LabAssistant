@@ -62,6 +62,7 @@ func (a *Associate) hello(ctx context.Context) *pb.Hello {
 		ProtocolVersion:  ProtocolVersion,
 		HostId:           a.bundle.HostID,
 		AssociateVersion: buildVersion(),
+		CodeId:           build.CodeID(),
 		Modules:          mods,
 	}
 }

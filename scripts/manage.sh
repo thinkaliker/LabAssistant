@@ -35,18 +35,35 @@ SUDO=""
 service_installed() { [[ -f "$UNIT_PATH" ]]; }
 require_service()   { service_installed || die "$SERVICE_NAME is not installed. Run: $0 install-service"; }
 
+# The associate carries a fingerprint of its own source, stamped at link time. The manager
+# reads it back out of bin/associate to decide which hosts are genuinely running older
+# associate code — a git revision cannot answer that, because it moves on every commit to the
+# repo, including ones the associate never compiles. See internal/codefp.
+#
+# An unstamped build still works: the manager falls back to comparing revisions, which is
+# noisier (every commit marks the fleet stale) but never wrong in the unsafe direction.
+associate_ldflags() {
+  local id
+  id="$(go run ./cmd/codeid 2>/dev/null)" || {
+    warn "could not compute the associate code fingerprint; hosts will be compared by commit instead"
+    return 0
+  }
+  printf -- '-X github.com/thinkaliker/labassistant/internal/build.codeID=%s' "$id"
+}
+
 build() {
-  local what="${1:-all}"
+  local what="${1:-all}" ld
   cd "$CHECKOUT"
   mkdir -p bin
+  ld="$(associate_ldflags)"
   case "$what" in
     manager)   log "Building manager...";        go build -o bin/manager ./cmd/manager ;;
-    associate) log "Building associate...";       go build -o bin/associate ./cmd/associate ;;
+    associate) log "Building associate...";       go build -ldflags "$ld" -o bin/associate ./cmd/associate ;;
     helper)    log "Building associatehelper..."; go build -o bin/associatehelper ./cmd/associatehelper ;;
     all)
       log "Building manager, associate, associatehelper..."
       go build -o bin/manager ./cmd/manager
-      go build -o bin/associate ./cmd/associate
+      go build -ldflags "$ld" -o bin/associate ./cmd/associate
       go build -o bin/associatehelper ./cmd/associatehelper
       ;;
     *) die "unknown build target: $what (want: manager|associate|helper|all)" ;;

@@ -166,6 +166,7 @@ Non-2xx responses use:
 | `PUT /hosts/{id}` | Update editable host fields (ip, tailscale, ssh_user, enabled modules). |
 | `DELETE /hosts/{id}` | Remove a host (revokes its cert). |
 | `POST /hosts/{id}/upgrade` | Push the manager's current associate build to the host and restart it (keeps cert/bundle). Returns `{ "jobId": "..." }`. |
+| `POST /hosts/upgrade-stale` | Same, for every host running older *associate code* — hosts whose associate code already matches are skipped, even when the manager is newer. Body `{ "sshUser", "sshPassword" }` is optional; `sshUser` is a fallback only, used for hosts with none stored. Returns `{ "started": [{ "hostId", "hostName", "jobId" }], "failed": [{ "hostId", "hostName", "error" }] }` — one job per host, failures reported per host rather than aborting the batch. |
 | `GET /hosts/{id}/status` | Live health and per-module states. |
 | `GET /hosts/{id}/modules` | Enabled modules with manifests and detection results. |
 | `POST /hosts/{id}/modules/{name}:enable` | Enable a module on the host. |

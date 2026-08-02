@@ -42,7 +42,9 @@
             x-text="staleAssociates() === 1
               ? '1 host runs an older associate than this manager deploys — its module fixes are not in effect.'
               : staleAssociates() + ' hosts run an older associate than this manager deploys — their module fixes are not in effect.'"></span>
-          <button class="button is-small is-danger ml-3" @click="page='hosts'">Review hosts</button>
+          <button class="button is-small is-danger ml-3" @click="openUpgradeAll()"
+            x-text="'Upgrade all (' + staleAssociates() + ')'"></button>
+          <button class="button is-small is-danger is-light ml-2" @click="page='hosts'">Review hosts</button>
         </div>
       </template>
 

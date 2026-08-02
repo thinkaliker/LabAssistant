@@ -66,6 +66,10 @@ type App struct {
 	// stamp or the configured path is an {os}/{arch} template, in which case the dashboard
 	// flags nothing as out of date.
 	assocBuild string
+	// assocCodeID is the source fingerprint of that same binary — the value staleness is
+	// decided on, since it moves only when associate code changes. Empty when the binary was
+	// built without the stamp, in which case the comparison falls back to assocBuild.
+	assocCodeID string
 }
 
 // NewApp builds the manager from its on-disk layout and configuration.
@@ -179,22 +183,23 @@ func NewApp(layout paths.Layout, cfg config.Config) (*App, error) {
 		layout: layout,
 		// instance changes every process start; the dashboard polls it to notice when the
 		// manager restarted underneath it (e.g. after a self-update) and prompt re-login.
-		instance:   fmt.Sprintf("%d", time.Now().UnixNano()),
-		ca:         authority,
-		store:      store,
-		jobs:       jr,
-		events:     ev,
-		hub:        h,
-		dialer:     dialer,
-		qm:         qm,
-		runner:     runner,
-		scheduler:  sched,
-		aud:        aud,
-		settings:   set,
-		modconfig:  mc,
-		sessions:   api.NewSessions(),
-		backup:     &api.Backup{Layout: layout},
-		assocBuild: build.RevisionOfFile(assocBin),
+		instance:    fmt.Sprintf("%d", time.Now().UnixNano()),
+		ca:          authority,
+		store:       store,
+		jobs:        jr,
+		events:      ev,
+		hub:         h,
+		dialer:      dialer,
+		qm:          qm,
+		runner:      runner,
+		scheduler:   sched,
+		aud:         aud,
+		settings:    set,
+		modconfig:   mc,
+		sessions:    api.NewSessions(),
+		backup:      &api.Backup{Layout: layout},
+		assocBuild:  build.RevisionOfFile(assocBin),
+		assocCodeID: build.CodeIDOfFile(assocBin),
 	}, nil
 }
 
