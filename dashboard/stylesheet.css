@@ -7,6 +7,12 @@
     gap: 0.75rem;
 }
 
+/* Log viewer: wider than Bulma's 640px modal card so long log lines fit. */
+.log-modal-card {
+    width: 1100px;
+    max-width: calc(100vw - 2rem);
+}
+
 /* Prevent a flash of unstyled modal markup before Bulma's stylesheet loads.
     Bulma normally hides inactive modals; replicate that inline so it applies
     on first paint. */
