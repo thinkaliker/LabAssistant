@@ -25,6 +25,15 @@ func TestClassifyAuth(t *testing.T) {
 		{"sudo rejected the password", errors.New("Process exited with status 1: sudo authentication failed (check the SSH/sudo password, or grant passwordless sudo)"), true},
 		{"encrypted key, no passphrase", errors.New("ssh: this private key is passphrase protected: incorrect passphrase supplied"), true},
 
+		// The bulk upgrade's first pass sends no password, so sshRun adds no `sudo -S -v`
+		// preamble and the script's plain `sudo` calls fail on any host without a passwordless
+		// rule. These are what such a host actually returns — a healthy host that needs asking,
+		// not a broken one. Missing them made those hosts fail outright with "status 1".
+		{"sudo has no tty", errors.New("upgrade: Process exited with status 1: sudo: no tty present and no askpass program specified"), true},
+		{"sudo wants a terminal", errors.New("upgrade: Process exited with status 1: sudo: a terminal is required to read the password; either use the -S option to read from standard input or configure an askpass helper"), true},
+		{"sudo password required", errors.New("upgrade: Process exited with status 1: sudo: a password is required"), true},
+		{"sudo retry exhausted", errors.New("upgrade: Process exited with status 1: Sorry, try again."), true},
+
 		// No password fixes any of these, so the operator must not be prompted for one.
 		{"host is down", errors.New("ssh dial 10.0.0.5:22: dial tcp 10.0.0.5:22: connect: connection refused"), false},
 		{"host key changed", errors.New("ssh: host key mismatch for 10.0.0.5"), false},

@@ -109,7 +109,7 @@ func Run(ctx context.Context, command []string, password string, req Request, em
 		}
 	}
 	if err := cmd.Wait(); err != nil {
-		if !haveResult && isSudoAuthFailure(stderr.String()) {
+		if !haveResult && IsSudoAuthFailure(stderr.String()) {
 			return module.Result{}, ErrSudoPassword
 		}
 		return module.Result{}, fmt.Errorf("helper exited: %w", err)
@@ -120,9 +120,14 @@ func Run(ctx context.Context, command []string, password string, req Request, em
 	return result, nil
 }
 
-// isSudoAuthFailure reports whether sudo's stderr indicates it could not authenticate
-// (no passwordless rule, or a wrong/missing password) rather than the helper itself failing.
-func isSudoAuthFailure(stderr string) bool {
+// IsSudoAuthFailure reports whether sudo's output indicates it could not authenticate
+// (no passwordless rule, or a wrong/missing password) rather than the command itself failing.
+//
+// Exported because the same question is asked over SSH: the quartermaster's install and
+// upgrade scripts run under sudo on the remote host, and a sudo that wants a password there
+// is a prompt to raise, not a broken host. Keeping one list means a phrase learned from one
+// path is understood on both.
+func IsSudoAuthFailure(stderr string) bool {
 	s := strings.ToLower(stderr)
 	for _, m := range []string{
 		"a password is required",
@@ -130,6 +135,9 @@ func isSudoAuthFailure(stderr string) bool {
 		"incorrect password",
 		"sorry, try again",
 		"no askpass program",
+		// sudo's own wording when it has no tty and no askpass — the exact failure a
+		// password-sudo host produces on a first, credential-free upgrade attempt.
+		"no tty present",
 	} {
 		if strings.Contains(s, m) {
 			return true
