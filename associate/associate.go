@@ -30,6 +30,15 @@ const (
 
 	heartbeatInterval = 30 * time.Second
 	reconnectBackoff  = 5 * time.Second
+
+	// statusInterval is how often each module's status is re-queried and published without
+	// anything asking for it. Status was only ever published at connect and right after an
+	// action, so anything that moved on its own — a container exiting, a transient docker
+	// health of "starting" settling into healthy/unhealthy, a package list changing — stayed
+	// stale in the manager until the next action on that host. Unchanged statuses are not
+	// re-sent (see sendStatus), so an idle host costs one docker/apt query per module here
+	// and no traffic.
+	statusInterval = 60 * time.Second
 )
 
 // Associate is the agent runtime.
@@ -244,19 +253,21 @@ func (a *Associate) runStream(ctx context.Context, cancel context.CancelFunc, st
 	slog.Info("stream established", "host", a.bundle.HostID)
 
 	s := &session{
-		a:      a,
-		stream: stream,
-		ctx:    ctx,
-		cancel: cancel,
-		outbox: make(chan *pb.AssociateMessage, 64),
-		cmds:   make(chan *pb.Command, 16),
-		active: map[string]bool{},
-		logs:   map[string]context.CancelFunc{},
+		a:          a,
+		stream:     stream,
+		ctx:        ctx,
+		cancel:     cancel,
+		outbox:     make(chan *pb.AssociateMessage, 64),
+		cmds:       make(chan *pb.Command, 16),
+		active:     map[string]bool{},
+		logs:       map[string]context.CancelFunc{},
+		lastStatus: map[string][32]byte{},
 	}
 	go s.sendLoop()
 	go s.heartbeatLoop()
 	go s.commandWorker()
 	s.publishStatuses()
+	go s.statusLoop()
 
 	for {
 		msg, err := stream.Recv()
@@ -292,6 +303,9 @@ type session struct {
 
 	logMu sync.Mutex
 	logs  map[string]context.CancelFunc // active log streams by stream id
+
+	statusMu   sync.Mutex
+	lastStatus map[string][32]byte // module -> hash of the last status published this session
 }
 
 func (s *session) sendLoop() {
@@ -312,6 +326,22 @@ func (s *session) send(msg *pb.AssociateMessage) {
 	select {
 	case s.outbox <- msg:
 	case <-s.ctx.Done():
+	}
+}
+
+// statusLoop re-queries every module on a timer so state that changed without an action —
+// a container that died, a health check that settled, packages that became upgradable —
+// reaches the manager on its own. Only changed statuses go on the wire.
+func (s *session) statusLoop() {
+	t := time.NewTicker(statusInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case <-t.C:
+			s.pollStatuses()
+		}
 	}
 }
 

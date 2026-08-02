@@ -2,6 +2,7 @@ package associate
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"log/slog"
 
@@ -76,8 +77,39 @@ func (s *session) publishStatuses() {
 			slog.Warn("module status failed", "module", name, "err", err)
 			continue
 		}
-		s.send(statusUpdate(name, st.Data))
+		s.sendStatus(name, st.Data, true)
 	}
+}
+
+// pollStatuses is the periodic sweep behind statusLoop: re-query every module, but only put
+// the ones that actually changed on the wire. Every status update the manager stores fires a
+// host_updated change, which every connected dashboard turns into a full refresh — sending an
+// identical payload per host per tick would be a refresh storm that shows nothing new.
+func (s *session) pollStatuses() {
+	for _, name := range s.a.order {
+		st, err := s.a.modules[name].Status(s.ctx)
+		if err != nil {
+			slog.Warn("module status failed", "module", name, "err", err)
+			continue
+		}
+		s.sendStatus(name, st.Data, false)
+	}
+}
+
+// sendStatus publishes one module's status and remembers what was sent. force sends even when
+// the payload is unchanged — used wherever something is explicitly waiting on a status (the
+// initial publish, a manager StatusRequest, the re-publish after an action), so a caller never
+// has to reason about whether dedup swallowed its answer.
+func (s *session) sendStatus(name string, data []byte, force bool) {
+	sum := sha256.Sum256(data)
+	s.statusMu.Lock()
+	prev, seen := s.lastStatus[name]
+	s.lastStatus[name] = sum
+	s.statusMu.Unlock()
+	if !force && seen && prev == sum {
+		return
+	}
+	s.send(statusUpdate(name, data))
 }
 
 func (s *session) handle(msg *pb.ManagerMessage) {
@@ -240,22 +272,25 @@ func (s *session) runCommand(cmd *pb.Command) {
 	}
 	if err != nil {
 		s.send(jobResult(cmd.GetJobId(), module.JobFailed, nil, err.Error()))
-		return
-	}
-	s.send(jobResult(cmd.GetJobId(), res.State, res.Data, res.Error))
+	} else {
+		s.send(jobResult(cmd.GetJobId(), res.State, res.Data, res.Error))
 
-	// Elevated actions run in a separate helper process, so any in-memory state they built
-	// (e.g. duo's update-check results) lives in that process, not here. Feed the result back
-	// to this module instance so the Status re-publish below can reflect it.
-	if ing, ok := m.(module.ResultIngestor); ok && res.State == module.JobSucceeded {
-		ing.IngestResult(cmd.GetAction(), res.Data)
+		// Elevated actions run in a separate helper process, so any in-memory state they built
+		// (e.g. duo's update-check results) lives in that process, not here. Feed the result back
+		// to this module instance so the Status re-publish below can reflect it.
+		if ing, ok := m.(module.ResultIngestor); ok && res.State == module.JobSucceeded {
+			ing.IngestResult(cmd.GetAction(), res.Data)
+		}
 	}
 
-	// Re-publish the module's status so the manager reflects any change the action made.
+	// Re-publish the module's status so the manager reflects any change the action made — on
+	// failure too. A failed action still moves external state (a restart that errors part-way
+	// leaves containers stopped or half-started), and skipping the re-publish left the manager
+	// serving the pre-action status until something else asked for one.
 	// For real modules this re-queries external state (docker/apt) regardless of whether
 	// the action ran in-process or in the privileged helper.
 	if st, serr := m.Status(s.ctx); serr == nil {
-		s.send(statusUpdate(cmd.GetModule(), st.Data))
+		s.sendStatus(cmd.GetModule(), st.Data, true)
 	}
 }
 
@@ -268,7 +303,7 @@ func (s *session) onStatusRequest(req *pb.StatusRequest) {
 		if err != nil {
 			continue
 		}
-		s.send(statusUpdate(name, st.Data))
+		s.sendStatus(name, st.Data, true)
 	}
 }
 
