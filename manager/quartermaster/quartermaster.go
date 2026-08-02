@@ -5,6 +5,8 @@ package quartermaster
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -242,7 +244,15 @@ func (q *Quartermaster) runUpgrade(ctx context.Context, host state.Host, req Upg
 	}, emit)
 	if err != nil {
 		emit("error: " + err.Error())
-		q.jobs.SetResult(jobID, module.JobFailed, nil, err.Error())
+		// authRequired travels on the job result rather than being left for the dashboard to
+		// guess from the error text. A bulk upgrade across a fleet with per-host credentials
+		// hits this constantly, and it is the one failure worth stopping to ask the operator
+		// about — everything else it should report and move past.
+		var result json.RawMessage
+		if errors.Is(err, ErrAuth) {
+			result = json.RawMessage(`{"authRequired":true}`)
+		}
+		q.jobs.SetResult(jobID, module.JobFailed, result, err.Error())
 		q.aud.Record("host_upgrade_failed", host.ID, "user", "associate upgrade failed: "+err.Error(), nil)
 		return
 	}

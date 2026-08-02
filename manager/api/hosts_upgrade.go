@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 	"sort"
 
@@ -27,17 +26,6 @@ func (d Deps) staleHosts() []state.Host {
 	return out
 }
 
-// upgradeStaleRequest carries SSH credentials used for every host in the batch. They are
-// transient (used only for the SSH bootstrap) and never persisted.
-//
-// One credential pair for the whole fleet is the common homelab case (one admin user, one key).
-// A host with its own stored sshUser keeps it: sshUser here is only a fallback for hosts that
-// have none, so a batch cannot silently retarget a host to the wrong account.
-type upgradeStaleRequest struct {
-	SSHUser     string `json:"sshUser"`
-	SSHPassword string `json:"sshPassword"`
-}
-
 // upgradeStale pushes the manager's associate build to every host that is running different
 // associate code, and returns one progress job per host.
 //
@@ -45,28 +33,21 @@ type upgradeStaleRequest struct {
 // several commits newer: an upgrade restarts the associate and interrupts whatever it is
 // running, which is not a cost worth paying to redeploy identical code.
 //
+// It takes no credentials, deliberately. Hosts in a fleet do not necessarily share a login, so
+// one password for the batch would be wrong for most of them; each host is tried with the
+// manager's key/agent and its own stored SSH user, and the ones that come back needing a login
+// are retried individually through POST /hosts/{id}/upgrade. A job that failed that way is
+// marked authRequired in its result so the caller can tell it apart from a real breakage.
+//
 // Failures are reported per host rather than aborting the batch. A single host with no SSH
 // path (a local-mode associate, say) must not strand the rest of the fleet on old code.
 func (d Deps) upgradeStale(w http.ResponseWriter, r *http.Request) {
-	var req upgradeStaleRequest
-	if r.ContentLength != 0 {
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeErr(w, http.StatusBadRequest, "bad_request", "invalid JSON")
-			return
-		}
-	}
-
 	started := []map[string]string{}
 	failed := []map[string]string{}
 	for _, h := range d.staleHosts() {
-		user := h.SSHUser
-		if user == "" {
-			user = req.SSHUser
-		}
 		jobID, err := d.QM.Upgrade(quartermaster.UpgradeRequest{
-			HostID:      h.ID,
-			SSHUser:     user,
-			SSHPassword: req.SSHPassword,
+			HostID:  h.ID,
+			SSHUser: h.SSHUser,
 		})
 		if err != nil {
 			failed = append(failed, map[string]string{"hostId": h.ID, "hostName": h.Name, "error": err.Error()})

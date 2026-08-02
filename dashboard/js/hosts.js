@@ -14,9 +14,13 @@ export const hosts = {
   uninstall: { open: false, hostId: '', hostName: '', online: false, sshUser: '', sshPassword: '' },
   revive: { open: false, hostId: '', hostName: '', sshUser: '', sshPassword: '' },
   upgrade: { open: false, hostId: '', hostName: '', sshUser: '', sshPassword: '' },
-  // Bulk associate upgrade. sshUser here is only a fallback for hosts with no stored user, so
-  // opening the modal cannot retarget a host that already knows its own account.
-  upgradeAll: { open: false, sshUser: '', sshPassword: '', busy: false, error: '' },
+  // Bulk associate upgrade. The first pass carries no credentials at all: it relies on the
+  // manager's SSH key/agent and each host's stored user. Hosts that fail on credentials are
+  // collected into credQueue and asked about one at a time, because a fleet does not
+  // necessarily share one login and a single password box would be a lie.
+  upgradeAll: { open: false, busy: false, error: '' },
+  credQueue: [], // [{hostId, hostName}] awaiting credentials, oldest first
+  credPrompt: { open: false, hostId: '', hostName: '', sshUser: '', sshPassword: '', error: '', busy: false, remaining: 0 },
 
   // sortedHosts returns a stable copy of hosts ordered by the chosen key so the list
   // doesn't reshuffle as the backend returns hosts in map/enroll order.
@@ -130,41 +134,133 @@ export const hosts = {
     if (jobId) this.watchJob(jobId, 'upgrade associate ' + hostName);
   },
   openUpgradeAll() {
-    this.upgradeAll = { open: true, sshUser: '', sshPassword: '', busy: false, error: '' };
+    this.upgradeAll = { open: true, busy: false, error: '' };
+  },
+  // jobAuthRequired reports whether a finished upgrade job failed for want of credentials, as
+  // opposed to failing for a reason no password will fix. The manager decides this and puts
+  // authRequired on the job result; reading it back beats sniffing the error text here, which
+  // would drift the moment either side reworded anything.
+  //
+  // Fetched per failed host rather than carried on the watchJob promise, which resolves with a
+  // state string only — one extra request, and only for hosts that actually failed.
+  async jobAuthRequired(jobId) {
+    try {
+      const r = await fetch(`/api/v1/jobs/${jobId}`);
+      if (!r.ok) return false;
+      const j = await r.json();
+      const res = typeof j.result === 'string' ? JSON.parse(j.result) : j.result;
+      return !!(res && res.authRequired);
+    } catch (e) { return false; }
   },
   // submitUpgradeAll pushes the manager's associate build to every host the manager considers
   // stale. The manager picks the targets, not this code: the button would otherwise upgrade a
   // set that disagreed with the count next to it whenever the two staleness rules drifted.
   //
-  // Each host gets its own job, and each is adopted into the docked panel, so a fleet upgrade
-  // is watchable host by host and a single failure is visible without hiding the rest.
+  // No credentials go with the first pass. Hosts differ, so anything typed up front would be
+  // wrong for most of them; instead every host is tried with the manager's key/agent and its
+  // own stored user, and only the ones that come back needing a login get asked about.
+  //
+  // Each host gets its own job in the docked panel, so the fleet upgrade stays watchable host
+  // by host and one failure never hides the rest.
   async submitUpgradeAll() {
     this.upgradeAll.busy = true;
     this.upgradeAll.error = '';
+    let started;
     try {
-      const body = { sshUser: this.upgradeAll.sshUser, sshPassword: this.upgradeAll.sshPassword };
-      const r = await fetch('/api/v1/hosts/upgrade-stale', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-      });
+      const r = await fetch('/api/v1/hosts/upgrade-stale', { method: 'POST' });
       if (!r.ok) {
         const e = await r.json().catch(() => ({}));
         this.upgradeAll.error = 'bulk upgrade failed: ' + ((e.error && e.error.message) || r.status);
         return;
       }
       const out = await r.json().catch(() => ({}));
+      started = out.started || [];
+      const failed = out.failed || [];
       this.upgradeAll.open = false;
       await this.refresh();
-      for (const s of (out.started || [])) this.watchJob(s.jobId, 'upgrade associate ' + s.hostName);
-      // Hosts the manager could not start an upgrade for (no SSH path, host vanished). Silence
-      // here would read as "all done" while those hosts stayed on old code.
-      const failed = out.failed || [];
+      // Hosts the manager could not even start on (no SSH path, host vanished). No password
+      // fixes these, so they are reported once and not queued for a prompt.
       if (failed.length) {
         alert('Could not start an upgrade on:\n' + failed.map(f => `${f.hostName}: ${f.error}`).join('\n'));
-      } else if (!(out.started || []).length) {
-        alert('No host is running older associate code — nothing to upgrade.');
+      }
+      if (!started.length) {
+        if (!failed.length) alert('No host is running older associate code — nothing to upgrade.');
+        return;
       }
     } finally {
       this.upgradeAll.busy = false;
+    }
+
+    // Watch every job concurrently — they run in parallel on the manager, so awaiting them in
+    // sequence would report the first host's outcome long after the last host had finished.
+    const needCreds = [];
+    await Promise.all(started.map(async s => {
+      const state = await this.watchJob(s.jobId, 'upgrade associate ' + s.hostName,
+        { hostId: s.hostId, module: 'quartermaster', action: 'upgrade' });
+      if (state === 'failed' && await this.jobAuthRequired(s.jobId)) {
+        needCreds.push({ hostId: s.hostId, hostName: s.hostName });
+      }
+    }));
+    await this.refresh();
+    this.queueCredPrompts(needCreds);
+  },
+  // queueCredPrompts starts asking for credentials, one host at a time. A modal per host at
+  // once would be unusable on a fleet; a queue lets the operator work through them, and skip
+  // any host they do not have a login for without abandoning the rest.
+  queueCredPrompts(hosts) {
+    if (!hosts.length) return;
+    // Stable order, so the queue reads the same way as the hosts list.
+    this.credQueue = [...hosts].sort((a, b) => (a.hostName || '').localeCompare(b.hostName || ''));
+    this.nextCredPrompt();
+  },
+  nextCredPrompt() {
+    const next = this.credQueue.shift();
+    if (!next) { this.credPrompt.open = false; return; }
+    const h = this.hosts.find(x => x.id === next.hostId) || {};
+    this.credPrompt = {
+      open: true, hostId: next.hostId, hostName: next.hostName,
+      // Prefilled with the host's stored user: the password is usually the only missing part,
+      // and retyping a username the manager already knows is pure friction.
+      sshUser: h.sshUser || '', sshPassword: '',
+      error: '', busy: false, remaining: this.credQueue.length,
+    };
+  },
+  skipCredPrompt() { this.nextCredPrompt(); },
+  // submitCredPrompt retries one host with the credentials just given. A second credentials
+  // failure re-opens the same host with the error shown rather than advancing the queue —
+  // a typo must not cost the host its turn.
+  async submitCredPrompt() {
+    const { hostId, hostName, sshUser, sshPassword } = this.credPrompt;
+    this.credPrompt.busy = true;
+    this.credPrompt.error = '';
+    try {
+      const r = await fetch(`/api/v1/hosts/${hostId}/upgrade`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sshUser, sshPassword }),
+      });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        this.credPrompt.error = 'upgrade failed: ' + ((e.error && e.error.message) || r.status);
+        return;
+      }
+      const { jobId } = await r.json().catch(() => ({}));
+      if (!jobId) { this.credPrompt.error = 'the manager started no job for this host.'; return; }
+      const state = await this.watchJob(jobId, 'upgrade associate ' + hostName,
+        { hostId, module: 'quartermaster', action: 'upgrade' });
+      await this.refresh();
+      if (state === 'failed' && await this.jobAuthRequired(jobId)) {
+        this.credPrompt.error = 'Those credentials were rejected. Try again, or skip this host.';
+        this.credPrompt.sshPassword = '';
+        return;
+      }
+      if (state === 'failed') {
+        // Not a credentials problem this time — nothing typed here will fix it, so move on
+        // and leave the job's log in the panel as the record of what went wrong.
+        alert(`${hostName}: upgrade failed for a reason credentials will not fix — see its job log.`);
+      }
+      this.nextCredPrompt();
+    } finally {
+      this.credPrompt.busy = false;
     }
   },
   // hostUpdates totals a host's pending updates: qup package counts plus duo services with a

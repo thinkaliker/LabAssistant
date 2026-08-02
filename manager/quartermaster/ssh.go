@@ -126,7 +126,7 @@ func (s SSHInstaller) dial(p InstallParams) (*ssh.Client, error) {
 		}
 	}()
 	if len(methods) == 0 {
-		return nil, fmt.Errorf("no SSH auth method (no usable key or agent, and no password given)")
+		return nil, classifyAuth(fmt.Errorf("no SSH auth method (no usable key or agent, and no password given)"))
 	}
 	cfg := &ssh.ClientConfig{
 		User:            p.SSHUser,
@@ -137,7 +137,9 @@ func (s SSHInstaller) dial(p InstallParams) (*ssh.Client, error) {
 	addr := net.JoinHostPort(p.IP, strconv.Itoa(port))
 	client, err := ssh.Dial("tcp", addr, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("ssh dial %s: %w", addr, err)
+		// Classified here, at the one place a login is actually rejected, so every caller
+		// (install, revive, uninstall, upgrade) reports a credentials problem the same way.
+		return nil, classifyAuth(fmt.Errorf("ssh dial %s: %w", addr, err))
 	}
 	return client, nil
 }
@@ -524,7 +526,9 @@ func sshRun(client *ssh.Client, script, sudoPass string) error {
 	sess.Stderr = &out
 	if err := sess.Run("bash -c " + shellQuote(script)); err != nil {
 		if msg := lastLines(out.String(), 4); msg != "" {
-			return fmt.Errorf("%w: %s", err, msg)
+			// Classified on the combined text: the exit status alone says nothing, and the
+			// sudo rejection this needs to recognise only exists in the script's output.
+			return classifyAuth(fmt.Errorf("%w: %s", err, msg))
 		}
 		return err
 	}
