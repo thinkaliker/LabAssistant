@@ -89,7 +89,9 @@ func New() *Module {
 
 func (m *Module) Manifest() module.Manifest {
 	params := json.RawMessage(`{"type":"object","properties":{"stack":{"type":"string"},"service":{"type":"string"}},"required":["stack"]}`)
-	optStack := json.RawMessage(`{"type":"object","properties":{"stack":{"type":"string"}}}`)
+	// check-updates takes an optional scope: no stack = the whole host, stack = one project,
+	// stack+service = one image.
+	optTarget := json.RawMessage(`{"type":"object","properties":{"stack":{"type":"string"},"service":{"type":"string"}}}`)
 	composeParams := json.RawMessage(`{"type":"object","properties":{"stack":{"type":"string"},"content":{"type":"string"}},"required":["stack","content"]}`)
 	mk := func(name, desc string) module.ActionSpec {
 		return module.ActionSpec{
@@ -142,7 +144,7 @@ func (m *Module) Manifest() module.Manifest {
 			{
 				Name:           "check-updates",
 				Description:    "Check for newer container images without pulling.",
-				ParamsSchema:   optStack,
+				ParamsSchema:   optTarget,
 				Privilege:      module.PrivilegeElevated,
 				ReadOnly:       true,
 				DefaultTimeout: 5 * time.Minute,

@@ -51,6 +51,15 @@
                         <td><span class="tag is-warning" x-show="svcUpdate(sv)">update</span></td>
                         <td class="has-text-right">
                           <div class="buttons are-small is-right">
+                            <button class="button" :class="svcChecking(st,sv) && 'is-loading'"
+                              :disabled="!hostOnline(st.hostId) || svcChecking(st,sv)"
+                              title="Check just this image for a newer version"
+                              @click="checkService(st,sv)">check</button>
+                            <button class="button is-warning" x-show="svcUpdate(sv)" x-cloak
+                              :class="svcUpdating(st,sv) && 'is-loading'"
+                              :disabled="!hostOnline(st.hostId) || hostUpdating(st.hostId)"
+                              title="Pull the newer image and recreate this service"
+                              @click="updateSvc(st,sv)">update</button>
                             <button class="button is-success" @click="svcAction(st,sv.name,'start')">start</button>
                             <button class="button is-danger" @click="svcAction(st,sv.name,'stop')">stop</button>
                             <button class="button is-warning" @click="svcAction(st,sv.name,'restart')">restart</button>

@@ -287,8 +287,16 @@ func (m *Module) update(ctx context.Context, p actionParams, emit func(module.Ev
 // checkUpdates compares each compose service image against its registry and records which have
 // a newer image available. It never installs anything. Images it cannot compare are left
 // unflagged (reported as "unknown") so there are no false positives.
+//
+// Scope narrows with the params: no stack checks every compose image on the host, a stack
+// checks that project, and stack+service checks just that service's image. A registry read
+// per image is the slow part, so a one-service check is the cheap way to re-verify a single
+// container without re-walking the host.
 func (m *Module) checkUpdates(ctx context.Context, p actionParams, emit func(module.Event)) (module.Result, error) {
 	emit(module.Event{Kind: module.EventState, State: module.JobRunning})
+	if p.Service != "" && p.Stack == "" {
+		return module.Result{State: module.JobFailed, Error: "service requires a stack"}, nil
+	}
 	ctrs, err := dockerContainers(ctx)
 	if err != nil {
 		return module.Result{State: module.JobFailed, Error: err.Error()}, nil
@@ -302,11 +310,17 @@ func (m *Module) checkUpdates(ctx context.Context, p actionParams, emit func(mod
 		if p.Stack != "" && c.label("com.docker.compose.project") != p.Stack {
 			continue
 		}
+		if p.Service != "" && c.label("com.docker.compose.service") != p.Service {
+			continue
+		}
 		if c.Image == "" || seen[c.Image] {
 			continue
 		}
 		seen[c.Image] = true
 		images = append(images, c.Image)
+	}
+	if len(images) == 0 && p.Service != "" {
+		return module.Result{State: module.JobFailed, Error: "no matching containers"}, nil
 	}
 
 	results := map[string]imageUpdate{}

@@ -8,6 +8,8 @@ let composeCM = null;
 export const services = {
   services: { stacks: [] },
   compose: { open: false, hostId: '', stack: '', path: '', multiFile: false, loading: false, busy: false, error: '', status: '' },
+  checkingServices: [], // "hostId/stack/service" keys with an in-flight single-image check
+  updatingServices: [], // same keys, for an in-flight single-service pull/recreate
 
   // sortByHost orders any host-tagged list (items carry hostId/hostName) by the same
   // hostSort key used for the Hosts page, so Services and Updates stay in sync. label(item)
@@ -29,6 +31,53 @@ export const services = {
   svcClass(sv) {
     if (sv.health) return { healthy: 'is-success', unhealthy: 'is-danger', starting: 'is-warning' }[sv.health] || 'is-info';
     return this.statusClass(sv.status);
+  },
+  // ---- per-service update check ----
+  // The Updates page only checks a whole host (qup + every duo image), which is minutes of
+  // registry reads when the question is "is this one container stale?". checkService scopes
+  // duo check-updates to one stack/service so a single image can be re-checked on its own.
+  //
+  // Keyed by host+stack+service rather than a flag on the service object: the projections are
+  // replaced wholesale on every refresh, so any state stored on a row is lost mid-check.
+  svcKey(st, sv) { return st.hostId + '/' + st.name + '/' + sv.name; },
+  svcChecking(st, sv) { return this.checkingServices.includes(this.svcKey(st, sv)); },
+  async checkService(st, sv) {
+    const key = this.svcKey(st, sv);
+    if (this.svcChecking(st, sv)) return;
+    this.checkingServices.push(key);
+    try {
+      const out = await this.dispatchSilent(st.hostId, 'duo', 'check-updates', { stack: st.name, service: sv.name });
+      // Watched, not silent: this is a check the user explicitly asked for on one image, so the
+      // log ("up to date" / "update available") is the answer they are waiting on. Awaiting the
+      // job before refreshing is what makes a newly-found update actually render — a
+      // fire-and-forget dispatch left the row unchanged and the button looking dead.
+      if (out && out.jobId) {
+        await this.watchJob(out.jobId, `duo check-updates ${st.name}/${sv.name}`,
+          { hostId: st.hostId, module: 'duo', action: 'check-updates' });
+      }
+      await this.refresh();
+    } finally {
+      this.checkingServices = this.checkingServices.filter(x => x !== key);
+    }
+  },
+  // updateSvc pulls and recreates one service. It routes through runHostUpdates so a single
+  // service gets the same treatment as the Updates page: the host is marked busy for the
+  // duration (duo serializes per host anyway), the job streams into the docked panel, and a
+  // policy that gates the destructive update behind an approval surfaces the banner.
+  //
+  // The row spinner is tracked separately from that host-wide busy flag so only the service
+  // actually being updated spins, while every other row on the host reads as disabled — a
+  // click there would be swallowed by runHostUpdates' guard, so it must not look clickable.
+  svcUpdating(st, sv) { return this.updatingServices.includes(this.svcKey(st, sv)); },
+  async updateSvc(st, sv) {
+    const key = this.svcKey(st, sv);
+    if (this.svcUpdating(st, sv) || this.hostUpdating(st.hostId)) return;
+    this.updatingServices.push(key);
+    try {
+      await this.updateService({ hostId: st.hostId, stack: st.name, service: sv.name });
+    } finally {
+      this.updatingServices = this.updatingServices.filter(x => x !== key);
+    }
   },
   // ---- compose editor ----
   // editCompose reads the file first and only opens the side panel once that succeeds. If the
