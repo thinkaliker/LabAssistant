@@ -36,6 +36,16 @@ var authPhrases = []string{
 	"sudo authentication failed",    // sshRun's own `sudo -S -v` probe, i.e. the password was wrong
 	"incorrect passphrase",          // encrypted private key, no/blank passphrase given
 	"decryption password incorrect", // same, from another key format
+
+	// A rejected login does not always come back as a rejection. The manager offers every key
+	// its agent holds plus the ~/.ssh defaults, so on a host that accepts none of them sshd's
+	// MaxAuthTries (6 by default) trips first and the server disconnects mid-handshake. The
+	// result is one of the messages below rather than "unable to authenticate" — which is
+	// exactly what a host with a different user or no installed key produces, and why those
+	// hosts failed outright instead of asking.
+	"too many authentication failures",
+	"no more authentication methods available",
+	"handshake failed: eof", // server hung up during auth instead of answering
 }
 
 // classifyAuth wraps err with ErrAuth when it reads as a credentials problem, and returns it

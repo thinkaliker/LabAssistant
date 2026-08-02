@@ -34,6 +34,13 @@ func TestClassifyAuth(t *testing.T) {
 		{"sudo password required", errors.New("upgrade: Process exited with status 1: sudo: a password is required"), true},
 		{"sudo retry exhausted", errors.New("upgrade: Process exited with status 1: Sorry, try again."), true},
 
+		// The manager offers every agent key plus the ~/.ssh defaults, so a host that accepts
+		// none of them trips sshd's MaxAuthTries before running out of methods locally. The
+		// server disconnects and the rejection never arrives in the form above.
+		{"max auth tries tripped", errors.New("ssh dial 10.0.0.5:22: ssh: handshake failed: ssh: disconnect, reason 2: Too many authentication failures"), true},
+		{"client ran out of methods", errors.New("ssh: handshake failed: ssh: no more authentication methods available"), true},
+		{"server hung up mid-auth", errors.New("ssh dial 10.0.0.5:22: ssh: handshake failed: EOF"), true},
+
 		// No password fixes any of these, so the operator must not be prompted for one.
 		{"host is down", errors.New("ssh dial 10.0.0.5:22: dial tcp 10.0.0.5:22: connect: connection refused"), false},
 		{"host key changed", errors.New("ssh: host key mismatch for 10.0.0.5"), false},

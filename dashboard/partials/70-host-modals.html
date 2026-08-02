@@ -217,22 +217,31 @@
     </div>
   </div>
 
-  <!-- Per-host credential prompt, shown for each host whose upgrade was rejected for want of a
-       login. One host at a time: a fleet does not necessarily share one account, and a single
-       password box up front would be wrong for most of it. -->
+  <!-- Per-host retry prompt, shown for each host whose bulk upgrade failed. One host at a time:
+       a fleet does not necessarily share one account, and a single password box up front would
+       be wrong for most of it. Hosts the manager recognised as a login problem come first; the
+       rest are offered anyway, because the alternative is a host that failed with no way back
+       in when the error text is one the manager has not learned to recognise. -->
   <div class="modal" :class="credPrompt.open && 'is-active'">
     <div class="modal-background" @click="skipCredPrompt()"></div>
     <div class="modal-card">
       <header class="modal-card-head">
-        <p class="modal-card-title" x-text="'SSH credentials for '+credPrompt.hostName"></p>
+        <p class="modal-card-title" x-text="'Retry upgrade on '+credPrompt.hostName"></p>
       </header>
       <section class="modal-card-body">
-        <p class="mb-3">The associate upgrade on <strong x-text="credPrompt.hostName"></strong> was rejected: the
-          manager's SSH key or agent was not accepted for this host. Enter a login it will accept to retry.</p>
+        <p class="mb-3" x-show="credPrompt.authRequired">The associate upgrade on
+          <strong x-text="credPrompt.hostName"></strong> was rejected: the manager's SSH key or agent was not
+          accepted for this host. Enter a login it will accept to retry.</p>
+        <p class="mb-3" x-show="!credPrompt.authRequired" x-cloak>The associate upgrade on
+          <strong x-text="credPrompt.hostName"></strong> failed. It may not be a login problem — check the error
+          below. Retry with different credentials, or skip this host and read its job log.</p>
+        <pre class="is-size-7 mb-3" style="white-space:pre-wrap" x-show="credPrompt.jobError" x-cloak
+          x-text="credPrompt.jobError"></pre>
         <p class="is-size-7 has-text-grey mb-3" x-show="credPrompt.remaining>0"
           x-text="credPrompt.remaining + ' more host' + (credPrompt.remaining===1?'':'s') + ' to go after this one.'">
         </p>
-        <div class="field"><label class="label">SSH User</label>
+        <div class="field"><label class="label">SSH User <span class="has-text-grey is-size-7">(saved to this host
+              if the retry succeeds)</span></label>
           <div class="control"><input class="input" x-model="credPrompt.sshUser"></div>
         </div>
         <div class="field"><label class="label">SSH Password <span class="has-text-grey is-size-7">(also used as the
@@ -247,6 +256,8 @@
           @click="submitCredPrompt()">Retry upgrade</button>
         <button class="button" :disabled="credPrompt.busy" @click="skipCredPrompt()"
           x-text="credPrompt.remaining>0 ? 'Skip this host' : 'Skip'"></button>
+        <button class="button is-light" x-show="credPrompt.remaining>0" x-cloak :disabled="credPrompt.busy"
+          @click="skipAllCredPrompts()">Skip the rest</button>
       </footer>
     </div>
   </div>

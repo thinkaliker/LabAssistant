@@ -19,8 +19,11 @@ export const hosts = {
   // collected into credQueue and asked about one at a time, because a fleet does not
   // necessarily share one login and a single password box would be a lie.
   upgradeAll: { open: false, busy: false, error: '' },
-  credQueue: [], // [{hostId, hostName}] awaiting credentials, oldest first
-  credPrompt: { open: false, hostId: '', hostName: '', sshUser: '', sshPassword: '', error: '', busy: false, remaining: 0 },
+  credQueue: [], // [{hostId, hostName, authRequired, error}] awaiting a retry, most fixable first
+  credPrompt: {
+    open: false, hostId: '', hostName: '', sshUser: '', origUser: '', sshPassword: '',
+    authRequired: false, jobError: '', error: '', busy: false, remaining: 0,
+  },
 
   // sortedHosts returns a stable copy of hosts ordered by the chosen key so the list
   // doesn't reshuffle as the backend returns hosts in map/enroll order.
@@ -136,21 +139,20 @@ export const hosts = {
   openUpgradeAll() {
     this.upgradeAll = { open: true, busy: false, error: '' };
   },
-  // jobAuthRequired reports whether a finished upgrade job failed for want of credentials, as
-  // opposed to failing for a reason no password will fix. The manager decides this and puts
-  // authRequired on the job result; reading it back beats sniffing the error text here, which
-  // would drift the moment either side reworded anything.
+  // jobFailure reads back why an upgrade job failed: the manager's authRequired verdict (put on
+  // the job result, so this doesn't sniff error text that either side might reword) and the
+  // error itself, which the credential prompt shows so the operator can see what the host said.
   //
   // Fetched per failed host rather than carried on the watchJob promise, which resolves with a
   // state string only — one extra request, and only for hosts that actually failed.
-  async jobAuthRequired(jobId) {
+  async jobFailure(jobId) {
     try {
       const r = await fetch(`/api/v1/jobs/${jobId}`);
-      if (!r.ok) return false;
+      if (!r.ok) return { authRequired: false, error: '' };
       const j = await r.json();
       const res = typeof j.result === 'string' ? JSON.parse(j.result) : j.result;
-      return !!(res && res.authRequired);
-    } catch (e) { return false; }
+      return { authRequired: !!(res && res.authRequired), error: j.error || '' };
+    } catch (e) { return { authRequired: false, error: '' }; }
   },
   // submitUpgradeAll pushes the manager's associate build to every host the manager considers
   // stale. The manager picks the targets, not this code: the button would otherwise upgrade a
@@ -197,9 +199,14 @@ export const hosts = {
     await Promise.all(started.map(async s => {
       const state = await this.watchJob(s.jobId, 'upgrade associate ' + s.hostName,
         { hostId: s.hostId, module: 'quartermaster', action: 'upgrade' });
-      if (state === 'failed' && await this.jobAuthRequired(s.jobId)) {
-        needCreds.push({ hostId: s.hostId, hostName: s.hostName });
-      }
+      if (state !== 'failed') return;
+      // Every failure is offered a retry, not only the ones the manager could name as a
+      // credentials problem. Recognising a rejected login means matching SSH and sudo error
+      // text, and a phrase that list has not learned yet used to end the host's turn silently —
+      // the operator saw "failed" and had no way back in. authRequired now only decides how the
+      // prompt is worded; skipping a host it cannot help is one click.
+      const { authRequired, error } = await this.jobFailure(s.jobId);
+      needCreds.push({ hostId: s.hostId, hostName: s.hostName, authRequired, error });
     }));
     await this.refresh();
     this.queueCredPrompts(needCreds);
@@ -209,8 +216,13 @@ export const hosts = {
   // any host they do not have a login for without abandoning the rest.
   queueCredPrompts(hosts) {
     if (!hosts.length) return;
-    // Stable order, so the queue reads the same way as the hosts list.
-    this.credQueue = [...hosts].sort((a, b) => (a.hostName || '').localeCompare(b.hostName || ''));
+    // Hosts the manager recognised as needing a login come first, then the rest by name. Both
+    // are offered a retry (see submitUpgradeAll), but the ones a password is known to fix are
+    // worth the operator's attention before the ones it probably will not.
+    this.credQueue = [...hosts].sort((a, b) => {
+      if (!!b.authRequired !== !!a.authRequired) return b.authRequired ? 1 : -1;
+      return (a.hostName || '').localeCompare(b.hostName || '');
+    });
     this.nextCredPrompt();
   },
   nextCredPrompt() {
@@ -220,17 +232,23 @@ export const hosts = {
     this.credPrompt = {
       open: true, hostId: next.hostId, hostName: next.hostName,
       // Prefilled with the host's stored user: the password is usually the only missing part,
-      // and retyping a username the manager already knows is pure friction.
-      sshUser: h.sshUser || '', sshPassword: '',
+      // and retyping a username the manager already knows is pure friction. origUser is kept so
+      // a correction can be written back to the host record on success (see submitCredPrompt).
+      sshUser: h.sshUser || '', origUser: h.sshUser || '', sshPassword: '',
+      authRequired: !!next.authRequired, jobError: next.error || '',
       error: '', busy: false, remaining: this.credQueue.length,
     };
   },
   skipCredPrompt() { this.nextCredPrompt(); },
+  // skipAllCredPrompts abandons the whole queue. Since every failed host is offered a retry, a
+  // fleet-wide problem (manager rebooted, network down) would otherwise mean clicking Skip once
+  // per host to get out.
+  skipAllCredPrompts() { this.credQueue = []; this.credPrompt.open = false; },
   // submitCredPrompt retries one host with the credentials just given. A second credentials
   // failure re-opens the same host with the error shown rather than advancing the queue —
   // a typo must not cost the host its turn.
   async submitCredPrompt() {
-    const { hostId, hostName, sshUser, sshPassword } = this.credPrompt;
+    const { hostId, hostName, sshUser, origUser, sshPassword } = this.credPrompt;
     this.credPrompt.busy = true;
     this.credPrompt.error = '';
     try {
@@ -247,21 +265,37 @@ export const hosts = {
       if (!jobId) { this.credPrompt.error = 'the manager started no job for this host.'; return; }
       const state = await this.watchJob(jobId, 'upgrade associate ' + hostName,
         { hostId, module: 'quartermaster', action: 'upgrade' });
-      await this.refresh();
-      if (state === 'failed' && await this.jobAuthRequired(jobId)) {
-        this.credPrompt.error = 'Those credentials were rejected. Try again, or skip this host.';
+      if (state === 'failed') {
+        const { authRequired, error } = await this.jobFailure(jobId);
+        await this.refresh();
+        this.credPrompt.jobError = error;
         this.credPrompt.sshPassword = '';
+        this.credPrompt.error = authRequired
+          ? 'Those credentials were rejected. Try again, or skip this host.'
+          : 'That login got in, but the upgrade still failed — see the error below and this host\'s job log.';
+        this.credPrompt.authRequired = authRequired;
         return;
       }
-      if (state === 'failed') {
-        // Not a credentials problem this time — nothing typed here will fix it, so move on
-        // and leave the job's log in the panel as the record of what went wrong.
-        alert(`${hostName}: upgrade failed for a reason credentials will not fix — see its job log.`);
-      }
+      // The login worked and it was not the one on file, so write it back: the stored user is
+      // what the next bulk upgrade tries first, and leaving it wrong means this host fails and
+      // asks again every single time.
+      if (sshUser && sshUser !== origUser) await this.saveHostSSHUser(hostId, sshUser);
+      await this.refresh();
       this.nextCredPrompt();
     } finally {
       this.credPrompt.busy = false;
     }
+  },
+  // saveHostSSHUser persists a corrected SSH username on the host record. Best-effort: the
+  // upgrade already succeeded, so a failure here costs one retyped username next time, not the
+  // work just done.
+  async saveHostSSHUser(hostId, sshUser) {
+    try {
+      await fetch(`/api/v1/hosts/${hostId}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sshUser }),
+      });
+    } catch (e) { /* the upgrade landed; the username is a convenience */ }
   },
   // hostUpdates totals a host's pending updates: qup package counts plus duo services with a
   // newer image. Mirrors the manager's overview tally, computed client-side from host modules.
