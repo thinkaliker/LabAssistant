@@ -171,8 +171,9 @@ func (h *Hub) serveStream(ctx context.Context, hostID string, stream mgrStream) 
 	h.register(c)
 	defer h.unregister(c)
 
-	h.store.SetOnline(hostID, moduleStates(hello.GetModules()))
-	slog.Info("associate connected", "host", hostID, "modules", len(hello.GetModules()))
+	h.store.SetOnline(hostID, hello.GetAssociateVersion(), moduleStates(hello.GetModules()))
+	slog.Info("associate connected", "host", hostID,
+		"modules", len(hello.GetModules()), "build", hello.GetAssociateVersion())
 
 	c.send <- &pb.ManagerMessage{Payload: &pb.ManagerMessage_HelloAck{HelloAck: &pb.HelloAck{
 		Accepted:        true,

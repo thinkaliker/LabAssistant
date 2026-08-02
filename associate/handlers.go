@@ -8,6 +8,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/thinkaliker/labassistant/internal/build"
 	"github.com/thinkaliker/labassistant/internal/elevated"
 	"github.com/thinkaliker/labassistant/module"
 	pb "github.com/thinkaliker/labassistant/proto/v1"
@@ -36,6 +37,16 @@ func actionReadOnly(m module.Module, action string) bool {
 
 const associateVersion = "0.1.0"
 
+// buildVersion is what the associate advertises in Hello: the commit it was built from, so the
+// manager can tell whether this host is running the associate it would deploy today. Falls back
+// to the release version when the binary carries no VCS stamp (`go run`, tests).
+func buildVersion() string {
+	if rev := build.Revision(); rev != "" {
+		return rev
+	}
+	return associateVersion
+}
+
 // hello builds the initial frame advertising every module's manifest + detection.
 func (a *Associate) hello(ctx context.Context) *pb.Hello {
 	var mods []*pb.ModuleInfo
@@ -50,7 +61,7 @@ func (a *Associate) hello(ctx context.Context) *pb.Hello {
 	return &pb.Hello{
 		ProtocolVersion:  ProtocolVersion,
 		HostId:           a.bundle.HostID,
-		AssociateVersion: associateVersion,
+		AssociateVersion: buildVersion(),
 		Modules:          mods,
 	}
 }

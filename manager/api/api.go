@@ -44,6 +44,9 @@ type Deps struct {
 	SelfUpdate func() error
 	// UpdateLogPath is the file selfUpdate streams its output to; the log-tail endpoint reads it.
 	UpdateLogPath string
+	// AssociateBuild is the revision of the associate binary the manager deploys. Empty when
+	// that binary carries no VCS stamp, in which case nothing is flagged as out of date.
+	AssociateBuild string
 }
 
 // Router returns the /api/v1 handler.
@@ -139,6 +142,9 @@ func (d Deps) overview(w http.ResponseWriter, r *http.Request) {
 		},
 		"updates":  map[string]int{"packages": updates},
 		"services": map[string]int{"running": servicesRunning},
+		// The associate build the manager would deploy today. The dashboard compares it with
+		// each host's reported associateVersion to flag hosts still running an older build.
+		"associateBuild": d.AssociateBuild,
 		"resources": map[string]any{
 			"cpuPercent": resCPU, "memPercent": resMem, "memUsedBytes": memUsedBytes,
 		},

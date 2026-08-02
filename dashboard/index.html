@@ -109,6 +109,19 @@
         </div>
       </template>
 
+      <!-- Hosts running an older associate than the manager deploys (visible on every page).
+           Nothing else surfaces this: such a host looks perfectly healthy while running module
+           code from whenever it was enrolled, so its fixes are silently absent. -->
+      <template x-if="staleAssociates() > 0">
+        <div class="notification is-danger is-light py-2">
+          <span class="is-size-7"
+            x-text="staleAssociates() === 1
+              ? '1 host runs an older associate than this manager deploys — its module fixes are not in effect.'
+              : staleAssociates() + ' hosts run an older associate than this manager deploys — their module fixes are not in effect.'"></span>
+          <button class="button is-small is-danger ml-3" @click="page='hosts'">Review hosts</button>
+        </div>
+      </template>
+
       <!-- Sudo password prompts (visible on every page) -->
       <template x-if="sudoPrompts.length > 0">
         <div class="notification is-danger is-light">
@@ -194,8 +207,9 @@
                 </div>
                 <div class="level-item has-text-weight-semibold" x-text="h.name"></div>
                 <div class="level-item is-size-7 has-text-grey" x-text="h.ip"></div>
-                <div class="level-item" x-show="h.connMode==='manager_dial'"><span class="tag is-info"
-                    title="Manager dials this host">manager-dial</span></div>
+                <div class="level-item" x-show="associateStale(h)"><span class="tag is-danger"
+                    :title="`associate build ${h.associateVersion||'unknown'} — the manager deploys ${overview.associateBuild}. Upgrade to pick up module fixes.`">associate
+                    update required</span></div>
                 <div class="level-item" x-show="hostUpdates(h)>0"><span class="tag is-warning"
                     :title="hostUpdates(h)+' update(s) available'"
                     x-text="hostUpdates(h)+(hostUpdates(h)===1?' update':' updates')"></span></div>
@@ -208,6 +222,20 @@
             </div>
 
             <div x-show="expanded===h.id" class="mt-3">
+              <!-- Associate build + stream direction. The build line is the upgrade signal: an
+                   associate is only replaced at enroll/upgrade time, so a host can sit on old
+                   module code indefinitely while the manager is current. -->
+              <p class="is-size-7 has-text-grey mb-2">
+                <span x-text="'associate ' + (h.associateVersion || 'build unknown')"></span>
+                <span x-show="h.connMode==='manager_dial'"
+                  x-text="' · manager-dial' + (h.connPort ? ' :'+h.connPort : '')"></span>
+                <span class="has-text-danger has-text-weight-semibold" x-show="associateStale(h)"
+                  x-text="' · out of date, manager deploys ' + overview.associateBuild"></span>
+              </p>
+              <div class="notification is-danger is-light py-2 px-3 is-size-7" x-show="associateStale(h)">
+                This host runs an older associate than the manager deploys, so module fixes shipped with the manager
+                are not in effect here. Use <strong>Upgrade associate</strong> below.
+              </div>
               <!-- Host vitals: CPU, memory (used/free/%), and per-mount disk (used/free/total). -->
               <template x-if="h.health">
                 <div class="box has-background-light mb-3">
@@ -267,7 +295,7 @@
                 <button class="button is-small is-info is-outlined" @click="openEditHost(h)">Edit host</button>
                 <button class="button is-small is-link is-outlined" x-show="h.status!=='online'"
                   @click="openRevive(h)">Revive associate</button>
-                <button class="button is-small is-warning is-outlined"
+                <button class="button is-small is-warning" :class="!associateStale(h) && 'is-outlined'"
                   @click="openUpgrade(h)">Upgrade associate</button>
                 <button class="button is-small is-danger is-outlined" @click="openUninstall(h)">Uninstall host</button>
               </div>

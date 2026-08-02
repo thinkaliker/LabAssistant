@@ -51,6 +51,11 @@ type Host struct {
 	LastSeen time.Time     `json:"lastSeen,omitempty"`
 	Health   *Health       `json:"health,omitempty"`
 	Modules  []ModuleState `json:"modules,omitempty"`
+	// AssociateVersion is the build the host's associate reported at its last connect (the
+	// commit it was built from). Compared against the associate binary the manager would
+	// deploy, it says whether the host needs an upgrade. Runtime only — never persisted,
+	// since a stale value would outlive the process that observed it.
+	AssociateVersion string `json:"associateVersion,omitempty"`
 }
 
 // persisted is the durable subset of Host written to state.json (runtime fields excluded).
@@ -218,11 +223,12 @@ func (s *Store) update(id string, persist bool, fn func(*Host)) {
 }
 
 // SetOnline marks a host online and replaces its advertised modules (from Hello).
-func (s *Store) SetOnline(id string, modules []ModuleState) {
+func (s *Store) SetOnline(id, associateVersion string, modules []ModuleState) {
 	s.update(id, false, func(h *Host) {
 		h.Status = StatusOnline
 		h.LastSeen = time.Now()
 		h.Modules = modules
+		h.AssociateVersion = associateVersion
 	})
 }
 

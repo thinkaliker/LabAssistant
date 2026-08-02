@@ -22,6 +22,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
 
+	"github.com/thinkaliker/labassistant/internal/build"
 	"github.com/thinkaliker/labassistant/internal/bundle"
 	"github.com/thinkaliker/labassistant/internal/paths"
 	"github.com/thinkaliker/labassistant/manager/actions"
@@ -60,6 +61,11 @@ type App struct {
 	modconfig *modconfig.Store
 	sessions  *api.Sessions
 	backup    *api.Backup
+	// assocBuild is the revision of the associate binary this manager deploys, read once at
+	// startup (a rebuild goes with a manager restart). Empty when the binary carries no VCS
+	// stamp or the configured path is an {os}/{arch} template, in which case the dashboard
+	// flags nothing as out of date.
+	assocBuild string
 }
 
 // NewApp builds the manager from its on-disk layout and configuration.
@@ -173,21 +179,22 @@ func NewApp(layout paths.Layout, cfg config.Config) (*App, error) {
 		layout: layout,
 		// instance changes every process start; the dashboard polls it to notice when the
 		// manager restarted underneath it (e.g. after a self-update) and prompt re-login.
-		instance:  fmt.Sprintf("%d", time.Now().UnixNano()),
-		ca:        authority,
-		store:     store,
-		jobs:      jr,
-		events:    ev,
-		hub:       h,
-		dialer:    dialer,
-		qm:        qm,
-		runner:    runner,
-		scheduler: sched,
-		aud:       aud,
-		settings:  set,
-		modconfig: mc,
-		sessions:  api.NewSessions(),
-		backup:    &api.Backup{Layout: layout},
+		instance:   fmt.Sprintf("%d", time.Now().UnixNano()),
+		ca:         authority,
+		store:      store,
+		jobs:       jr,
+		events:     ev,
+		hub:        h,
+		dialer:     dialer,
+		qm:         qm,
+		runner:     runner,
+		scheduler:  sched,
+		aud:        aud,
+		settings:   set,
+		modconfig:  mc,
+		sessions:   api.NewSessions(),
+		backup:     &api.Backup{Layout: layout},
+		assocBuild: build.RevisionOfFile(assocBin),
 	}, nil
 }
 

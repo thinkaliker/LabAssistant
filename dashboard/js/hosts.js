@@ -77,6 +77,16 @@ export const hosts = {
     await this.refresh();
     if (jobId) this.watchJob(jobId, 'revive ' + hostName);
   },
+  // associateStale reports that a host runs a different associate build than the one the
+  // manager would deploy — i.e. it is missing whatever shipped with the manager since. Both
+  // sides must be known: an offline host reports no build, and a manager whose associate
+  // binary carries no VCS stamp has nothing to compare, and neither is evidence of staleness.
+  associateStale(h) {
+    const target = this.overview && this.overview.associateBuild;
+    return !!target && !!h.associateVersion && h.associateVersion !== target;
+  },
+  // staleAssociates counts hosts needing an upgrade, for the banner on every page.
+  staleAssociates() { return this.hosts.filter(h => this.associateStale(h)).length; },
   openUpgrade(h) {
     this.upgrade = { open: true, hostId: h.id, hostName: h.name, sshUser: h.sshUser || '', sshPassword: '' };
   },

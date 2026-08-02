@@ -33,6 +33,19 @@
         </div>
       </template>
 
+      <!-- Hosts running an older associate than the manager deploys (visible on every page).
+           Nothing else surfaces this: such a host looks perfectly healthy while running module
+           code from whenever it was enrolled, so its fixes are silently absent. -->
+      <template x-if="staleAssociates() > 0">
+        <div class="notification is-danger is-light py-2">
+          <span class="is-size-7"
+            x-text="staleAssociates() === 1
+              ? '1 host runs an older associate than this manager deploys — its module fixes are not in effect.'
+              : staleAssociates() + ' hosts run an older associate than this manager deploys — their module fixes are not in effect.'"></span>
+          <button class="button is-small is-danger ml-3" @click="page='hosts'">Review hosts</button>
+        </div>
+      </template>
+
       <!-- Sudo password prompts (visible on every page) -->
       <template x-if="sudoPrompts.length > 0">
         <div class="notification is-danger is-light">
