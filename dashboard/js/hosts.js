@@ -1,4 +1,11 @@
 // Hosts page: list ordering, per-host expansion, module config, add/edit/uninstall/revive flows.
+
+// How long a credential retry is given to fail before it is assumed to have got past the login.
+// A rejected login comes back well inside this — the dial is refused before a byte is uploaded —
+// so anything still running afterwards is into the binary upload and service restart, which is
+// work worth backgrounding rather than making the operator watch.
+const credGraceMs = 2500;
+
 export const hosts = {
   expanded: null,
   hostSort: 'name', // 'name' | 'ip' — how the Hosts list is ordered
@@ -219,10 +226,15 @@ export const hosts = {
     // Hosts the manager recognised as needing a login come first, then the rest by name. Both
     // are offered a retry (see submitUpgradeAll), but the ones a password is known to fix are
     // worth the operator's attention before the ones it probably will not.
-    this.credQueue = [...hosts].sort((a, b) => {
+    //
+    // Merged into whatever is already queued, not assigned over it: backgrounded retries land
+    // here as they fail (see trackCredRetry), and replacing the queue would drop the hosts still
+    // waiting — or, with two landing at once, drop the prompt already on screen.
+    this.credQueue = [...this.credQueue, ...hosts].sort((a, b) => {
       if (!!b.authRequired !== !!a.authRequired) return b.authRequired ? 1 : -1;
       return (a.hostName || '').localeCompare(b.hostName || '');
     });
+    if (this.credPrompt.open) { this.credPrompt.remaining = this.credQueue.length; return; }
     this.nextCredPrompt();
   },
   nextCredPrompt() {
@@ -244,17 +256,26 @@ export const hosts = {
   // fleet-wide problem (manager rebooted, network down) would otherwise mean clicking Skip once
   // per host to get out.
   skipAllCredPrompts() { this.credQueue = []; this.credPrompt.open = false; },
-  // submitCredPrompt retries one host with the credentials just given. A second credentials
-  // failure re-opens the same host with the error shown rather than advancing the queue —
-  // a typo must not cost the host its turn.
+  // submitCredPrompt retries one host with the credentials just given, and only waits long
+  // enough to find out whether the login was accepted.
+  //
+  // A rejected login fails inside credGraceMs and is answered in place: the same host stays on
+  // screen with the error and its queue position, because a typo must not cost it its turn. A
+  // retry still running after that is past the credentials and into the upload and restart —
+  // tens of seconds of work with nothing to decide — so it goes to the docked job panel and the
+  // next host is asked about immediately. Its outcome is still collected (see trackCredRetry).
   async submitCredPrompt() {
-    const { hostId, hostName, sshUser, origUser, sshPassword } = this.credPrompt;
+    const host = {
+      hostId: this.credPrompt.hostId, hostName: this.credPrompt.hostName,
+      sshUser: this.credPrompt.sshUser, origUser: this.credPrompt.origUser,
+    };
+    const sshPassword = this.credPrompt.sshPassword;
     this.credPrompt.busy = true;
     this.credPrompt.error = '';
     try {
-      const r = await fetch(`/api/v1/hosts/${hostId}/upgrade`, {
+      const r = await fetch(`/api/v1/hosts/${host.hostId}/upgrade`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sshUser, sshPassword }),
+        body: JSON.stringify({ sshUser: host.sshUser, sshPassword }),
       });
       if (!r.ok) {
         const e = await r.json().catch(() => ({}));
@@ -263,27 +284,64 @@ export const hosts = {
       }
       const { jobId } = await r.json().catch(() => ({}));
       if (!jobId) { this.credPrompt.error = 'the manager started no job for this host.'; return; }
-      const state = await this.watchJob(jobId, 'upgrade associate ' + hostName,
-        { hostId, module: 'quartermaster', action: 'upgrade' });
-      if (state === 'failed') {
-        const { authRequired, error } = await this.jobFailure(jobId);
-        await this.refresh();
-        this.credPrompt.jobError = error;
-        this.credPrompt.sshPassword = '';
-        this.credPrompt.error = authRequired
-          ? 'Those credentials were rejected. Try again, or skip this host.'
-          : 'That login got in, but the upgrade still failed — see the error below and this host\'s job log.';
-        this.credPrompt.authRequired = authRequired;
+
+      const watch = this.watchJob(jobId, 'upgrade associate ' + host.hostName,
+        { hostId: host.hostId, module: 'quartermaster', action: 'upgrade' });
+      const grace = new Promise(res => this._later(() => res(null), credGraceMs));
+      const early = await Promise.race([watch, grace]);
+
+      if (early === 'failed') { await this.showCredFailure(jobId); return; }
+      if (early === null) {
+        this.trackCredRetry(watch, jobId, host).catch(() => {});
+        this.nextCredPrompt();
         return;
       }
-      // The login worked and it was not the one on file, so write it back: the stored user is
-      // what the next bulk upgrade tries first, and leaving it wrong means this host fails and
-      // asks again every single time.
-      if (sshUser && sshUser !== origUser) await this.saveHostSSHUser(hostId, sshUser);
+      await this.finishCredRetry(host);
       await this.refresh();
       this.nextCredPrompt();
     } finally {
       this.credPrompt.busy = false;
+    }
+  },
+  // showCredFailure re-opens the current prompt with what the manager said, keeping the host on
+  // screen for another attempt.
+  async showCredFailure(jobId) {
+    const { authRequired, error } = await this.jobFailure(jobId);
+    await this.refresh();
+    this.credPrompt.jobError = error;
+    this.credPrompt.sshPassword = '';
+    this.credPrompt.authRequired = authRequired;
+    this.credPrompt.error = authRequired
+      ? 'Those credentials were rejected. Try again, or skip this host.'
+      : 'That login got in, but the upgrade still failed — see the error below and this host\'s job log.';
+  },
+  // trackCredRetry follows a backgrounded retry to its end. It must not touch credPrompt: by the
+  // time this resolves the operator is several hosts further on, and writing into the live
+  // prompt would put one host's error over another host's form.
+  //
+  // A late failure is re-queued rather than dropped. Not every credentials problem is visible at
+  // login — a sudo password the host will not take only surfaces after the binaries have
+  // uploaded — so the host goes back in the queue with the error the manager recorded.
+  async trackCredRetry(watch, jobId, host) {
+    const state = await watch;
+    await this.refresh();
+    if (state !== 'failed') { await this.finishCredRetry(host); return; }
+    const { authRequired, error } = await this.jobFailure(jobId);
+    const entry = { hostId: host.hostId, hostName: host.hostName, authRequired, error };
+    if (this.credPrompt.open || this.credQueue.length) {
+      this.credQueue.push(entry);
+      this.credPrompt.remaining = this.credQueue.length; // the count on screen just changed
+      return;
+    }
+    // The queue already ran dry, so nothing will pick this up: ask about it now.
+    this.queueCredPrompts([entry]);
+  },
+  // finishCredRetry persists a corrected username after a retry that worked. The stored user is
+  // what the next bulk upgrade tries first, so leaving it wrong means this host fails and asks
+  // again every single time.
+  async finishCredRetry(host) {
+    if (host.sshUser && host.sshUser !== host.origUser) {
+      await this.saveHostSSHUser(host.hostId, host.sshUser);
     }
   },
   // saveHostSSHUser persists a corrected SSH username on the host record. Best-effort: the

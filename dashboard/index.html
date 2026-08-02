@@ -1244,6 +1244,8 @@
               @keyup.enter="submitCredPrompt()"></div>
         </div>
         <p class="help is-danger" x-show="credPrompt.error" x-text="credPrompt.error"></p>
+        <p class="is-size-7 has-text-grey mt-3">Once the login is accepted the upgrade carries on in the job panel
+          and the next host is asked about — only a rejected login comes back here.</p>
       </section>
       <footer class="modal-card-foot">
         <button class="button is-warning" :class="credPrompt.busy && 'is-loading'" :disabled="credPrompt.busy"
