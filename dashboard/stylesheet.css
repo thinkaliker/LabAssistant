@@ -56,6 +56,16 @@
     flex-direction: column;
 }
 
+/* The fixed panel overlays the right half of the page, so the shell banners (approvals, sudo
+    prompts, refresh errors) would sit underneath it with their action buttons unreachable.
+    While the panel is up, keep those banners inside the free left half. Only the container's
+    own children match: page content manages its own columns. */
+@media screen and (min-width: 769px) {
+    .app-container.compose-open>.notification {
+        max-width: calc(50vw - 1.9rem);
+    }
+}
+
 .compose-editor-wrap {
     flex: 1 1 auto;
     min-height: 0;

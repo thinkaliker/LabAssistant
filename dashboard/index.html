@@ -76,7 +76,8 @@
 
   <section class="section app-section" x-show="ready && !needsLogin" x-cloak
     :style="jobPanelOpen ? ('padding-bottom:' + ((jobPanelHeight || Math.round(window.innerHeight * 0.33)) + 24) + 'px') : ''">
-    <div class="container is-fluid app-container">
+    <div class="container is-fluid app-container"
+      :class="compose.open && page==='services' ? 'compose-open' : ''">
 
       <!-- Partial-refresh notice: one or more endpoints failed to read, so some panels are
            showing older values. Without this the page just quietly stopped updating. -->
@@ -101,7 +102,7 @@
               <div class="level-right">
                 <div class="level-item buttons are-small">
                   <button class="button is-success" @click="confirmApproval(ap.id)">Confirm</button>
-                  <button class="button is-light" @click="rejectApproval(ap.id)">Reject</button>
+                  <button class="button is-danger" @click="rejectApproval(ap.id)">Reject</button>
                 </div>
               </div>
             </div>
