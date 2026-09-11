@@ -1,81 +1,109 @@
       <!-- Settings -->
       <div x-show="page==='settings'">
-        <h1 class="title">Settings</h1>
+        <div class="toolbar page-head">
+          <h1 class="page-title">Settings</h1>
+        </div>
 
-        <div class="box">
-          <h2 class="subtitle">Manager</h2>
-          <div class="columns">
-            <div class="column field">
-              <label class="label">Log level</label>
-              <div class="control">
-                <div class="select"><select x-model="settings.logLevel">
+        <div class="grid gap-4 max-w-4xl">
+          <div class="card">
+            <header>
+              <h2>Manager</h2>
+            </header>
+            <section class="grid gap-4">
+              <div class="grid gap-4 sm:grid-cols-2">
+                <div class="field">
+                  <label for="set-log-level">Log level</label>
+                  <select id="set-log-level" class="select w-full" x-model="settings.logLevel">
                     <option>debug</option>
                     <option>info</option>
                     <option>warn</option>
                     <option>error</option>
-                  </select></div>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="set-timezone">Default timezone</label>
+                  <input id="set-timezone" class="input" type="text" x-model="settings.defaultTimezone"
+                    placeholder="America/Los_Angeles">
+                </div>
               </div>
-            </div>
-            <div class="column field">
-              <label class="label">Default timezone</label>
-              <div class="control"><input class="input" x-model="settings.defaultTimezone"
-                  placeholder="America/Los_Angeles"></div>
-            </div>
-          </div>
-          <button class="button is-primary" @click="saveSettings()">Save</button>
+              <div>
+                <button type="button" class="btn" @click="saveSettings()">Save</button>
+              </div>
 
-          <hr>
-          <h3 class="title is-6 mb-2">Update manager</h3>
-          <p class="is-size-7 has-text-grey mb-3">Pull the latest code, rebuild, and restart the manager
-            on this control host. The manager will drop offline briefly, so
-            <strong>you will need to sign in again</strong> once it is back.
-          </p>
-          <button class="button is-warning" :class="managerUpdating && 'is-loading'" :disabled="managerUpdating"
-            @click="updateManager()">Update &amp; restart manager</button>
-          <p class="help is-danger mt-2" x-show="managerUpdateError" x-text="managerUpdateError"></p>
-          <p class="help is-info mt-2" x-show="managerUpdating">Updating — the manager is rebuilding and will
-            restart. You will be asked to sign in again.</p>
-        </div>
+              <hr>
+              <div>
+                <h3 class="text-sm font-semibold mb-2">Update manager</h3>
+                <p class="text-xs text-muted-foreground mb-3">Pull the latest code, rebuild, and restart the manager
+                  on this control host. The manager will drop offline briefly, so
+                  <strong>you will need to sign in again</strong> once it is back.
+                </p>
+                <button type="button" class="btn" data-variant="warning" :class="managerUpdating && 'is-loading'"
+                  :disabled="managerUpdating" @click="updateManager()">Update &amp; restart manager</button>
+                <p class="text-sm text-destructive mt-2" x-show="managerUpdateError" x-text="managerUpdateError"></p>
+                <p class="text-sm text-muted-foreground mt-2" x-show="managerUpdating">Updating — the manager is
+                  rebuilding and will restart. You will be asked to sign in again.</p>
+              </div>
+            </section>
+          </div>
 
-        <div class="box">
-          <h2 class="subtitle">API Tokens</h2>
-          <div class="field has-addons">
-            <div class="control is-expanded"><input class="input" x-model="newTokenName" placeholder="token name"></div>
-            <div class="control"><button class="button is-link" @click="createToken()">Create</button></div>
+          <div class="card">
+            <header>
+              <h2>API Tokens</h2>
+            </header>
+            <section class="grid gap-3">
+              <div class="button-group w-full">
+                <input class="input" type="text" x-model="newTokenName" placeholder="token name" aria-label="Token name">
+                <button type="button" class="btn" data-variant="secondary" @click="createToken()">Create</button>
+              </div>
+              <label class="label text-muted-foreground">
+                <input type="checkbox" class="input" type="text" x-model="newTokenAudit"> Grant audit-log read access
+              </label>
+              <div class="alert" data-variant="success" x-show="newTokenValue">
+                <section>
+                  <div class="toolbar">
+                    <span>Copy now (shown once): <code x-text="newTokenValue"></code></span>
+                    <button type="button" class="btn" data-variant="ghost" data-size="icon" aria-label="Dismiss"
+                      @click="newTokenValue=''">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                    </button>
+                  </div>
+                </section>
+              </div>
+              <div class="table-container" x-show="tokens.length>0">
+                <table class="table table-sm">
+                  <tbody>
+                    <template x-for="t in tokens" :key="t.id">
+                      <tr>
+                        <td x-text="t.name||'(unnamed)'"></td>
+                        <td><span class="badge" data-variant="secondary" x-show="t.auditAccess">audit</span></td>
+                        <td class="text-xs text-muted-foreground" x-text="new Date(t.createdAt).toLocaleString()"></td>
+                        <td class="text-end"><button type="button" class="btn" data-variant="destructive" data-size="sm"
+                            @click="revokeToken(t.id)">revoke</button></td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </section>
           </div>
-          <label class="checkbox is-size-7 has-text-grey mb-2">
-            <input type="checkbox" x-model="newTokenAudit"> Grant audit-log read access
-          </label>
-          <div class="notification is-success" x-show="newTokenValue">
-            <button class="delete" @click="newTokenValue=''"></button>
-            Copy now (shown once): <code x-text="newTokenValue"></code>
-          </div>
-          <table class="table is-fullwidth is-narrow" x-show="tokens.length>0">
-            <tbody>
-              <template x-for="t in tokens" :key="t.id">
-                <tr>
-                  <td x-text="t.name||'(unnamed)'"></td>
-                  <td><span class="tag is-info is-light" x-show="t.auditAccess">audit</span></td>
-                  <td class="is-size-7 has-text-grey" x-text="new Date(t.createdAt).toLocaleString()"></td>
-                  <td class="has-text-right"><button class="button is-small is-danger is-light"
-                      @click="revokeToken(t.id)">revoke</button></td>
-                </tr>
-              </template>
-            </tbody>
-          </table>
-        </div>
 
-        <div class="box">
-          <h2 class="subtitle">Backup</h2>
-          <div class="buttons">
-            <button class="button" @click="downloadBackup()">Download backup</button>
-            <label class="button">
-              Restore from file…
-              <input type="file" accept="application/json" style="display:none" @change="restoreBackup($event)">
-            </label>
+          <div class="card">
+            <header>
+              <h2>Backup</h2>
+            </header>
+            <section class="grid gap-3">
+              <div class="actions">
+                <button type="button" class="btn" data-variant="outline" @click="downloadBackup()">Download backup</button>
+                <label class="btn" data-variant="outline">
+                  Restore from file…
+                  <input type="file" accept="application/json" class="hidden" @change="restoreBackup($event)">
+                </label>
+              </div>
+              <p class="text-xs text-muted-foreground">Backup includes the CA private key — keep it secret. Restore
+                requires a manager restart.</p>
+            </section>
           </div>
-          <p class="is-size-7 has-text-grey">Backup includes the CA private key — keep it secret. Restore requires a
-            manager restart.</p>
         </div>
       </div>
 

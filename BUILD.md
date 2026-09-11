@@ -21,7 +21,7 @@ and manager API.
   associate/
   module/                     # the Go contract (interface + types from API.md Part 1)
   modules/{duo,qup,sys}/
-  dashboard/                  # static assets (Alpine + Bulma, vendored), go:embed
+  dashboard/                  # static assets (Alpine + Basecoat, vendored), go:embed
   proto/v1/
   ```
   Move the existing top-level `quartermaster/` under `manager/`.
@@ -30,7 +30,7 @@ and manager API.
   API.md Part 1 (including `Manifest.ConfigSchema`).
 - Config loader + on-disk dirs (`config/ data/ logs/`), base overridable via `--home` /
   `LABASSISTANT_HOME`. See README / API.md for layout.
-- Vendor pinned **Alpine.js** + **Bulma** into `dashboard/vendor/` (no CDN); embed via `go:embed`.
+- Vendor pinned **Alpine.js** + **Basecoat** (CSS) into `dashboard/vendor/` (no CDN); embed via `go:embed`.
 
 ## First slice — walking skeleton
 
@@ -55,7 +55,7 @@ qup action from a minimal dashboard and watch it stream to completion.
 - **modules/qup**
   - `Detect` (apt / Debian-based), `Status` (apt dry-run: available updates), `Execute("apply")`.
 - **dashboard**
-  - Alpine + Bulma shell: navbar, Overview cards, Hosts list (thin rows) → expand → modules →
+  - Alpine + Basecoat shell: navbar, Overview cards, Hosts list (thin rows) → expand → modules →
     "run qup" button. Live updates via `/events` + per-job SSE.
 
 ### Deliberate shortcuts (built properly in Slice 2 — agreed deferments)

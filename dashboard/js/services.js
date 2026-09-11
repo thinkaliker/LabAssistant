@@ -28,9 +28,9 @@ export const services = {
   // A service tag prefers its docker healthcheck state (healthy/unhealthy/starting) over the
   // raw running/stopped status, so an unhealthy-but-running container reads at a glance.
   svcLabel(sv) { return sv.health || sv.status; },
-  svcClass(sv) {
-    if (sv.health) return { healthy: 'is-success', unhealthy: 'is-danger', starting: 'is-warning' }[sv.health] || 'is-info';
-    return this.statusClass(sv.status);
+  svcVariant(sv) {
+    if (sv.health) return { healthy: 'success', unhealthy: 'destructive', starting: 'warning' }[sv.health] || 'secondary';
+    return this.statusVariant(sv.status);
   },
   // ---- per-service update check ----
   // The Updates page only checks a whole host (qup + every duo image), which is minutes of

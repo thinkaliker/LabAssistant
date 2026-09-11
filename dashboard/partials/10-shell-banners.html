@@ -1,36 +1,49 @@
-  <section class="section app-section" x-show="ready && !needsLogin" x-cloak
+  <main class="app-main" x-show="ready && !needsLogin" x-cloak
+    :class="compose.open && page==='services' ? 'compose-open' : ''"
     :style="jobPanelOpen ? ('padding-bottom:' + ((jobPanelHeight || Math.round(window.innerHeight * 0.33)) + 24) + 'px') : ''">
-    <div class="container is-fluid app-container"
-      :class="compose.open && page==='services' ? 'compose-open' : ''">
 
       <!-- Partial-refresh notice: one or more endpoints failed to read, so some panels are
            showing older values. Without this the page just quietly stopped updating. -->
       <template x-if="refreshError">
-        <div class="notification is-warning is-light py-2">
-          <span class="is-size-7" x-text="refreshError"></span>
-          <button class="button is-small is-warning ml-3" @click="refresh()">Retry</button>
+        <div class="alert" data-variant="warning">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>
+          </svg>
+          <section>
+            <div class="toolbar">
+              <span x-text="refreshError"></span>
+              <button type="button" class="btn" data-variant="warning" data-size="sm" @click="refresh()">Retry</button>
+            </div>
+          </section>
         </div>
       </template>
 
       <!-- Pending approvals (visible on every page) -->
       <template x-if="approvals.length > 0">
-        <div class="notification is-warning">
-          <p class="has-text-weight-semibold mb-2">Pending approvals</p>
-          <template x-for="ap in approvals" :key="ap.id">
-            <div class="level is-mobile">
-              <div class="level-left">
-                <div class="level-item" x-text="`${ap.module} ${ap.action}`"></div>
-                <div class="level-item is-size-7" x-text="hostName(ap.hostId)"></div>
-                <div class="level-item"><span class="tag is-danger" x-show="ap.destructive">destructive</span></div>
-              </div>
-              <div class="level-right">
-                <div class="level-item buttons are-small">
-                  <button class="button is-success" @click="confirmApproval(ap.id)">Confirm</button>
-                  <button class="button is-danger" @click="rejectApproval(ap.id)">Reject</button>
+        <div class="alert" data-variant="warning">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>
+          </svg>
+          <h2>Pending approvals</h2>
+          <section>
+            <template x-for="ap in approvals" :key="ap.id">
+              <div class="toolbar">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="font-medium" x-text="`${ap.module} ${ap.action}`"></span>
+                  <span class="text-xs" x-text="hostName(ap.hostId)"></span>
+                  <span class="badge" data-variant="destructive" x-show="ap.destructive">destructive</span>
+                </div>
+                <div class="actions">
+                  <button type="button" class="btn" data-variant="success" data-size="sm"
+                    @click="confirmApproval(ap.id)">Confirm</button>
+                  <button type="button" class="btn" data-variant="destructive" data-size="sm"
+                    @click="rejectApproval(ap.id)">Reject</button>
                 </div>
               </div>
-            </div>
-          </template>
+            </template>
+          </section>
         </div>
       </template>
 
@@ -38,35 +51,51 @@
            Nothing else surfaces this: such a host looks perfectly healthy while running module
            code from whenever it was enrolled, so its fixes are silently absent. -->
       <template x-if="staleAssociates() > 0">
-        <div class="notification is-danger is-light py-2">
-          <span class="is-size-7"
-            x-text="staleAssociates() === 1
-              ? '1 host runs an older associate than this manager deploys — its module fixes are not in effect.'
-              : staleAssociates() + ' hosts run an older associate than this manager deploys — their module fixes are not in effect.'"></span>
-          <button class="button is-small is-danger ml-3" @click="openUpgradeAll()"
-            x-text="'Upgrade all (' + staleAssociates() + ')'"></button>
-          <button class="button is-small is-danger is-light ml-2" @click="page='hosts'">Review hosts</button>
+        <div class="alert" data-variant="destructive">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/>
+          </svg>
+          <section>
+            <div class="toolbar">
+              <span
+                x-text="staleAssociates() === 1
+                  ? '1 host runs an older associate than this manager deploys — its module fixes are not in effect.'
+                  : staleAssociates() + ' hosts run an older associate than this manager deploys — their module fixes are not in effect.'"></span>
+              <div class="actions">
+                <button type="button" class="btn" data-variant="warning" data-size="sm" @click="openUpgradeAll()"
+                  x-text="'Upgrade all (' + staleAssociates() + ')'"></button>
+                <button type="button" class="btn" data-variant="outline" data-size="sm" @click="page='hosts'">Review hosts</button>
+              </div>
+            </div>
+          </section>
         </div>
       </template>
 
       <!-- Sudo password prompts (visible on every page) -->
       <template x-if="sudoPrompts.length > 0">
-        <div class="notification is-danger is-light">
-          <p class="has-text-weight-semibold mb-2">Sudo password required</p>
-          <template x-for="sp in sudoPrompts" :key="sp.id">
-            <div class="level is-mobile">
-              <div class="level-left">
-                <div class="level-item" x-text="`${sp.module} ${sp.action}`"></div>
-                <div class="level-item is-size-7" x-text="hostName(sp.hostId)"></div>
-              </div>
-              <div class="level-right">
-                <div class="level-item buttons are-small">
-                  <button class="button is-primary" @click="openSudo(sp)">Provide password</button>
-                  <button class="button is-light" @click="cancelSudo(sp.id)">Cancel</button>
+        <div class="alert" data-variant="destructive">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"/>
+            <circle cx="16.5" cy="7.5" r=".5" fill="currentColor"/>
+          </svg>
+          <h2>Sudo password required</h2>
+          <section>
+            <template x-for="sp in sudoPrompts" :key="sp.id">
+              <div class="toolbar">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="font-medium" x-text="`${sp.module} ${sp.action}`"></span>
+                  <span class="text-xs" x-text="hostName(sp.hostId)"></span>
+                </div>
+                <div class="actions">
+                  <button type="button" class="btn" data-size="sm" @click="openSudo(sp)">Provide password</button>
+                  <button type="button" class="btn" data-variant="outline" data-size="sm"
+                    @click="cancelSudo(sp.id)">Cancel</button>
                 </div>
               </div>
-            </div>
-          </template>
+            </template>
+          </section>
         </div>
       </template>
 

@@ -4,22 +4,30 @@
     :style="jobPanelHeight ? ('height:' + jobPanelHeight + 'px') : ''">
     <div class="job-panel-resize" @pointerdown="startJobResize($event)" title="Drag to resize"></div>
     <header class="job-panel-head">
-      <span class="has-text-weight-semibold">Job</span>
-      <span class="tag ml-2" :class="statusClass(job.state)" x-text="job.state"></span>
-      <span class="is-size-7 has-text-grey ml-2" x-show="job.label" x-text="jobTitle(job)"></span>
+      <span class="font-semibold">Job</span>
+      <span class="badge" :data-variant="statusVariant(job.state)" x-text="job.state"></span>
+      <span class="text-xs text-muted-foreground" x-show="job.label" x-text="jobTitle(job)"></span>
       <!-- Queue indicator: every active job as a clickable chip. Click one to bring its log up;
            the chip on screen is highlighted. Jobs run serially per host, parallel across hosts. -->
-      <div class="job-queue ml-4" x-show="jobs.length>1">
-        <span class="is-size-7 has-text-grey mr-2" x-text="jobs.length+' jobs'"></span>
+      <div class="job-queue" x-show="jobs.length>1">
+        <span class="text-xs text-muted-foreground" x-text="jobs.length+' jobs'"></span>
         <template x-for="j in jobs" :key="j.id">
-          <button class="tag is-clickable mr-1" :class="[statusClass(j.state), j.id===job.id ? 'is-current' : '']"
+          <button type="button" class="badge" :data-variant="statusVariant(j.state)"
+            :class="j.id===job.id && 'is-current'"
             @click="selectJob(j)" :title="jobTitle(j)+' — '+j.state" x-text="jobTitle(j)"></button>
         </template>
       </div>
-      <button class="delete" @click="jobPanelOpen=false" aria-label="close"></button>
+      <button type="button" class="btn job-panel-close" data-variant="ghost" data-size="icon-sm" aria-label="Close"
+        @click="jobPanelOpen=false">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      </button>
     </header>
     <div class="job-panel-body">
-      <progress class="progress is-link mb-2" :value="job.progress" max="1" x-show="job.state==='running'"></progress>
+      <div class="progress mb-2" role="progressbar" aria-label="Job progress" aria-valuemin="0" aria-valuemax="100"
+        :aria-valuenow="Math.round((job.progress || 0) * 100)" x-show="job.state==='running'">
+        <span :style="'width:' + Math.round((job.progress || 0) * 100) + '%'"></span>
+      </div>
       <pre class="job-panel-log" x-ref="jobLog" @scroll="onJobScroll($event)" x-text="job.log.join('\n')"></pre>
     </div>
   </div>

@@ -1,266 +1,279 @@
   <!-- Add Host -->
-  <div class="modal" :class="addHostOpen && 'is-active'">
-    <div class="modal-background" @click="addHostOpen=false"></div>
-    <div class="modal-card">
-      <header class="modal-card-head">
-        <p class="modal-card-title">Add Host</p>
+  <dialog class="dialog" x-dialog="addHostOpen" @close="addHostOpen=false" aria-labelledby="add-host-title">
+    <div>
+      <header>
+        <h2 id="add-host-title">Add Host</h2>
+        <p>Leave SSH blank to install on this manager box itself; fill it in to install on a remote host over SSH.</p>
       </header>
-      <section class="modal-card-body">
-        <p class="has-text-grey is-size-7 mb-3">Leave SSH blank to install on this manager box itself; fill it in to
-          install on a remote host over SSH.</p>
+      <section class="grid gap-4">
         <div class="field">
-          <label class="label">Name</label>
-          <div class="control"><input class="input" x-model="newHost.name" placeholder="media-server"></div>
+          <label for="add-host-name">Name</label>
+          <input id="add-host-name" class="input" type="text" x-model="newHost.name" placeholder="media-server">
         </div>
         <div class="field">
-          <label class="label">IP / Address</label>
-          <div class="control"><input class="input" x-model="newHost.ip"
-              placeholder="10.0.0.5 (or localhost for this box)"></div>
+          <label for="add-host-ip">IP / Address</label>
+          <input id="add-host-ip" class="input" type="text" x-model="newHost.ip" placeholder="10.0.0.5 (or localhost for this box)">
         </div>
         <div class="field">
-          <label class="label">SSH User <span class="has-text-grey is-size-7">(blank = local install)</span></label>
-          <div class="control"><input class="input" x-model="newHost.sshUser" placeholder=""></div>
+          <label for="add-host-user">SSH User</label>
+          <input id="add-host-user" class="input" type="text" x-model="newHost.sshUser" placeholder="">
+          <p>Blank = local install.</p>
         </div>
         <div class="field">
-          <label class="label">SSH Password <span class="has-text-grey is-size-7">(optional; not stored)</span></label>
-          <div class="control"><input class="input" type="password" x-model="newHost.sshPassword"></div>
+          <label for="add-host-password">SSH Password</label>
+          <input id="add-host-password" class="input" type="password" x-model="newHost.sshPassword">
+          <p>Optional; not stored.</p>
         </div>
-        <label class="checkbox"><input type="checkbox" x-model="newHost.tailscale"> Tailscale enabled</label>
-        <div class="field mt-4">
-          <label class="label">Connection</label>
-          <div class="select is-fullwidth"><select x-model="newHost.connMode">
-              <option value="manager_dial">Manager connects to associate (default)</option>
-              <option value="dial_home">Associate connects to manager</option>
-            </select></div>
-          <p class="help" x-show="newHost.connMode==='manager_dial'">The associate listens and the manager connects to
+        <label class="label"><input type="checkbox" class="input" type="text" x-model="newHost.tailscale"> Tailscale enabled</label>
+        <div class="field">
+          <label for="add-host-conn">Connection</label>
+          <select id="add-host-conn" class="select w-full" x-model="newHost.connMode">
+            <option value="manager_dial">Manager connects to associate (default)</option>
+            <option value="dial_home">Associate connects to manager</option>
+          </select>
+          <p x-show="newHost.connMode==='manager_dial'">The associate listens and the manager connects to
             it. Allow inbound TCP on the host firewall from the manager.</p>
         </div>
         <div class="field" x-show="newHost.connMode==='manager_dial'">
-          <label class="label">Listen Port <span class="has-text-grey is-size-7">(blank = default 8444)</span></label>
-          <div class="control"><input class="input" type="number" x-model.number="newHost.connPort" placeholder="8444">
-          </div>
+          <label for="add-host-port">Listen Port</label>
+          <input id="add-host-port" class="input" type="number" x-model.number="newHost.connPort" placeholder="8444">
+          <p>Blank = default 8444.</p>
         </div>
       </section>
-      <footer class="modal-card-foot">
-        <button class="button is-primary" @click="submitHost()" :disabled="!newHost.name || !newHost.ip">Enroll</button>
-        <button class="button" @click="addHostOpen=false">Cancel</button>
+      <footer>
+        <button type="button" class="btn" data-variant="outline" @click="addHostOpen=false">Cancel</button>
+        <button type="button" class="btn" @click="submitHost()" :disabled="!newHost.name || !newHost.ip">Enroll</button>
       </footer>
     </div>
-  </div>
+  </dialog>
 
   <!-- Edit Host -->
-  <div class="modal" :class="editHostOpen && 'is-active'">
-    <div class="modal-background" @click="editHostOpen=false"></div>
-    <div class="modal-card">
-      <header class="modal-card-head">
-        <p class="modal-card-title">Edit Host</p>
+  <dialog class="dialog" x-dialog="editHostOpen" @close="editHostOpen=false" aria-labelledby="edit-host-title">
+    <div>
+      <header>
+        <h2 id="edit-host-title">Edit Host</h2>
       </header>
-      <section class="modal-card-body">
+      <section class="grid gap-4">
         <div class="field">
-          <label class="label">Name</label>
-          <div class="control"><input class="input" x-model="editHost.name"></div>
+          <label for="edit-host-name">Name</label>
+          <input id="edit-host-name" class="input" type="text" x-model="editHost.name">
         </div>
         <div class="field">
-          <label class="label">IP / Address</label>
-          <div class="control"><input class="input" x-model="editHost.ip"></div>
+          <label for="edit-host-ip">IP / Address</label>
+          <input id="edit-host-ip" class="input" type="text" x-model="editHost.ip">
         </div>
         <div class="field">
-          <label class="label">SSH User</label>
-          <div class="control"><input class="input" x-model="editHost.sshUser"></div>
+          <label for="edit-host-user">SSH User</label>
+          <input id="edit-host-user" class="input" type="text" x-model="editHost.sshUser">
         </div>
-        <label class="checkbox"><input type="checkbox" x-model="editHost.tailscale"> Tailscale enabled</label>
-        <div class="field mt-4">
-          <label class="label">Connection</label>
-          <div class="select is-fullwidth"><select x-model="editHost.connMode">
-              <option value="manager_dial">Manager connects to associate (default)</option>
-              <option value="dial_home">Associate connects to manager</option>
-            </select></div>
+        <label class="label"><input type="checkbox" class="input" type="text" x-model="editHost.tailscale"> Tailscale enabled</label>
+        <div class="field">
+          <label for="edit-host-conn">Connection</label>
+          <select id="edit-host-conn" class="select w-full" x-model="editHost.connMode">
+            <option value="manager_dial">Manager connects to associate (default)</option>
+            <option value="dial_home">Associate connects to manager</option>
+          </select>
         </div>
         <div class="field" x-show="editHost.connMode==='manager_dial'">
-          <label class="label">Listen Port <span class="has-text-grey is-size-7">(blank = default 8444)</span></label>
-          <div class="control"><input class="input" type="number" x-model.number="editHost.connPort"
-              placeholder="8444"></div>
+          <label for="edit-host-port">Listen Port</label>
+          <input id="edit-host-port" class="input" type="number" x-model.number="editHost.connPort" placeholder="8444">
+          <p>Blank = default 8444.</p>
         </div>
-        <div class="notification is-warning is-light" x-show="hostNeedsReinstall()">
-          <strong>Reinstall required.</strong> Changing the connection mode or listen port only takes effect after the
-          associate is reinstalled on this host (uninstall, then re-add). Saving here updates the record, but the host
-          will not reconnect on the new settings until you do.
+        <div class="alert" data-variant="warning" x-show="hostNeedsReinstall()">
+          <h2>Reinstall required.</h2>
+          <section>Changing the connection mode or listen port only takes effect after the associate is reinstalled
+            on this host (uninstall, then re-add). Saving here updates the record, but the host will not reconnect
+            on the new settings until you do.</section>
         </div>
       </section>
-      <footer class="modal-card-foot">
-        <button class="button is-primary" @click="submitEditHost()" :disabled="!editHost.name || !editHost.ip">Save</button>
-        <button class="button" @click="editHostOpen=false">Cancel</button>
+      <footer>
+        <button type="button" class="btn" data-variant="outline" @click="editHostOpen=false">Cancel</button>
+        <button type="button" class="btn" @click="submitEditHost()" :disabled="!editHost.name || !editHost.ip">Save</button>
       </footer>
     </div>
-  </div>
+  </dialog>
 
-  <!-- Uninstall host modal -->
-  <div class="modal" :class="uninstall.open && 'is-active'">
-    <div class="modal-background" @click="uninstall.open=false"></div>
-    <div class="modal-card">
-      <header class="modal-card-head">
-        <p class="modal-card-title" x-text="'Uninstall '+uninstall.hostName"></p>
+  <!-- Uninstall host dialog -->
+  <dialog class="dialog" x-dialog="uninstall.open" @close="uninstall.open=false" aria-labelledby="uninstall-title">
+    <div>
+      <header>
+        <h2 id="uninstall-title" x-text="'Uninstall '+uninstall.hostName"></h2>
+        <p>This stops and removes the associate from the host, revokes its certificate, and deletes the host
+          record.</p>
       </header>
-      <section class="modal-card-body">
-        <p class="mb-3">This stops and removes the associate from the host, revokes its certificate, and deletes the
-          host record.</p>
+      <section class="grid gap-4">
         <template x-if="uninstall.online">
-          <p class="notification is-info is-light">The host is online — it will tear itself down over the existing
-            connection. No SSH needed.</p>
+          <div class="alert">
+            <section>The host is online — it will tear itself down over the existing connection. No SSH
+              needed.</section>
+          </div>
         </template>
         <template x-if="!uninstall.online">
-          <div>
-            <p class="notification is-warning is-light">The host is offline. Provide SSH credentials to remove the
-              associate over SSH, or leave blank to drop the host record only (the associate stays installed but its
-              cert is revoked).</p>
-            <div class="field"><label class="label">SSH User</label>
-              <div class="control"><input class="input" x-model="uninstall.sshUser"></div>
+          <div class="grid gap-4">
+            <div class="alert" data-variant="warning">
+              <section>The host is offline. Provide SSH credentials to remove the associate over SSH, or leave blank
+                to drop the host record only (the associate stays installed but its cert is revoked).</section>
             </div>
-            <div class="field"><label class="label">SSH Password <span class="has-text-grey is-size-7">(optional —
-                  leave blank to use the manager's SSH key or agent; not stored)</span></label>
-              <div class="control"><input class="input" type="password" x-model="uninstall.sshPassword"></div>
+            <div class="field">
+              <label for="uninstall-user">SSH User</label>
+              <input id="uninstall-user" class="input" type="text" x-model="uninstall.sshUser">
+            </div>
+            <div class="field">
+              <label for="uninstall-password">SSH Password</label>
+              <input id="uninstall-password" class="input" type="password" x-model="uninstall.sshPassword">
+              <p>Optional — leave blank to use the manager's SSH key or agent; not stored.</p>
             </div>
           </div>
         </template>
       </section>
-      <footer class="modal-card-foot">
-        <button class="button is-danger" @click="submitUninstall()">Uninstall</button>
-        <button class="button" @click="uninstall.open=false">Cancel</button>
+      <footer>
+        <button type="button" class="btn" data-variant="outline" @click="uninstall.open=false">Cancel</button>
+        <button type="button" class="btn" data-variant="destructive" @click="submitUninstall()">Uninstall</button>
       </footer>
     </div>
-  </div>
+  </dialog>
 
-  <!-- Revive associate modal -->
-  <div class="modal" :class="revive.open && 'is-active'">
-    <div class="modal-background" @click="revive.open=false"></div>
-    <div class="modal-card">
-      <header class="modal-card-head">
-        <p class="modal-card-title" x-text="'Revive '+revive.hostName"></p>
+  <!-- Revive associate dialog -->
+  <dialog class="dialog" x-dialog="revive.open" @close="revive.open=false" aria-labelledby="revive-title">
+    <div>
+      <header>
+        <h2 id="revive-title" x-text="'Revive '+revive.hostName"></h2>
+        <p>Connects over SSH to the host and re-enables and starts the already-installed associate service. Use
+          this when a host did not reconnect after a reboot (service disabled, or crashed and not restarted).</p>
       </header>
-      <section class="modal-card-body">
-        <p class="mb-3">Connects over SSH to the host and re-enables and starts the already-installed associate
-          service. Use this when a host did not reconnect after a reboot (service disabled, or crashed and not
-          restarted).</p>
-        <p class="notification is-warning is-light">The associate must already be installed on the host — this does
-          not enroll a new host.</p>
-        <div class="field"><label class="label">SSH User</label>
-          <div class="control"><input class="input" x-model="revive.sshUser"></div>
+      <section class="grid gap-4">
+        <div class="alert" data-variant="warning">
+          <section>The associate must already be installed on the host — this does not enroll a new host.</section>
         </div>
-        <div class="field"><label class="label">SSH Password <span class="has-text-grey is-size-7">(optional — leave
-              blank to use the manager's SSH key or agent; not stored)</span></label>
-          <div class="control"><input class="input" type="password" x-model="revive.sshPassword"
-              @keyup.enter="submitRevive()"></div>
+        <div class="field">
+          <label for="revive-user">SSH User</label>
+          <input id="revive-user" class="input" type="text" x-model="revive.sshUser">
+        </div>
+        <div class="field">
+          <label for="revive-password">SSH Password</label>
+          <input id="revive-password" class="input" type="password" x-model="revive.sshPassword"
+            @keyup.enter="submitRevive()">
+          <p>Optional — leave blank to use the manager's SSH key or agent; not stored.</p>
         </div>
       </section>
-      <footer class="modal-card-foot">
-        <button class="button is-link" @click="submitRevive()">Revive</button>
-        <button class="button" @click="revive.open=false">Cancel</button>
+      <footer>
+        <button type="button" class="btn" data-variant="outline" @click="revive.open=false">Cancel</button>
+        <button type="button" class="btn" data-variant="secondary" @click="submitRevive()">Revive</button>
       </footer>
     </div>
-  </div>
+  </dialog>
 
-  <!-- Upgrade associate modal -->
-  <div class="modal" :class="upgrade.open && 'is-active'">
-    <div class="modal-background" @click="upgrade.open=false"></div>
-    <div class="modal-card">
-      <header class="modal-card-head">
-        <p class="modal-card-title" x-text="'Upgrade associate on '+upgrade.hostName"></p>
+  <!-- Upgrade associate dialog -->
+  <dialog class="dialog" x-dialog="upgrade.open" @close="upgrade.open=false" aria-labelledby="upgrade-title">
+    <div>
+      <header>
+        <h2 id="upgrade-title" x-text="'Upgrade associate on '+upgrade.hostName"></h2>
+        <p>Uploads the manager's current associate (and helper) binaries to the host and restarts the service. The
+          host keeps its certificate and bundle — only the code changes. Use this after updating the manager, so
+          hosts stop running the build they were enrolled with.</p>
       </header>
-      <section class="modal-card-body">
-        <p class="mb-3">Uploads the manager's current associate (and helper) binaries to the host and restarts the
-          service. The host keeps its certificate and bundle — only the code changes. Use this after updating the
-          manager, so hosts stop running the build they were enrolled with.</p>
-        <p class="notification is-warning is-light">The associate restarts, so any job running on this host is
-          interrupted. The host drops offline for a few seconds while it reconnects.</p>
-        <div class="field"><label class="label">SSH User</label>
-          <div class="control"><input class="input" x-model="upgrade.sshUser"></div>
+      <section class="grid gap-4">
+        <div class="alert" data-variant="warning">
+          <section>The associate restarts, so any job running on this host is interrupted. The host drops offline
+            for a few seconds while it reconnects.</section>
         </div>
-        <div class="field"><label class="label">SSH Password <span class="has-text-grey is-size-7">(optional — leave
-              blank to use the manager's SSH key or agent; not stored)</span></label>
-          <div class="control"><input class="input" type="password" x-model="upgrade.sshPassword"
-              @keyup.enter="submitUpgrade()"></div>
+        <div class="field">
+          <label for="upgrade-user">SSH User</label>
+          <input id="upgrade-user" class="input" type="text" x-model="upgrade.sshUser">
+        </div>
+        <div class="field">
+          <label for="upgrade-password">SSH Password</label>
+          <input id="upgrade-password" class="input" type="password" x-model="upgrade.sshPassword"
+            @keyup.enter="submitUpgrade()">
+          <p>Optional — leave blank to use the manager's SSH key or agent; not stored.</p>
         </div>
       </section>
-      <footer class="modal-card-foot">
-        <button class="button is-warning" @click="submitUpgrade()">Upgrade</button>
-        <button class="button" @click="upgrade.open=false">Cancel</button>
+      <footer>
+        <button type="button" class="btn" data-variant="outline" @click="upgrade.open=false">Cancel</button>
+        <button type="button" class="btn" data-variant="warning" @click="submitUpgrade()">Upgrade</button>
       </footer>
     </div>
-  </div>
+  </dialog>
 
-  <!-- Bulk associate upgrade modal -->
-  <div class="modal" :class="upgradeAll.open && 'is-active'">
-    <div class="modal-background" @click="upgradeAll.open=false"></div>
-    <div class="modal-card">
-      <header class="modal-card-head">
-        <p class="modal-card-title" x-text="'Upgrade '+staleAssociates()+' associate'+(staleAssociates()===1?'':'s')">
-        </p>
+  <!-- Bulk associate upgrade dialog. Esc and backdrop clicks are ignored while it is submitting. -->
+  <dialog class="dialog" x-dialog="upgradeAll.open" @close="upgradeAll.open=false"
+    @cancel="upgradeAll.busy && $event.preventDefault()" aria-labelledby="upgrade-all-title">
+    <div>
+      <header>
+        <h2 id="upgrade-all-title"
+          x-text="'Upgrade '+staleAssociates()+' associate'+(staleAssociates()===1?'':'s')"></h2>
+        <p>Uploads this manager's associate (and helper) binaries to every host running older associate code, and
+          restarts each service. Hosts keep their certificates and bundles — only the code changes.</p>
       </header>
-      <section class="modal-card-body">
-        <p class="mb-3">Uploads this manager's associate (and helper) binaries to every host running older associate
-          code, and restarts each service. Hosts keep their certificates and bundles — only the code changes.</p>
-        <p class="mb-3 is-size-7 has-text-grey">Hosts already running the same associate code are skipped, even when
-          the manager itself is newer: a manager update that changed only the dashboard or manager-side code leaves
-          them alone.</p>
-        <p class="notification is-warning is-light">Each associate restarts, so jobs running on those hosts are
-          interrupted and the hosts drop offline for a few seconds while they reconnect.</p>
-        <p class="is-size-7 has-text-grey">Every host is tried first with the manager's SSH key or agent and its own
-          stored SSH user — nothing to type here. Any host that comes back needing a login is asked about
+      <section class="grid gap-3">
+        <p class="text-xs text-muted-foreground">Hosts already running the same associate code are skipped, even
+          when the manager itself is newer: a manager update that changed only the dashboard or manager-side code
+          leaves them alone.</p>
+        <div class="alert" data-variant="warning">
+          <section>Each associate restarts, so jobs running on those hosts are interrupted and the hosts drop
+            offline for a few seconds while they reconnect.</section>
+        </div>
+        <p class="text-xs text-muted-foreground">Every host is tried first with the manager's SSH key or agent and
+          its own stored SSH user — nothing to type here. Any host that comes back needing a login is asked about
           individually afterwards, so hosts with different credentials are handled one at a time.</p>
-        <p class="help is-danger" x-show="upgradeAll.error" x-text="upgradeAll.error"></p>
+        <p class="text-sm text-destructive" x-show="upgradeAll.error" x-text="upgradeAll.error"></p>
       </section>
-      <footer class="modal-card-foot">
-        <button class="button is-warning" :class="upgradeAll.busy && 'is-loading'" :disabled="upgradeAll.busy"
-          @click="submitUpgradeAll()">Upgrade all</button>
-        <button class="button" @click="upgradeAll.open=false">Cancel</button>
+      <footer>
+        <button type="button" class="btn" data-variant="outline" @click="upgradeAll.open=false">Cancel</button>
+        <button type="button" class="btn" data-variant="warning" :class="upgradeAll.busy && 'is-loading'"
+          :disabled="upgradeAll.busy" @click="submitUpgradeAll()">Upgrade all</button>
       </footer>
     </div>
-  </div>
+  </dialog>
 
   <!-- Per-host retry prompt, shown for each host whose bulk upgrade failed. One host at a time:
        a fleet does not necessarily share one account, and a single password box up front would
        be wrong for most of it. Hosts the manager recognised as a login problem come first; the
        rest are offered anyway, because the alternative is a host that failed with no way back
-       in when the error text is one the manager has not learned to recognise. -->
-  <div class="modal" :class="credPrompt.open && 'is-active'">
-    <div class="modal-background" @click="skipCredPrompt()"></div>
-    <div class="modal-card">
-      <header class="modal-card-head">
-        <p class="modal-card-title" x-text="'Retry upgrade on '+credPrompt.hostName"></p>
+       in when the error text is one the manager has not learned to recognise.
+       Esc or a backdrop click skips to the next host, like the Skip button (ignored while a
+       retry is being submitted). -->
+  <dialog class="dialog" x-dialog="credPrompt.open" @close="credPrompt.open && skipCredPrompt()"
+    @cancel="credPrompt.busy && $event.preventDefault()" aria-labelledby="cred-title">
+    <div>
+      <header>
+        <h2 id="cred-title" x-text="'Retry upgrade on '+credPrompt.hostName"></h2>
       </header>
-      <section class="modal-card-body">
-        <p class="mb-3" x-show="credPrompt.authRequired">The associate upgrade on
+      <section class="grid gap-4">
+        <p x-show="credPrompt.authRequired">The associate upgrade on
           <strong x-text="credPrompt.hostName"></strong> was rejected: the manager's SSH key or agent was not
           accepted for this host. Enter a login it will accept to retry.</p>
-        <p class="mb-3" x-show="!credPrompt.authRequired" x-cloak>The associate upgrade on
+        <p x-show="!credPrompt.authRequired" x-cloak>The associate upgrade on
           <strong x-text="credPrompt.hostName"></strong> failed. It may not be a login problem — check the error
           below. Retry with different credentials, or skip this host and read its job log.</p>
-        <pre class="is-size-7 mb-3" style="white-space:pre-wrap" x-show="credPrompt.jobError" x-cloak
+        <pre class="log-pre whitespace-pre-wrap" x-show="credPrompt.jobError" x-cloak
           x-text="credPrompt.jobError"></pre>
-        <p class="is-size-7 has-text-grey mb-3" x-show="credPrompt.remaining>0"
+        <p class="text-xs text-muted-foreground" x-show="credPrompt.remaining>0"
           x-text="credPrompt.remaining + ' more host' + (credPrompt.remaining===1?'':'s') + ' to go after this one.'">
         </p>
-        <div class="field"><label class="label">SSH User <span class="has-text-grey is-size-7">(saved to this host
-              if the retry succeeds)</span></label>
-          <div class="control"><input class="input" x-model="credPrompt.sshUser"></div>
+        <div class="field">
+          <label for="cred-user">SSH User</label>
+          <input id="cred-user" class="input" type="text" x-model="credPrompt.sshUser">
+          <p>Saved to this host if the retry succeeds.</p>
         </div>
-        <div class="field"><label class="label">SSH Password <span class="has-text-grey is-size-7">(also used as the
-              sudo password on this host; not stored)</span></label>
-          <div class="control"><input class="input" type="password" x-model="credPrompt.sshPassword"
-              @keyup.enter="submitCredPrompt()"></div>
+        <div class="field">
+          <label for="cred-password">SSH Password</label>
+          <input id="cred-password" class="input" type="password" x-model="credPrompt.sshPassword"
+            @keyup.enter="submitCredPrompt()">
+          <p>Also used as the sudo password on this host; not stored.</p>
         </div>
-        <p class="help is-danger" x-show="credPrompt.error" x-text="credPrompt.error"></p>
-        <p class="is-size-7 has-text-grey mt-3">Once the login is accepted the upgrade carries on in the job panel
+        <p class="text-sm text-destructive" x-show="credPrompt.error" x-text="credPrompt.error"></p>
+        <p class="text-xs text-muted-foreground">Once the login is accepted the upgrade carries on in the job panel
           and the next host is asked about — only a rejected login comes back here.</p>
       </section>
-      <footer class="modal-card-foot">
-        <button class="button is-warning" :class="credPrompt.busy && 'is-loading'" :disabled="credPrompt.busy"
-          @click="submitCredPrompt()">Retry upgrade</button>
-        <button class="button" :disabled="credPrompt.busy" @click="skipCredPrompt()"
+      <footer>
+        <button type="button" class="btn" data-variant="outline" x-show="credPrompt.remaining>0" x-cloak
+          :disabled="credPrompt.busy" @click="skipAllCredPrompts()">Skip the rest</button>
+        <button type="button" class="btn" data-variant="outline" :disabled="credPrompt.busy" @click="skipCredPrompt()"
           x-text="credPrompt.remaining>0 ? 'Skip this host' : 'Skip'"></button>
-        <button class="button is-light" x-show="credPrompt.remaining>0" x-cloak :disabled="credPrompt.busy"
-          @click="skipAllCredPrompts()">Skip the rest</button>
+        <button type="button" class="btn" data-variant="warning" :class="credPrompt.busy && 'is-loading'"
+          :disabled="credPrompt.busy" @click="submitCredPrompt()">Retry upgrade</button>
       </footer>
     </div>
-  </div>
+  </dialog>
 

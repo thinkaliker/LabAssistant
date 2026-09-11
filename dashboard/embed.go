@@ -1,4 +1,4 @@
-// Package dashboard embeds the static web assets (HTML, vendored Alpine.js + Bulma)
+// Package dashboard embeds the static web assets (HTML, vendored Alpine.js + Basecoat CSS)
 // served by the manager. The dashboard is a pure client of the manager's REST + SSE API.
 package dashboard
 

@@ -278,20 +278,23 @@ export const core = {
     }
     return 'good';
   },
-  // Fill color for the flask liquid — the visible status light.
+  // Fill color for the flask liquid — the visible status light. Theme tokens (bound as a CSS
+  // fill), so it follows light/dark with the rest of the page.
   statusColor() {
-    return { good: '#48c78e', warn: '#ffb454', crit: '#f14668' }[this.overallStatus()];
+    return { good: 'var(--success)', warn: 'var(--warning)', crit: 'var(--destructive)' }[this.overallStatus()];
   },
   statusTitle() {
     return { good: 'All systems healthy', warn: 'Attention: updates or issues pending',
              crit: 'Action required: a host or service needs attention' }[this.overallStatus()];
   },
-  statusClass(s) {
+  // Badge variant (Basecoat data-variant) for a host/stack/job state. success and warning are
+  // app variants, defined in stylesheet.css.
+  statusVariant(s) {
     return {
-      online: 'is-success', offline: 'is-danger', enrolling: 'is-warning',
-      error: 'is-danger', succeeded: 'is-success', failed: 'is-danger',
-      running: 'is-success', partial: 'is-warning', pending: 'is-warning',
-      stopped: 'is-danger'
-    }[s] || 'is-light';
+      online: 'success', offline: 'destructive', enrolling: 'warning',
+      error: 'destructive', succeeded: 'success', failed: 'destructive',
+      running: 'success', partial: 'warning', pending: 'warning',
+      stopped: 'destructive'
+    }[s] || 'secondary';
   },
 };

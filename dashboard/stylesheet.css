@@ -1,69 +1,543 @@
+/* LabAssistant dashboard styles, on top of the vendored Basecoat (shadcn/ui's components for plain
+    HTML). Basecoat sits entirely inside cascade layers, so every rule here is unlayered and beats it
+    regardless of specificity — which is also why element-level rules here stay narrowly scoped. */
+
 [x-cloak] {
     display: none !important
 }
 
-/* Space out the confirm/cancel buttons in every modal footer. */
-.modal-card-foot {
-    gap: 0.75rem;
+/* ---- Tokens ---- */
+
+/* Basecoat ships the shadcn palette but no success/warning colors. These take the same Tailwind
+    shade steps as its --destructive (red-600 light / red-400 dark), one notch darker in light mode
+    so soft-tinted text stays readable on white. */
+:root {
+    --success: oklch(52.7% .154 150.069);
+    /* green-700 */
+    --warning: oklch(55.5% .163 48.998);
+    /* amber-700 */
+    --header-h: 3.5rem;
+
+    /* Compose editor (CodeMirror 5) palette: page tokens + CodeMirror's default syntax colors. */
+    --cm-bg: var(--background);
+    --cm-text: var(--foreground);
+    --cm-gutter-bg: var(--muted);
+    --cm-gutter-text: var(--muted-foreground);
+    --cm-selection: #d7d4f0;
+    --cm-active: transparent;
+    --cm-comment: #a50;
+    --cm-key: #219;
+    --cm-string: #a11;
+    --cm-number: #164;
+    --cm-keyword: #708;
+    --cm-meta: #555;
 }
 
-/* Log viewer: wider than Bulma's 640px modal card so long log lines fit. */
-.log-modal-card {
-    width: 1600px;
-    max-width: calc(100vw - 2rem);
+/* Dark mode is Basecoat's .dark class on <html>, set from prefers-color-scheme in the page head. */
+.dark {
+    --success: oklch(72.3% .219 149.579);
+    /* green-500 */
+    --warning: oklch(76.9% .188 70.08);
+    /* amber-500 */
+
+    --cm-bg: var(--card);
+    --cm-gutter-bg: var(--card);
+    --cm-selection: #2c3140;
+    --cm-active: rgba(255, 255, 255, 0.04);
+    --cm-comment: #7f848e;
+    --cm-key: #61afef;
+    --cm-string: #98c379;
+    --cm-number: #d19a66;
+    --cm-keyword: #c678dd;
+    --cm-meta: #56b6c2;
 }
 
-/* Prevent a flash of unstyled modal markup before Bulma's stylesheet loads.
-    Bulma normally hides inactive modals; replicate that inline so it applies
-    on first paint. */
-.modal:not(.is-active) {
-    display: none !important;
+body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
-/* Widen the main content area: use nearly the full viewport with a small side gutter
-    instead of Bulma's narrow centered breakpoint-based max-widths. */
-.container {
-    max-width: none;
-    width: 100%;
-    padding-left: 1.5rem;
-    padding-right: 1.5rem;
+/* ---- Variants ---- */
+
+/* success / warning for .btn and .badge: Basecoat's destructive recipe (a soft tint of the color,
+    with the color itself as the text) with the token swapped, so the three read as one family. */
+.btn[data-variant=success],
+.badge[data-variant=success] {
+    background-color: color-mix(in oklab, var(--success) 10%, transparent);
+    color: var(--success);
 }
 
-/* Compose editor: a half-width panel that fills the viewport height (sticky under the
-    navbar), with the CodeMirror area flexing to take all the leftover space. */
-/* Widen the main content: near-edge margins instead of Bulma's centered container. */
-.app-section {
-    padding-left: 2.0rem;
-    padding-right: 2.0rem;
+.btn[data-variant=warning],
+.badge[data-variant=warning] {
+    background-color: color-mix(in oklab, var(--warning) 10%, transparent);
+    color: var(--warning);
 }
 
-.app-container.is-fluid {
-    padding-left: 0;
-    padding-right: 0;
+.btn[data-variant=success]:focus-visible {
+    border-color: color-mix(in oklab, var(--success) 40%, transparent);
+    --tw-ring-color: color-mix(in oklab, var(--success) 20%, transparent);
 }
 
-/* Pin the compose editor to the right half of the viewport. Fixed (not sticky) so it never
-    adds to document height — sticky rendered it at its natural spot below the nav and spilled
-    past the bottom until you scrolled. Anchoring top+bottom makes it always fit the screen. */
-.compose-panel {
-    position: fixed;
-    top: 5rem;
-    bottom: 1rem;
-    right: 0.75rem;
-    width: calc(50vw - 1.1rem);
-    overflow: hidden;
+.btn[data-variant=warning]:focus-visible {
+    border-color: color-mix(in oklab, var(--warning) 40%, transparent);
+    --tw-ring-color: color-mix(in oklab, var(--warning) 20%, transparent);
+}
+
+.dark .btn[data-variant=success],
+.dark .badge[data-variant=success] {
+    background-color: color-mix(in oklab, var(--success) 20%, transparent);
+}
+
+.dark .btn[data-variant=warning],
+.dark .badge[data-variant=warning] {
+    background-color: color-mix(in oklab, var(--warning) 20%, transparent);
+}
+
+.dark .btn[data-variant=success]:focus-visible {
+    --tw-ring-color: color-mix(in oklab, var(--success) 40%, transparent);
+}
+
+.dark .btn[data-variant=warning]:focus-visible {
+    --tw-ring-color: color-mix(in oklab, var(--warning) 40%, transparent);
+}
+
+@media (hover: hover) {
+    .btn[data-variant=success]:hover {
+        background-color: color-mix(in oklab, var(--success) 20%, transparent);
+    }
+
+    .btn[data-variant=warning]:hover {
+        background-color: color-mix(in oklab, var(--warning) 20%, transparent);
+    }
+
+    .dark .btn[data-variant=success]:hover {
+        background-color: color-mix(in oklab, var(--success) 30%, transparent);
+    }
+
+    .dark .btn[data-variant=warning]:hover {
+        background-color: color-mix(in oklab, var(--warning) 30%, transparent);
+    }
+}
+
+/* Alerts: Basecoat's destructive alert is a plain card with red text. These banners carry
+    approvals, sudo prompts and errors that must not be missed, so colored alerts also get a faint
+    wash and a tinted border. */
+.alert[data-variant=destructive] {
+    --alert-tone: var(--destructive);
+}
+
+.alert[data-variant=warning] {
+    --alert-tone: var(--warning);
+}
+
+.alert[data-variant=success] {
+    --alert-tone: var(--success);
+}
+
+.alert[data-variant=destructive],
+.alert[data-variant=warning],
+.alert[data-variant=success] {
+    border-color: color-mix(in oklab, var(--alert-tone) 30%, transparent);
+    background-color: color-mix(in oklab, var(--alert-tone) 7%, var(--card));
+    color: var(--alert-tone);
+}
+
+.alert[data-variant=destructive]>section,
+.alert[data-variant=warning]>section,
+.alert[data-variant=success]>section {
+    color: color-mix(in oklab, var(--alert-tone) 90%, transparent);
+}
+
+/* Busy buttons (the :class="… && 'is-loading'" bindings): a spinner ahead of the label. */
+.btn.is-loading {
+    pointer-events: none;
+}
+
+.btn.is-loading::before {
+    content: "";
+    flex-shrink: 0;
+    width: 1em;
+    height: 1em;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: la-spin .6s linear infinite;
+}
+
+@keyframes la-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Segmented sort toggles: the pressed segment takes the primary fill. (Basecoat's outline buttons
+    are already lighter than the page in dark mode, so a subtler "accent" fill would read as off.) */
+.button-group>.btn[aria-pressed=true] {
+    border-color: var(--primary);
+    background-color: var(--primary);
+    color: var(--primary-foreground);
+}
+
+/* Job-queue chips are badges rendered as buttons; the one whose log is on screen gets a ring. */
+button.badge {
+    cursor: pointer;
+}
+
+.badge.is-current {
+    box-shadow: 0 0 0 2px var(--foreground);
+}
+
+/* Basecoat keeps table cells on one line and scrolls the container sideways; let body cells wrap
+    instead (as under Bulma) so long image names and summaries don't push the row actions away. */
+.table td {
+    white-space: normal;
+}
+
+.table-sm th {
+    height: 2rem;
+}
+
+.table-sm td {
+    padding: .375rem .5rem;
+}
+
+/* A table standing alone on a page gets the card treatment: bordered, rounded, card-colored. */
+.table-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background-color: var(--card);
+}
+
+.table-card .table :is(th, td):first-child {
+    padding-left: .75rem;
+}
+
+.table-card .table :is(th, td):last-child {
+    padding-right: .75rem;
+}
+
+/* ---- Page chrome ---- */
+
+.app-header {
+    position: sticky;
+    top: 0;
+    z-index: 30;
     display: flex;
-    flex-direction: column;
+    align-items: center;
+    gap: 1.5rem;
+    height: var(--header-h);
+    padding-inline: 2rem;
+    border-bottom: 1px solid var(--border);
+    background-color: color-mix(in oklab, var(--background) 85%, transparent);
+    backdrop-filter: blur(8px);
 }
 
-/* The fixed panel overlays the right half of the page, so the shell banners (approvals, sudo
-    prompts, refresh errors) would sit underneath it with their action buttons unreachable.
-    While the panel is up, keep those banners inside the free left half. Only the container's
-    own children match: page content manages its own columns. */
+.app-brand {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    font-size: 1rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.app-nav {
+    display: flex;
+    align-items: center;
+    gap: .25rem;
+}
+
+.app-nav>button {
+    padding: .375rem .75rem;
+    border-radius: var(--radius-md);
+    font-size: .875rem;
+    font-weight: 500;
+    color: var(--muted-foreground);
+    cursor: pointer;
+    transition: color .15s, background-color .15s;
+}
+
+.app-nav>button:hover,
+.app-nav>button[aria-current=page] {
+    background-color: var(--accent);
+    color: var(--foreground);
+}
+
+.app-header-actions {
+    display: flex;
+    align-items: center;
+    gap: .25rem;
+    margin-left: auto;
+}
+
+.app-header-actions>.btn[aria-current=page] {
+    background-color: var(--accent);
+}
+
+.app-nav-toggle {
+    display: none;
+}
+
+/* The manager restarted or the session expired: pinned over the header until the user logs in. */
+.stale-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: .625rem 2rem;
+    border-bottom: 1px solid color-mix(in oklab, var(--warning) 40%, transparent);
+    background-color: color-mix(in oklab, var(--warning) 12%, var(--background));
+    color: var(--warning);
+    font-size: .875rem;
+    font-weight: 500;
+}
+
+/* Widen the main content: use nearly the full viewport with a side gutter instead of a narrow
+    centered column. */
+.app-main {
+    padding: 1.5rem 2rem 2rem;
+}
+
+.app-main>.alert {
+    margin-bottom: 1rem;
+}
+
+@media screen and (max-width: 768px) {
+    .app-header {
+        gap: .75rem;
+        padding-inline: 1rem;
+    }
+
+    .app-nav-toggle {
+        display: inline-flex;
+    }
+
+    /* The page links fold into a panel under the header, opened by the menu button (navOpen). */
+    .app-nav {
+        display: none;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        flex-direction: column;
+        align-items: stretch;
+        padding: .5rem 1rem 1rem;
+        border-bottom: 1px solid var(--border);
+        background-color: var(--background);
+        box-shadow: 0 12px 24px -12px rgb(0 0 0 / .25);
+    }
+
+    .app-nav.is-open {
+        display: flex;
+    }
+
+    .app-nav>button {
+        text-align: left;
+    }
+
+    .app-main {
+        padding: 1rem;
+    }
+
+    .stale-bar {
+        padding-inline: 1rem;
+    }
+}
+
+.toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem .75rem;
+    width: 100%;
+}
+
+.page-head {
+    margin-bottom: 1.25rem;
+}
+
+.page-title {
+    font-size: 1.5rem;
+    line-height: 2rem;
+    font-weight: 600;
+    letter-spacing: -.025em;
+}
+
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .5rem;
+}
+
+.eyebrow {
+    font-size: .75rem;
+    line-height: 1rem;
+    font-weight: 500;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+}
+
+.stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    gap: 1rem;
+}
+
+.stat-value {
+    margin-block: .25rem;
+    font-size: 1.875rem;
+    line-height: 2.25rem;
+    font-weight: 600;
+    letter-spacing: -.025em;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Sub-panels inside a card: .panel is outlined (module action buttons sit on it), .panel-muted is
+    a filled well (host vitals). */
+.panel {
+    padding: .75rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+}
+
+.panel-muted {
+    padding: .75rem 1rem;
+    border-radius: var(--radius-lg);
+    background-color: var(--muted);
+}
+
+.vitals {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .75rem 2rem;
+}
+
+.chevron {
+    flex-shrink: 0;
+    color: var(--muted-foreground);
+    transition: transform .15s;
+}
+
+.chevron.is-open {
+    transform: rotate(90deg);
+}
+
+:not(pre)>code {
+    padding: .1em .35em;
+    border-radius: var(--radius-sm);
+    background-color: var(--muted);
+    font-size: .85em;
+}
+
+.log-pre,
+.job-panel-log {
+    padding: .75rem 1rem;
+    border-radius: var(--radius-md);
+    background-color: var(--muted);
+    font-size: .75rem;
+    line-height: 1.5;
+    white-space: pre;
+    overflow: auto;
+}
+
+.log-pre {
+    max-height: 480px;
+}
+
+.login-screen {
+    display: grid;
+    place-items: center;
+    min-height: 100dvh;
+    padding: 1.5rem;
+    background-color: var(--muted);
+}
+
+.login-card {
+    width: 100%;
+    max-width: 24rem;
+}
+
+.login-title {
+    margin-top: .5rem;
+    font-size: 1.25rem;
+    line-height: 1.75rem;
+    font-weight: 600;
+}
+
+/* ---- Dialogs ---- */
+
+/* Native modal dialogs don't lock the page behind them. */
+html:has(dialog[open]) {
+    overflow: hidden;
+}
+
+/* Basecoat's panel tops out at 28rem, which crowds the host and upgrade dialogs; give them Bulma's
+    old 40rem. Long forms scroll inside the panel. */
+.dialog>div {
+    max-width: min(40rem, calc(100% - 2rem));
+    overflow-y: auto;
+}
+
+.dialog>.dialog-lg {
+    max-width: min(48rem, calc(100% - 2rem));
+}
+
+/* Log viewer: wide enough for long log lines. */
+.dialog>.dialog-log {
+    max-width: min(1600px, calc(100% - 2rem));
+}
+
+.dialog>div>header>h2 {
+    font-size: 1.125rem;
+    font-weight: 600;
+}
+
+/* ---- Services ---- */
+
 @media screen and (min-width: 769px) {
-    .app-container.compose-open>.notification {
+
+    /* The stack list keeps the left half while the compose editor is open. */
+    .svc-list.is-split {
+        width: calc(50% - .75rem);
+    }
+
+    /* The fixed editor covers the right half of the page, so the shell banners (approvals, sudo
+        prompts, refresh errors) would sit underneath it with their action buttons unreachable.
+        While it is up, keep them inside the free left half. Only main's own children match: page
+        content manages its own width. */
+    .app-main.compose-open>.alert {
         max-width: calc(50vw - 1.9rem);
     }
+}
+
+/* Pin the compose editor to the right half of the viewport. Fixed (not sticky) so it never adds
+    to document height — sticky rendered it at its natural spot below the header and spilled past
+    the bottom until you scrolled. Anchoring top+bottom makes it always fit the screen. */
+.compose-panel {
+    position: fixed;
+    top: calc(var(--header-h) + 1rem);
+    bottom: 1rem;
+    right: .75rem;
+    width: calc(50vw - 1.1rem);
+    overflow: hidden;
+}
+
+/* The body takes the height the header and footer leave, and the editor takes whatever the
+    notices inside it don't. */
+.compose-panel>section {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: .5rem;
+    min-height: 0;
 }
 
 .compose-editor-wrap {
@@ -82,36 +556,28 @@
     resize: none;
 }
 
-/* On narrow screens the columns stack full-width, so drop the fixed overlay and let the
-    editor flow normally beneath the stack list. */
+/* On narrow screens the stack list is full width, so drop the fixed overlay and let the editor
+    flow normally beneath it. */
 @media screen and (max-width: 768px) {
     .compose-panel {
         position: static;
         width: auto;
         height: 70vh;
+        margin-top: 1rem;
     }
 }
 
-/* Below desktop width (large phones + tablets in portrait), drop the stack action buttons
-    onto their own second row and stack the per-service rows, instead of squishing them.
-    Desktop (>=1024px) keeps the single-row / full-table layout. */
+/* Below desktop width (large phones + tablets in portrait), drop the stack action buttons onto
+    their own row and stack the per-service rows, instead of squishing them. Desktop (>=1024px)
+    keeps the single-row / full-table layout. */
 @media screen and (max-width: 1023px) {
-    .svc-stack-head {
-        flex-wrap: wrap;
-    }
-
-    .svc-stack-head>.level-right {
+    .svc-stack-actions {
         width: 100%;
-        margin-top: 0.5rem;
     }
 
-    .svc-stack-head>.level-right .buttons {
-        justify-content: flex-start;
-    }
-
-    /* The per-service table has 5 columns (status, name, image, update, actions) that squish
-        on a narrow screen. Collapse each row into a stacked card: status tag + service name on
-        the first line, then image, update badge, and the action buttons each on their own row. */
+    /* The per-service table has 5 columns (status, name, image, update, actions) that squish on a
+        narrow screen. Collapse each row into a stacked card: status badge + service name on the
+        first line, then image, update badge, and the action buttons each on their own row. */
     .svc-table tbody,
     .svc-table tr,
     .svc-table td {
@@ -119,8 +585,8 @@
     }
 
     .svc-table tr {
-        padding: 0.5rem 0;
-        border-bottom: 1px solid var(--bulma-border-weak);
+        padding: .5rem 0;
+        border-bottom: 1px solid var(--border);
     }
 
     .svc-table tr:last-child {
@@ -128,8 +594,8 @@
     }
 
     .svc-table td {
+        padding: .15rem 0;
         border: 0;
-        padding: 0.15rem 0;
     }
 
     .svc-table td:nth-child(1),
@@ -139,73 +605,76 @@
     }
 
     .svc-table td:nth-child(2) {
-        margin-left: 0.5rem;
+        margin-left: .5rem;
     }
 
-    .svc-table td.has-text-right {
-        text-align: left !important;
+    .svc-table td.text-end {
+        text-align: left;
     }
 
-    .svc-table .buttons.is-right {
+    .svc-table .actions {
         justify-content: flex-start;
     }
 }
 
+/* ---- Compose editor (CodeMirror) ---- */
+
 .CodeMirror {
     height: 60vh;
-    border: 1px solid var(--bulma-border);
-    border-radius: 4px;
+    border: 1px solid var(--input);
+    border-radius: var(--radius-md);
+    font-family: var(--font-mono);
     font-size: 0.85rem;
-    /* Theme-aware editor colors (light defaults ~ CodeMirror's default theme; the dark-mode
-        blocks below re-point these vars). */
-    background: var(--cm-bg, #fff);
-    color: var(--cm-text, #000);
+    background: var(--cm-bg);
+    color: var(--cm-text);
 }
 
 .CodeMirror-gutters {
-    background: var(--cm-gutter-bg, #f7f7f7);
-    border-right: 1px solid var(--bulma-border-weak);
+    border-right: 1px solid var(--border);
+    background: var(--cm-gutter-bg);
 }
 
 .CodeMirror-linenumber {
-    color: var(--cm-gutter-text, #999);
+    color: var(--cm-gutter-text);
 }
 
 .CodeMirror-cursor {
-    border-left: 1px solid var(--cm-text, #000);
+    border-left: 1px solid var(--cm-text);
 }
 
 .CodeMirror-selected {
-    background: var(--cm-selection, #d7d4f0) !important;
+    background: var(--cm-selection) !important;
 }
 
 .CodeMirror-activeline-background {
-    background: var(--cm-active, transparent);
+    background: var(--cm-active);
 }
 
 .cm-s-default .cm-comment {
-    color: var(--cm-comment, #a50);
+    color: var(--cm-comment);
 }
 
 .cm-s-default .cm-atom {
-    color: var(--cm-key, #219);
+    color: var(--cm-key);
 }
 
 .cm-s-default .cm-string {
-    color: var(--cm-string, #a11);
+    color: var(--cm-string);
 }
 
 .cm-s-default .cm-number {
-    color: var(--cm-number, #164);
+    color: var(--cm-number);
 }
 
 .cm-s-default .cm-keyword {
-    color: var(--cm-keyword, #708);
+    color: var(--cm-keyword);
 }
 
 .cm-s-default .cm-meta {
-    color: var(--cm-meta, #555);
+    color: var(--cm-meta);
 }
+
+/* ---- Job panel ---- */
 
 /* Job output: a panel docked to the lower third of the viewport instead of a modal. */
 .job-panel {
@@ -213,142 +682,219 @@
     left: 0;
     right: 0;
     bottom: 0;
-    height: 33vh;
-    min-height: 11rem;
     z-index: 30;
-    background: var(--bulma-scheme-main);
-    border-top: 1px solid var(--bulma-border);
-    box-shadow: 0 -2px 12px rgba(10, 10, 10, 0.12);
     display: flex;
     flex-direction: column;
+    height: 33vh;
+    min-height: 11rem;
+    border-top: 1px solid var(--border);
+    background-color: var(--background);
+    box-shadow: 0 -4px 16px rgb(0 0 0 / .08);
 }
 
 .job-panel-resize {
     flex: 0 0 auto;
     height: 8px;
+    border-bottom: 1px solid var(--border);
+    background-color: var(--muted);
     cursor: ns-resize;
-    background: var(--bulma-scheme-main-ter);
-    border-bottom: 1px solid var(--bulma-border-weak);
     touch-action: none;
 }
 
 .job-panel-resize:hover {
-    background: var(--bulma-border);
+    background-color: var(--border);
 }
 
 .job-panel-head {
     display: flex;
     align-items: center;
-    padding: 0.6rem 1rem;
-    border-bottom: 1px solid var(--bulma-border-weak);
+    gap: .5rem;
+    padding: .5rem 1rem;
+    border-bottom: 1px solid var(--border);
 }
 
-.job-panel-head .delete {
+.job-panel-close {
     margin-left: auto;
 }
 
-/* Queue indicator: a scrollable row of job chips between the title and the close button. */
+/* Queue indicator: a scrollable row of job chips between the title and the close button. The
+    padding keeps the current chip's ring from being clipped by the scroller. */
 .job-queue {
     display: flex;
     align-items: center;
-    overflow-x: auto;
+    gap: .25rem;
     max-width: 60%;
+    margin-left: .75rem;
+    padding: 3px;
+    overflow-x: auto;
 }
 
-.job-queue .tag {
+.job-queue .badge {
+    display: inline-block;
     max-width: 12rem;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-/* The chip whose log is currently on screen gets a ring so it stands out from the others. */
-.job-queue .tag.is-current {
-    box-shadow: 0 0 0 2px var(--bulma-text-strong);
-}
-
 .job-panel-body {
-    flex: 1 1 auto;
-    min-height: 0;
     display: flex;
+    flex: 1 1 auto;
     flex-direction: column;
-    padding: 0.75rem 1rem 1rem;
+    min-height: 0;
+    padding: .75rem 1rem 1rem;
 }
 
 .job-panel-log {
     flex: 1 1 auto;
     min-height: 0;
-    overflow: auto;
     margin: 0;
 }
 
-/* Dark-mode support. The dashboard leans on Bulma's "light" palette (is-light tags/heroes/
-    buttons and has-background-light panels), which all derive from the --bulma-light-* HSL
-    components. Bulma keeps those pale (~96% lightness) even under a dark scheme, so they render
-    as white patches. Re-point them at the theme-aware scheme tokens so light surfaces become
-    subtle dark elevated surfaces with light text. */
-@media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-        --bulma-light-h: var(--bulma-scheme-h);
-        --bulma-light-s: var(--bulma-scheme-s);
-        --bulma-light-l: var(--bulma-scheme-main-ter-l);
-        --bulma-light-invert-l: var(--bulma-text-strong-l);
-        --cm-bg: #1b1d23;
-        --cm-text: #d4d7dd;
-        --cm-gutter-bg: #21232b;
-        --cm-gutter-text: #5c6370;
-        --cm-selection: #2c3140;
-        --cm-active: rgba(255, 255, 255, 0.04);
-        --cm-comment: #7f848e;
-        --cm-key: #61afef;
-        --cm-string: #98c379;
-        --cm-number: #d19a66;
-        --cm-keyword: #c678dd;
-        --cm-meta: #56b6c2;
+/* ---- Utilities ----
+    A small Tailwind-named subset (Basecoat's prebuilt CSS carries none), limited to what the
+    partials use. Last in the file so they win ties with the component rules above. */
+
+.flex {
+    display: flex;
+}
+
+.grid {
+    display: grid;
+}
+
+.hidden {
+    display: none;
+}
+
+.flex-wrap {
+    flex-wrap: wrap;
+}
+
+.items-center {
+    align-items: center;
+}
+
+.justify-end {
+    justify-content: flex-end;
+}
+
+.gap-2 {
+    gap: .5rem;
+}
+
+.gap-3 {
+    gap: .75rem;
+}
+
+.gap-4 {
+    gap: 1rem;
+}
+
+.grid-cols-5 {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+@media (min-width: 40rem) {
+    .sm\:grid-cols-2 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
-    /* "is-light" buttons (e.g. is-link is-light) take their background lightness from the generic
-        --bulma-light-l we darken above, leaving them at ~13% — a dim chip indistinguishable from the
-        ~9% page — with dark *-light-invert text (dark-on-dark). Instead render them as bright solid
-        colored buttons in dark mode: a vivid background at the color's full lightness + light text. */
-    :root:not([data-theme="light"]) .button.is-light {
-        --bulma-button-background-l: 48%;
-        --bulma-button-color-l: var(--bulma-text-strong-l);
-    }
-
-    /* "is-light" tags (e.g. the manager-dial / update badges) hit the same dark-on-dark trap
-        as the buttons above. Render them as bright solid colored chips with light text too. */
-    :root:not([data-theme="light"]) .tag.is-light {
-        --bulma-tag-background-l: 48%;
-        --bulma-tag-color-l: var(--bulma-text-strong-l);
+    .sm\:grid-cols-3 {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 }
 
-[data-theme="dark"] {
-    --bulma-light-h: var(--bulma-scheme-h);
-    --bulma-light-s: var(--bulma-scheme-s);
-    --bulma-light-l: var(--bulma-scheme-main-ter-l);
-    --bulma-light-invert-l: var(--bulma-text-strong-l);
-    --cm-bg: #1b1d23;
-    --cm-text: #d4d7dd;
-    --cm-gutter-bg: #21232b;
-    --cm-gutter-text: #5c6370;
-    --cm-selection: #2c3140;
-    --cm-active: rgba(255, 255, 255, 0.04);
-    --cm-comment: #7f848e;
-    --cm-key: #61afef;
-    --cm-string: #98c379;
-    --cm-number: #d19a66;
-    --cm-keyword: #c678dd;
-    --cm-meta: #56b6c2;
+.mt-2 {
+    margin-top: .5rem;
 }
 
-[data-theme="dark"] .button.is-light {
-    --bulma-button-background-l: 48%;
-    --bulma-button-color-l: var(--bulma-text-strong-l);
+.mt-3 {
+    margin-top: .75rem;
 }
 
-[data-theme="dark"] .tag.is-light {
-    --bulma-tag-background-l: 48%;
-    --bulma-tag-color-l: var(--bulma-text-strong-l);
+.mt-4 {
+    margin-top: 1rem;
+}
+
+.mb-2 {
+    margin-bottom: .5rem;
+}
+
+.mb-3 {
+    margin-bottom: .75rem;
+}
+
+.ml-2 {
+    margin-left: .5rem;
+}
+
+.mx-auto {
+    margin-inline: auto;
+}
+
+.w-full {
+    width: 100%;
+}
+
+.max-w-4xl {
+    max-width: 56rem;
+}
+
+.max-h-72 {
+    max-height: 18rem;
+}
+
+.overflow-auto {
+    overflow: auto;
+}
+
+.cursor-pointer {
+    cursor: pointer;
+}
+
+.text-xs {
+    font-size: .75rem;
+    line-height: 1rem;
+}
+
+.text-sm {
+    font-size: .875rem;
+    line-height: 1.25rem;
+}
+
+.font-medium {
+    font-weight: 500;
+}
+
+.font-semibold {
+    font-weight: 600;
+}
+
+.font-mono {
+    font-family: var(--font-mono);
+}
+
+.text-center {
+    text-align: center;
+}
+
+.text-end {
+    text-align: end;
+}
+
+.text-muted-foreground {
+    color: var(--muted-foreground);
+}
+
+.text-destructive {
+    color: var(--destructive);
+}
+
+.text-success {
+    color: var(--success);
+}
+
+.whitespace-pre-wrap {
+    white-space: pre-wrap;
 }

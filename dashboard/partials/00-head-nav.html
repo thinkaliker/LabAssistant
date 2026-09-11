@@ -4,71 +4,85 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
   <title>LabAssistant</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="stylesheet" href="/vendor/bulma-1.0.4.min.css">
+  <!-- Basecoat themes from a .dark class on <html>, not from prefers-color-scheme. Follow the OS
+       setting, live, so flipping it needs no reload. Runs before the stylesheets so the first paint
+       is already in the right theme. -->
+  <script>
+    (() => {
+      const dark = matchMedia('(prefers-color-scheme: dark)');
+      const apply = () => document.documentElement.classList.toggle('dark', dark.matches);
+      apply();
+      dark.addEventListener('change', apply);
+    })();
+  </script>
+  <link rel="stylesheet" href="/vendor/basecoat-1.0.2.min.css">
   <link rel="stylesheet" href="/vendor/codemirror/codemirror.min.css">
   <link rel="stylesheet" href="/vendor/codemirror/lint.min.css">
-  <!-- Our overrides must load AFTER the vendored CSS so equal-specificity rules
-       (e.g. .compose-panel flex layout vs Bulma's .box) win the cascade. -->
+  <!-- Our overrides load last. Basecoat sits entirely inside cascade layers, so these unlayered
+       rules beat it regardless of specificity; loading after CodeMirror's CSS lets our
+       equal-specificity editor theme rules win too. -->
   <link rel="stylesheet" href="/stylesheet.css">
 </head>
 
-<body x-data="app()" x-init="init()" :class="!needsLogin && 'has-navbar-fixed-top'">
+<body x-data="app()" x-init="init()">
 
-  <nav class="navbar is-dark is-fixed-top" role="navigation" x-show="ready && !needsLogin" x-cloak>
-    <div class="navbar-brand">
-      <span class="navbar-item has-text-weight-bold is-size-5" :title="statusTitle()">
-        <svg viewBox="0 0 24 24" width="22" height="22" style="margin-right:0.5rem;vertical-align:-0.25rem" aria-hidden="true">
-          <path d="M9.5 9H14.5L20 19H4z" :fill="statusColor()"/>
-          <path d="M9.5 3h5M9.5 3v6L4 19h16L14.5 9V3" fill="none" stroke="currentColor"
-                stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
-        </svg>LabAssistant</span>
-      <a role="button" class="navbar-burger" :class="navOpen && 'is-active'" aria-label="menu" :aria-expanded="navOpen"
-        @click="navOpen=!navOpen">
-        <span aria-hidden="true"></span>
-        <span aria-hidden="true"></span>
-        <span aria-hidden="true"></span>
-        <span aria-hidden="true"></span>
-      </a>
+  <header class="app-header" x-show="ready && !needsLogin" x-cloak>
+    <span class="app-brand" :title="statusTitle()">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+        <path d="M9.5 9H14.5L20 19H4z" :style="'fill:' + statusColor()"/>
+        <path d="M9.5 3h5M9.5 3v6L4 19h16L14.5 9V3" fill="none" stroke="currentColor"
+              stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
+      </svg>LabAssistant</span>
+    <nav class="app-nav" :class="navOpen && 'is-open'" aria-label="Pages">
+      <button type="button" :aria-current="page==='overview' && 'page'"
+        @click="page='overview'; navOpen=false">Overview</button>
+      <button type="button" :aria-current="page==='hosts' && 'page'"
+        @click="page='hosts'; navOpen=false">Hosts</button>
+      <button type="button" :aria-current="page==='services' && 'page'"
+        @click="page='services'; navOpen=false">Services</button>
+      <button type="button" :aria-current="page==='updates' && 'page'"
+        @click="page='updates'; navOpen=false">Updates</button>
+      <button type="button" :aria-current="page==='scheduler' && 'page'"
+        @click="page='scheduler'; navOpen=false">Scheduler</button>
+      <button type="button" :aria-current="page==='audit' && 'page'"
+        @click="page='audit'; navOpen=false">Audit</button>
+    </nav>
+    <div class="app-header-actions">
+      <button type="button" class="btn" data-size="sm" @click="addHostOpen=true; navOpen=false">Add Host</button>
+      <button type="button" class="btn" data-variant="ghost" data-size="icon" title="Settings" aria-label="Settings"
+        :aria-current="page==='settings' && 'page'" @click="page='settings'; navOpen=false">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+      </button>
+      <button type="button" class="btn" data-variant="ghost" data-size="icon" title="Log out" aria-label="Log out"
+        x-show="authUser" @click="logout()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="m16 17 5-5-5-5"/><path d="M21 12H9"/><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+        </svg>
+      </button>
+      <button type="button" class="btn app-nav-toggle" data-variant="ghost" data-size="icon" aria-label="Menu"
+        :aria-expanded="navOpen" @click="navOpen=!navOpen">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 12h16"/><path d="M4 18h16"/><path d="M4 6h16"/>
+        </svg>
+      </button>
     </div>
-    <div class="navbar-menu" :class="navOpen && 'is-active'">
-      <div class="navbar-start">
-        <a class="navbar-item" :class="page==='overview' && 'is-active has-text-weight-semibold'"
-          @click="page='overview'; navOpen=false">Overview</a>
-        <a class="navbar-item" :class="page==='hosts' && 'is-active has-text-weight-semibold'"
-          @click="page='hosts'; navOpen=false">Hosts</a>
-        <a class="navbar-item" :class="page==='services' && 'is-active has-text-weight-semibold'"
-          @click="page='services'; navOpen=false">Services</a>
-        <a class="navbar-item" :class="page==='updates' && 'is-active has-text-weight-semibold'"
-          @click="page='updates'; navOpen=false">Updates</a>
-        <a class="navbar-item" :class="page==='scheduler' && 'is-active has-text-weight-semibold'"
-          @click="page='scheduler'; navOpen=false">Scheduler</a>
-        <a class="navbar-item" :class="page==='audit' && 'is-active has-text-weight-semibold'"
-          @click="page='audit'; navOpen=false">Audit</a>
-      </div>
-      <div class="navbar-end">
-        <div class="navbar-item">
-          <div class="buttons">
-            <button class="button is-primary" @click="addHostOpen=true; navOpen=false">Add Host</button>
-            <button class="button is-dark" title="Settings" @click="page='settings'; navOpen=false">&#9881;</button>
-            <button class="button is-dark" title="Log out" x-show="authUser" @click="logout()">⎋</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  </nav>
+  </header>
 
   <!-- Stale-page banner: the manager restarted underneath this page (detected by a change in
        its instance marker) or the session expired, so this page's state is no longer valid.
        Suppressed on the login page, where a deliberate logout would otherwise be announced as
        a restart. -->
-  <div x-show="stale && !needsLogin" x-cloak style="position:fixed; top:0; left:0; right:0; z-index:40;">
-    <div class="notification is-warning is-radiusless mb-0 py-3">
-      <div class="container is-flex is-align-items-center is-justify-content-space-between">
-        <span x-text="staleMessage()"></span>
-        <button class="button is-warning is-inverted is-outlined" @click="reloadForLogin()">Log in again</button>
-      </div>
-    </div>
+  <div class="stale-bar" role="alert" x-show="stale && !needsLogin" x-cloak>
+    <span x-text="staleMessage()"></span>
+    <button type="button" class="btn" data-variant="outline" data-size="sm" @click="reloadForLogin()">Log in again</button>
   </div>
 
