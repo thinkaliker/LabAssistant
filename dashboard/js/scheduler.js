@@ -69,6 +69,12 @@ export const scheduler = {
   taskHostsSorted() {
     return [...this.hosts].sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
   },
+  // Target ids that no longer match an enrolled host, listed in the modal so they can be
+  // unticked (the manager also prunes them when a host is removed).
+  taskOrphanHostIds() {
+    const known = new Set(this.hosts.map(h => h.id));
+    return this.newTask.hostIds.filter(id => !known.has(id));
+  },
   toggleTaskHost(id) {
     const i = this.newTask.hostIds.indexOf(id);
     if (i >= 0) this.newTask.hostIds.splice(i, 1); else this.newTask.hostIds.push(id);

@@ -18,7 +18,7 @@ export const hosts = {
   editHostOrig: { connMode: 'manager_dial', connPort: null },
   newHost: { name: '', ip: '', sshUser: '', sshPassword: '', tailscale: false, connMode: 'manager_dial', connPort: null },
   cfg: { open: false, hostId: '', module: '', fields: [], values: {} },
-  uninstall: { open: false, hostId: '', hostName: '', online: false, sshUser: '', sshPassword: '' },
+  uninstall: { open: false, hostId: '', hostName: '', online: false, sshUser: '', sshPassword: '', tasks: [] },
   revive: { open: false, hostId: '', hostName: '', sshUser: '', sshPassword: '' },
   upgrade: { open: false, hostId: '', hostName: '', sshUser: '', sshPassword: '' },
   // Bulk associate upgrade. The first pass carries no credentials at all: it relies on the
@@ -65,7 +65,11 @@ export const hosts = {
   },
   toggle(id) { this.expanded = this.expanded === id ? null : id; },
   openUninstall(h) {
-    this.uninstall = { open: true, hostId: h.id, hostName: h.name, online: h.status === 'online', sshUser: h.sshUser || '', sshPassword: '' };
+    // Scheduled tasks targeting this host; the manager prunes it from them on removal and
+    // disables any left with no hosts, so name them before the user commits.
+    const tasks = this.tasks.filter(t => (t.hostIds || []).includes(h.id))
+      .map(t => ({ id: t.id, name: t.name, last: t.hostIds.length === 1 }));
+    this.uninstall = { open: true, hostId: h.id, hostName: h.name, online: h.status === 'online', sshUser: h.sshUser || '', sshPassword: '', tasks };
   },
   async submitUninstall() {
     const body = { sshUser: this.uninstall.sshUser, sshPassword: this.uninstall.sshPassword };

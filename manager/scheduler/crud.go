@@ -105,6 +105,38 @@ func (s *Scheduler) Delete(id string) bool {
 	return ok
 }
 
+// PruneHosts drops every host id that keep rejects from each task's targets. A task left with
+// no hosts is disabled rather than deleted, so it can be re-targeted. Returns the changed tasks
+// as they now stand.
+func (s *Scheduler) PruneHosts(keep func(hostID string) bool) []Task {
+	s.mu.Lock()
+	var changed []Task
+	for _, t := range s.tasks {
+		kept := make([]string, 0, len(t.HostIDs))
+		for _, h := range t.HostIDs {
+			if keep(h) {
+				kept = append(kept, h)
+			}
+		}
+		if len(kept) == len(t.HostIDs) {
+			continue
+		}
+		t.HostIDs = kept
+		if len(kept) == 0 {
+			t.Enabled = false
+		}
+		changed = append(changed, *t)
+	}
+	if len(changed) > 0 {
+		s.save()
+	}
+	s.mu.Unlock()
+	if len(changed) > 0 {
+		s.notify()
+	}
+	return changed
+}
+
 // save writes tasks to disk atomically. Caller holds the lock.
 func (s *Scheduler) save() {
 	tasks := make([]*Task, 0, len(s.tasks))

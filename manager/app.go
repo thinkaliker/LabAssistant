@@ -86,10 +86,15 @@ func NewApp(layout paths.Layout, cfg config.Config) (*App, error) {
 	// dialer is assigned below once the hub exists; the notify closure reconciles the
 	// manager-dial pool on every host change (add/remove/edit) via the same variable.
 	var dialer *hub.Dialer
+	// onHostRemoved is assigned once the scheduler exists; it prunes the host from tasks.
+	var onHostRemoved func(hostID string)
 	store.SetNotify(func(c state.Change) {
 		ev.Publish(envelope("host", c))
 		if dialer != nil {
 			dialer.Sync()
+		}
+		if c.Kind == "host_removed" && onHostRemoved != nil {
+			onHostRemoved(c.HostID)
 		}
 	})
 	jr := jobs.NewRegistry(ev)
@@ -167,6 +172,25 @@ func NewApp(layout paths.Layout, cfg config.Config) (*App, error) {
 	)
 	if err != nil {
 		return nil, err
+	}
+	// A task still targeting a removed host would fail every run, and the dashboard can no
+	// longer list that host to untick. Prune it on removal (delete or uninstall), and once at
+	// start for orphans left behind by an older manager.
+	known := func(id string) bool { _, ok := store.Get(id); return ok }
+	sched.SetKnown(known)
+	auditPruned := func(hostID string, changed []scheduler.Task) {
+		for _, t := range changed {
+			summary := "removed deleted host from task " + t.Name
+			if len(t.HostIDs) == 0 {
+				summary += "; task disabled (no hosts left)"
+			}
+			aud.Record("task_host_pruned", hostID, "manager", summary,
+				map[string]string{"task": t.Name, "taskId": t.ID})
+		}
+	}
+	auditPruned("", sched.PruneHosts(known))
+	onHostRemoved = func(hostID string) {
+		auditPruned(hostID, sched.PruneHosts(func(id string) bool { return id != hostID }))
 	}
 
 	set, err := settings.Load(layout.SettingsFile())

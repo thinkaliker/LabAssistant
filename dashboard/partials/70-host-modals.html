@@ -102,6 +102,13 @@
           record.</p>
       </header>
       <section class="grid gap-4">
+        <template x-if="uninstall.tasks.length">
+          <div class="alert" data-variant="warning">
+            <section>This host will be removed from scheduled tasks:
+              <strong x-text="uninstall.tasks.map(t => t.name + (t.last ? ' (disabled — no hosts left)' : '')).join(', ')"></strong>
+            </section>
+          </div>
+        </template>
         <template x-if="uninstall.online">
           <div class="alert">
             <section>The host is online — it will tear itself down over the existing connection. No SSH

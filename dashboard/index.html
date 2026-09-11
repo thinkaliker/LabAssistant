@@ -987,6 +987,10 @@
                   :checked="newTask.hostIds.includes(h.id)" @change="toggleTaskHost(h.id)"> <span
                   x-text="h.name"></span></label>
             </template>
+            <template x-for="id in taskOrphanHostIds()" :key="'orphan-' + id">
+              <label class="label text-muted-foreground" :title="id"><input type="checkbox" class="input" checked
+                  @change="toggleTaskHost(id)"> <span x-text="'removed host ' + id.slice(0, 8)"></span></label>
+            </template>
           </div>
         </div>
         <div class="grid gap-4 sm:grid-cols-3">
@@ -1179,6 +1183,13 @@
           record.</p>
       </header>
       <section class="grid gap-4">
+        <template x-if="uninstall.tasks.length">
+          <div class="alert" data-variant="warning">
+            <section>This host will be removed from scheduled tasks:
+              <strong x-text="uninstall.tasks.map(t => t.name + (t.last ? ' (disabled — no hosts left)' : '')).join(', ')"></strong>
+            </section>
+          </div>
+        </template>
         <template x-if="uninstall.online">
           <div class="alert">
             <section>The host is online — it will tear itself down over the existing connection. No SSH

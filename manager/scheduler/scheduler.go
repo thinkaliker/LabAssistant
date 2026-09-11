@@ -75,9 +75,20 @@ type Scheduler struct {
 	notify    func()
 	report    ReportFunc
 	sem       chan struct{} // fleet-wide dispatch concurrency cap
+	known     func(hostID string) bool
 
 	mu    sync.Mutex
 	tasks map[string]*Task
+}
+
+// SetKnown registers a check for whether a host id is still enrolled. A run skips targets it
+// rejects instead of failing on them. Call before Start.
+func (s *Scheduler) SetKnown(fn func(hostID string) bool) {
+	s.known = fn
+}
+
+func (s *Scheduler) isKnown(hostID string) bool {
+	return s.known == nil || s.known(hostID)
 }
 
 // Load reads tasks from path and prepares the scheduler.
@@ -175,10 +186,15 @@ func (s *Scheduler) tick(now time.Time) {
 func (s *Scheduler) fire(t Task) {
 	delay := time.Duration(t.InterHostDelaySeconds) * time.Second
 	failed := false
-	for i, hostID := range t.HostIDs {
-		if i > 0 && delay > 0 {
+	dispatched := 0
+	for _, hostID := range t.HostIDs {
+		if !s.isKnown(hostID) {
+			continue
+		}
+		if dispatched > 0 && delay > 0 {
 			time.Sleep(delay)
 		}
+		dispatched++
 		if err := s.dispatchOne(t, hostID); err != nil {
 			failed = true
 		}
@@ -186,6 +202,8 @@ func (s *Scheduler) fire(t Task) {
 	status := "dispatched"
 	if failed {
 		status = "failed"
+	} else if dispatched == 0 {
+		status = "skipped"
 	}
 	s.mu.Lock()
 	if cur, ok := s.tasks[t.ID]; ok && cur.LastStatus != "failed" {
@@ -228,7 +246,8 @@ func (s *Scheduler) allConnected(t *Task) bool {
 		return true
 	}
 	for _, h := range t.HostIDs {
-		if !s.connected(h) {
+		// a removed host never reconnects; don't let it hold a retry task forever
+		if s.isKnown(h) && !s.connected(h) {
 			return false
 		}
 	}
