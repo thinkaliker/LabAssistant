@@ -13,11 +13,12 @@ import { jobs } from './jobs.js';
 import { actions } from './actions.js';
 import { scheduler } from './scheduler.js';
 import { misc } from './misc.js';
+import { ansi } from './ansi.js';
 
 // app() is merged once per page load, so the nested-object references shared by Object.assign
 // are harmless (one component instance). Alpine wraps the result in its reactive proxy.
 window.app = function app() {
-  return Object.assign({}, core, hosts, services, updates, jobs, actions, scheduler, misc);
+  return Object.assign({}, core, hosts, services, updates, jobs, actions, scheduler, misc, ansi);
 };
 
 // x-dialog="expr" drives a native <dialog>: showModal() while expr is truthy, close() once it turns

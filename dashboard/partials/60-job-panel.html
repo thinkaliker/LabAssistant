@@ -28,7 +28,7 @@
         :aria-valuenow="Math.round((job.progress || 0) * 100)" x-show="job.state==='running'">
         <span :style="'width:' + Math.round((job.progress || 0) * 100) + '%'"></span>
       </div>
-      <pre class="job-panel-log" x-ref="jobLog" @scroll="onJobScroll($event)" x-text="job.log.join('\n')"></pre>
+      <pre class="job-panel-log" x-ref="jobLog" @scroll="onJobScroll($event)" x-html="ansiHtml(job.log.join('\n'))"></pre>
     </div>
   </div>
 

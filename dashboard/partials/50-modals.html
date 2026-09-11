@@ -196,7 +196,7 @@
         <p x-show="logView.status" x-text="logView.status"></p>
       </header>
       <section>
-        <pre class="log-pre" x-text="logView.lines.join('\n')"></pre>
+        <pre class="log-pre" x-html="ansiHtml(logView.lines.join('\n'))"></pre>
       </section>
       <footer>
         <button type="button" class="btn" data-variant="outline" @click="closeLogs()">Close</button>

@@ -1039,7 +1039,7 @@
         <p x-show="logView.status" x-text="logView.status"></p>
       </header>
       <section>
-        <pre class="log-pre" x-text="logView.lines.join('\n')"></pre>
+        <pre class="log-pre" x-html="ansiHtml(logView.lines.join('\n'))"></pre>
       </section>
       <footer>
         <button type="button" class="btn" data-variant="outline" @click="closeLogs()">Close</button>
@@ -1077,7 +1077,7 @@
         :aria-valuenow="Math.round((job.progress || 0) * 100)" x-show="job.state==='running'">
         <span :style="'width:' + Math.round((job.progress || 0) * 100) + '%'"></span>
       </div>
-      <pre class="job-panel-log" x-ref="jobLog" @scroll="onJobScroll($event)" x-text="job.log.join('\n')"></pre>
+      <pre class="job-panel-log" x-ref="jobLog" @scroll="onJobScroll($event)" x-html="ansiHtml(job.log.join('\n'))"></pre>
     </div>
   </div>
 
@@ -1337,7 +1337,7 @@
           <strong x-text="credPrompt.hostName"></strong> failed. It may not be a login problem — check the error
           below. Retry with different credentials, or skip this host and read its job log.</p>
         <pre class="log-pre whitespace-pre-wrap" x-show="credPrompt.jobError" x-cloak
-          x-text="credPrompt.jobError"></pre>
+          x-html="ansiHtml(credPrompt.jobError)"></pre>
         <p class="text-xs text-muted-foreground" x-show="credPrompt.remaining>0"
           x-text="credPrompt.remaining + ' more host' + (credPrompt.remaining===1?'':'s') + ' to go after this one.'">
         </p>
