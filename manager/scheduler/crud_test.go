@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestPruneHosts(t *testing.T) {
@@ -49,6 +50,42 @@ func TestPruneHosts(t *testing.T) {
 	}
 	if got, _ := r.Get(only.ID); got.Enabled {
 		t.Error("reloaded task still enabled")
+	}
+}
+
+func TestRunNow(t *testing.T) {
+	hit := make(chan string, 1)
+	dispatch := func(hostID, _, _ string, _ json.RawMessage) error {
+		hit <- hostID
+		return nil
+	}
+	s, err := Load(filepath.Join(t.TempDir(), "tasks.json"), dispatch, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// disabled on purpose: a manual run still fires
+	task, _ := s.Create(Task{Name: "t", Schedule: "0 3 * * *", HostIDs: []string{"a"}, Module: "m", Action: "x"})
+	if err := s.RunNow(task.ID); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case h := <-hit:
+		if h != "a" {
+			t.Errorf("dispatched to %q, want a", h)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("RunNow did not dispatch")
+	}
+	if got, _ := s.Get(task.ID); !got.NextRun.Equal(task.NextRun) {
+		t.Errorf("NextRun moved from %v to %v", task.NextRun, got.NextRun)
+	}
+
+	if err := s.RunNow("missing"); err == nil {
+		t.Error("RunNow on missing task: want error")
+	}
+	empty, _ := s.Create(Task{Name: "e", Schedule: "0 3 * * *", Module: "m", Action: "x"})
+	if err := s.RunNow(empty.ID); err == nil {
+		t.Error("RunNow on task with no hosts: want error")
 	}
 }
 

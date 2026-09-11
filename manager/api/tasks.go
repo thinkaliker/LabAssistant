@@ -63,6 +63,22 @@ func (d Deps) deleteTask(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// runTask fires a task now, outside its schedule. The outcome lands on the task's last status.
+func (d Deps) runTask(w http.ResponseWriter, r *http.Request) {
+	t, ok := d.Scheduler.Get(r.PathValue("id"))
+	if !ok {
+		writeErr(w, http.StatusNotFound, "not_found", "task not found")
+		return
+	}
+	if err := d.Scheduler.RunNow(t.ID); err != nil {
+		writeErr(w, http.StatusConflict, "run_failed", err.Error())
+		return
+	}
+	d.Aud.Record("task_run_manual", "", "user", "manually ran task "+t.Name,
+		map[string]string{"task": t.Name, "taskId": t.ID})
+	w.WriteHeader(http.StatusAccepted)
+}
+
 // validateTask rejects scheduling a destructive action unless the task opts in.
 func (d Deps) validateTask(t scheduler.Task) (string, bool) {
 	if t.Module == "" || t.Action == "" || len(t.HostIDs) == 0 {

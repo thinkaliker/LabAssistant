@@ -105,6 +105,29 @@ func (s *Scheduler) Delete(id string) bool {
 	return ok
 }
 
+// RunNow fires a task immediately, outside its schedule, e.g. to test it. It runs even when the
+// task is disabled and leaves the next scheduled run untouched.
+func (s *Scheduler) RunNow(id string) error {
+	s.mu.Lock()
+	t, ok := s.tasks[id]
+	if !ok {
+		s.mu.Unlock()
+		return fmt.Errorf("task not found")
+	}
+	if len(t.HostIDs) == 0 {
+		s.mu.Unlock()
+		return fmt.Errorf("task has no target hosts")
+	}
+	t.LastRun = time.Now()
+	t.LastStatus, t.LastError = "", ""
+	run := *t
+	s.save()
+	s.mu.Unlock()
+	s.notify()
+	go s.fire(run)
+	return nil
+}
+
 // PruneHosts drops every host id that keep rejects from each task's targets. A task left with
 // no hosts is disabled rather than deleted, so it can be re-targeted. Returns the changed tasks
 // as they now stand.

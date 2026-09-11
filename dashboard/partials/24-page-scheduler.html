@@ -43,6 +43,8 @@
                   <td class="text-end">
                     <div class="actions justify-end">
                       <button type="button" class="btn" data-variant="secondary" data-size="sm"
+                        :disabled="!(t.hostIds||[]).length" @click="runTask(t)">run now</button>
+                      <button type="button" class="btn" data-variant="secondary" data-size="sm"
                         @click="editTask(t)">edit</button>
                       <button type="button" class="btn" data-variant="destructive" data-size="sm"
                         @click="removeTask(t.id)">delete</button>

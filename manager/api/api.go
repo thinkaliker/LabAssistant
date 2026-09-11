@@ -87,6 +87,7 @@ func Router(d Deps) http.Handler {
 	mux.HandleFunc("POST /api/v1/tasks", d.createTask)
 	mux.HandleFunc("PUT /api/v1/tasks/{id}", d.updateTask)
 	mux.HandleFunc("DELETE /api/v1/tasks/{id}", d.deleteTask)
+	mux.HandleFunc("POST /api/v1/tasks/{id}/run", d.runTask)
 	mux.HandleFunc("GET /api/v1/audit", d.audit)
 	mux.HandleFunc("GET /api/v1/events", d.events)
 

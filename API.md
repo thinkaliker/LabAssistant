@@ -185,6 +185,7 @@ Non-2xx responses use:
 | `POST /tasks` | Create a scheduled task. |
 | `PUT /tasks/{id}` | Update a scheduled task. |
 | `DELETE /tasks/{id}` | Delete a scheduled task. |
+| `POST /tasks/{id}/run` | Run a task now, outside its schedule (even if disabled). Next run is unchanged. |
 | `GET /hosts/{id}/files?path=` | Read a config file. |
 | `PUT /hosts/{id}/files` | Validate, back up, and write a config file. |
 | `POST /hosts/{id}/files:undo` | Restore the last local copy. |

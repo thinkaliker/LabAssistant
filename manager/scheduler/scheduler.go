@@ -172,6 +172,8 @@ func (s *Scheduler) tick(now time.Time) {
 		}
 		t.LastRun = now
 		t.NextRun = s.nextOr(t, now)
+		// clear the previous outcome so a past failure doesn't stick to a run that succeeds
+		t.LastStatus, t.LastError = "", ""
 		due = append(due, *t)
 	}
 	s.save()

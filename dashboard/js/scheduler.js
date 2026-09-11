@@ -91,6 +91,14 @@ export const scheduler = {
     this.taskOpen = false;
     this.refresh();
   },
+  // Fire a task now to test it; the result shows up in its Last run badge.
+  async runTask(t) {
+    const warn = t.allowDestructive ? '\n\nThis task is destructive and runs pre-approved.' : '';
+    if (!confirm(`Run "${t.name}" now on ${(t.hostIds || []).length} host(s)?${warn}`)) return;
+    const r = await fetch(`/api/v1/tasks/${t.id}/run`, { method: 'POST' });
+    if (!r.ok) { const e = await r.json().catch(() => ({})); alert('run failed: ' + (e.error?.message || r.status)); }
+    this.refresh();
+  },
   async removeTask(id) {
     const r = await fetch(`/api/v1/tasks/${id}`, { method: 'DELETE' });
     if (!r.ok) alert('delete failed: ' + r.status);
