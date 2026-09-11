@@ -148,6 +148,13 @@ body {
     color: color-mix(in oklab, var(--alert-tone) 90%, transparent);
 }
 
+/* Basecoat nudges the icon onto a plain first text line. A banner with no title whose first row
+    is a toolbar of small (2rem) buttons centers its text in that taller row instead, leaving the
+    icon riding high; drop it to the row's middle. */
+.alert:has(>section>.toolbar:first-child):not(:has(>h2))>svg {
+    --tw-translate-y: calc(var(--spacing) * 2);
+}
+
 /* Busy buttons (the :class="… && 'is-loading'" bindings): a spinner ahead of the label. */
 .btn.is-loading {
     pointer-events: none;
