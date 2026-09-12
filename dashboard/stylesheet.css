@@ -18,6 +18,17 @@
     /* amber-700 */
     --header-h: 3.5rem;
 
+    /* The status light (header flask, Overview status dot) is a filled shape, not text.
+        --success/--warning above are tuned for text on a soft tint — hence amber-700 in light
+        mode, dark enough to read on white — and at that shade a warn fill is a burnt orange
+        barely distinguishable from --destructive red at 22px. The light therefore gets its own
+        warn tint: amber-500, the shade dark mode already uses, so "updates pending" can never be
+        mistaken for "something is broken". good and crit read correctly as fills already. */
+    --status-good: var(--success);
+    --status-warn: oklch(76.9% .188 70.08);
+    /* amber-500 */
+    --status-crit: var(--destructive);
+
     /* Compose editor (CodeMirror 5) palette: page tokens + CodeMirror's default syntax colors. */
     --cm-bg: var(--background);
     --cm-text: var(--foreground);
@@ -455,6 +466,22 @@ button.badge {
 .status-reason {
     padding-block: .625rem;
     border-top: 1px solid var(--border);
+}
+
+/* What the light means, kept with the list it explains rather than in a tooltip nobody hovers. */
+.status-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .25rem 1rem;
+    margin-top: .75rem;
+    padding-top: .625rem;
+    border-top: 1px solid var(--border);
+}
+
+.status-legend>span {
+    display: flex;
+    align-items: center;
+    gap: .375rem;
 }
 
 .stat-value {

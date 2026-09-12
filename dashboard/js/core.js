@@ -345,9 +345,10 @@ export const core = {
     return reasons.length ? 'warn' : 'good';
   },
   // Fill color for the flask liquid — the visible status light. Theme tokens (bound as a CSS
-  // fill), so it follows light/dark with the rest of the page.
+  // fill), so it follows light/dark with the rest of the page. The --status-* tokens exist
+  // because a fill needs a brighter warn than text does; see stylesheet.css.
   statusColor() {
-    return { good: 'var(--success)', warn: 'var(--warning)', crit: 'var(--destructive)' }[this.overallStatus()];
+    return { good: 'var(--status-good)', warn: 'var(--status-warn)', crit: 'var(--status-crit)' }[this.overallStatus()];
   },
   // Headline for the Overview panel: how many reasons, split by severity, so the summary line
   // is worth reading before expanding the panel.

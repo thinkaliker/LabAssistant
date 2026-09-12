@@ -124,6 +124,27 @@ can also stream logs from containers or the host system, or display the audit lo
 dashboard and reimported on a fresh install. It includes a robust login page using credentials
 created during install.
 
+#### Status light
+
+The flask in the header is a status light for the whole fleet, and the "System status" panel on
+the Overview page lists every reason behind its current colour:
+
+- **green** — nothing pending: every host online, every container healthy, nothing awaiting a
+  decision.
+- **amber** — worth a look, but nothing is broken: package or container image updates available,
+  an action awaiting approval, a host still enrolling, or a stopped/partial stack.
+- **red** — needs action now: a host offline or in error, a container reporting unhealthy, or a
+  sudo password blocking a job.
+
+Red wins over amber, and neither is ever shown without a matching reason: the colour and the
+panel are computed from one list (`statusReasons()`), so the light and its explanation cannot
+drift apart. Available updates are amber and never red — the fleet is not broken just because it
+is behind.
+
+The light has its own colour tokens (`--status-good`/`--status-warn`/`--status-crit`) rather than
+reusing the badge/text palette. A filled icon needs a brighter amber than text on a soft tint
+does; at the text shade the warn flask reads as a dark orange too close to red.
+
 ## Modules
 
 Modules are abilities that each associate can perform on a host. Modules provide actions for the

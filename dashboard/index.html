@@ -261,6 +261,16 @@
                   </div>
                 </div>
               </template>
+              <!-- What the colours mean, next to the list they explain: the flask is on every page
+                   but its legend only needs to exist where the reasons are spelled out. -->
+              <p class="status-legend text-xs text-muted-foreground">
+                <span><span class="status-dot" style="background-color:var(--status-good)" aria-hidden="true"></span>
+                  green — all clear</span>
+                <span><span class="status-dot" style="background-color:var(--status-warn)" aria-hidden="true"></span>
+                  amber — review when convenient</span>
+                <span><span class="status-dot" style="background-color:var(--status-crit)" aria-hidden="true"></span>
+                  red — needs action now</span>
+              </p>
             </div>
           </section>
         </div>
