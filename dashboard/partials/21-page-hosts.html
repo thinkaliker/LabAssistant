@@ -1,133 +1,266 @@
-      <!-- Hosts -->
-      <div x-show="page==='hosts'">
-        <div class="toolbar page-head">
-          <h1 class="page-title">Hosts</h1>
-          <div class="button-group" role="group" aria-label="Sort hosts" x-show="hosts.length>1">
-            <span>Sort</span>
-            <button type="button" class="btn" data-variant="outline" data-size="sm" :aria-pressed="hostSort==='name'"
-              @click="hostSort='name'">Name</button>
-            <button type="button" class="btn" data-variant="outline" data-size="sm" :aria-pressed="hostSort==='ip'"
-              @click="hostSort='ip'">IP</button>
+<!-- Hosts -->
+<div x-show="page==='hosts'">
+  <div class="toolbar page-head">
+    <div class="flex items-center gap-2 flex-wrap">
+      <h1 class="page-title">Hosts</h1>
+      <!-- The associate version the manager deploys; each host's chip below is compared to it. -->
+      <span
+        class="badge font-mono"
+        data-variant="outline"
+        x-show="expectedAssociate()"
+        :title="expectedAssociateTitle()"
+        x-text="'latest ' + expectedAssociate()"
+      ></span>
+    </div>
+    <div
+      class="button-group"
+      role="group"
+      aria-label="Sort hosts"
+      x-show="hosts.length>1"
+    >
+      <span>Sort</span>
+      <button
+        type="button"
+        class="btn"
+        data-variant="outline"
+        data-size="sm"
+        :aria-pressed="hostSort==='name'"
+        @click="hostSort='name'"
+      >
+        Name
+      </button>
+      <button
+        type="button"
+        class="btn"
+        data-variant="outline"
+        data-size="sm"
+        :aria-pressed="hostSort==='ip'"
+        @click="hostSort='ip'"
+      >
+        IP
+      </button>
+    </div>
+  </div>
+  <template x-if="hosts.length===0">
+    <p class="text-muted-foreground">
+      No hosts yet. Enroll one with <code>manager enroll</code> or use the Add
+      Host button.
+    </p>
+  </template>
+  <div class="grid gap-3">
+    <template x-for="h in sortedHosts()" :key="h.id">
+      <div class="card" data-size="sm">
+        <section>
+          <div class="toolbar cursor-pointer" @click="toggle(h.id)">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span
+                class="badge"
+                :data-variant="statusVariant(h.status)"
+                x-text="h.status"
+              ></span>
+              <span class="font-semibold" x-text="h.name"></span>
+              <span class="text-xs text-muted-foreground" x-text="h.ip"></span>
+              <span
+                class="badge font-mono"
+                :data-variant="associateStale(h) ? 'destructive' : 'outline'"
+                x-show="associateLabel(h)"
+                :title="associateTitle(h)"
+                x-text="associateLabel(h)"
+              ></span>
+              <span
+                class="badge"
+                data-variant="destructive"
+                x-show="associateStale(h)"
+                :title="`associate code ${h.associateCodeId||h.associateVersion||'unknown'} — the manager deploys ${expectedAssociate()}. Upgrade to pick up module fixes.`"
+                >associate update required</span
+              >
+              <span
+                class="badge"
+                data-variant="warning"
+                x-show="hostUpdates(h)>0"
+                :title="hostUpdates(h)+' update(s) available'"
+                x-text="hostUpdates(h)+(hostUpdates(h)===1?' update':' updates')"
+              ></span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span
+                class="text-xs text-muted-foreground"
+                x-text="h.health ? `cpu ${h.health.cpuPercent||0}% · mem ${h.health.memPercent||0}%` : '—'"
+              ></span>
+              <svg
+                class="chevron"
+                :class="expanded===h.id && 'is-open'"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="m9 18 6-6-6-6" />
+              </svg>
+            </div>
           </div>
-        </div>
-        <template x-if="hosts.length===0">
-          <p class="text-muted-foreground">No hosts yet. Enroll one with <code>manager enroll</code> or use the Add Host
-            button.</p>
-        </template>
-        <div class="grid gap-3">
-          <template x-for="h in sortedHosts()" :key="h.id">
-            <div class="card" data-size="sm">
-              <section>
-                <div class="toolbar cursor-pointer" @click="toggle(h.id)">
-                  <div class="flex items-center gap-2 flex-wrap">
-                    <span class="badge" :data-variant="statusVariant(h.status)" x-text="h.status"></span>
-                    <span class="font-semibold" x-text="h.name"></span>
-                    <span class="text-xs text-muted-foreground" x-text="h.ip"></span>
-                    <span class="badge font-mono" data-variant="outline" x-show="associateLabel(h)"
-                      :title="associateTitle(h)" x-text="associateLabel(h)"></span>
-                    <span class="badge" data-variant="destructive" x-show="associateStale(h)"
-                      :title="`associate code ${h.associateCodeId||h.associateVersion||'unknown'} — the manager deploys ${overview.associateCodeId||overview.associateBuild}. Upgrade to pick up module fixes.`">associate
-                      update required</span>
-                    <span class="badge" data-variant="warning" x-show="hostUpdates(h)>0"
-                      :title="hostUpdates(h)+' update(s) available'"
-                      x-text="hostUpdates(h)+(hostUpdates(h)===1?' update':' updates')"></span>
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <span class="text-xs text-muted-foreground"
-                      x-text="h.health ? `cpu ${h.health.cpuPercent||0}% · mem ${h.health.memPercent||0}%` : '—'"></span>
-                    <svg class="chevron" :class="expanded===h.id && 'is-open'" width="16" height="16" viewBox="0 0 24 24"
-                      fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                      aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
-                  </div>
-                </div>
 
-                <div x-show="expanded===h.id" class="mt-3 grid gap-3">
-                  <!-- Associate build + stream direction. The build line is the upgrade signal: an
+          <div x-show="expanded===h.id" class="mt-3 grid gap-3">
+            <!-- Associate build + stream direction. The build line is the upgrade signal: an
                        associate is only replaced at enroll/upgrade time, so a host can sit on old
                        module code indefinitely while the manager is current. -->
-                  <p class="text-xs text-muted-foreground">
-                    <span x-show="!associateLabel(h)">associate build unknown</span>
-                    <span x-show="h.associateCodeId" x-text="'associate code ' + h.associateCodeId"></span>
-                    <span x-show="h.associateVersion"
-                      x-text="(h.associateCodeId ? ' · built from commit ' : 'associate commit ') + h.associateVersion"></span>
-                    <span x-show="h.connMode==='manager_dial'"
-                      x-text="' · manager-dial' + (h.connPort ? ' :'+h.connPort : '')"></span>
-                    <span class="text-destructive font-semibold" x-show="associateStale(h)"
-                      x-text="' · out of date, manager deploys ' + (overview.associateCodeId || overview.associateBuild)"></span>
-                  </p>
-                  <div class="alert" data-variant="destructive" x-show="associateStale(h)">
-                    <section>This host runs an older associate than the manager deploys, so module fixes shipped with
-                      the manager are not in effect here. Use <strong>Upgrade associate</strong> below.</section>
-                  </div>
-                  <!-- Host vitals: CPU, memory (used/free/%), and per-mount disk (used/free/total). -->
-                  <template x-if="h.health">
-                    <div class="panel-muted">
-                      <div class="vitals">
-                        <div>
-                          <p class="eyebrow">CPU</p>
-                          <p x-text="`${h.health.cpuPercent||0}%`"></p>
-                        </div>
-                        <div>
-                          <p class="eyebrow">Memory</p>
-                          <p
-                            x-text="`${humanBytes(h.health.memUsedBytes)} used · ${humanBytes((h.health.memTotalBytes||0)-(h.health.memUsedBytes||0))} free · ${h.health.memPercent||0}%`">
-                          </p>
-                        </div>
-                        <div x-show="h.health.uptimeSeconds">
-                          <p class="eyebrow">Uptime</p>
-                          <p x-text="humanUptime(h.health.uptimeSeconds)"></p>
-                        </div>
-                      </div>
-                      <template x-if="h.health.disks && h.health.disks.length">
-                        <div class="mt-3">
-                          <p class="eyebrow">Disk</p>
-                          <template x-for="d in h.health.disks" :key="d.mount">
-                            <p class="text-xs">
-                              <span class="font-semibold" x-text="d.mount"></span>
-                              <span class="ml-2"
-                                x-text="`${humanBytes(d.usedBytes)} used · ${humanBytes((d.totalBytes||0)-(d.usedBytes||0))} free · ${humanBytes(d.totalBytes)} total (${pct(d.usedBytes, d.totalBytes)}%)`"></span>
-                            </p>
-                          </template>
-                        </div>
-                      </template>
-                    </div>
-                  </template>
-                  <template x-if="!h.modules || h.modules.length===0">
-                    <p class="text-xs text-muted-foreground">No modules reported (host offline?).</p>
-                  </template>
-                  <template x-for="m in (h.modules||[])" :key="m.name">
-                    <div class="panel">
-                      <div class="flex items-center gap-2 flex-wrap mb-2">
-                        <span class="font-semibold" x-text="m.name"></span>
-                        <span class="text-xs text-muted-foreground" x-text="'v'+m.version"></span>
-                        <span class="text-xs" x-text="capabilities(m)"></span>
-                      </div>
-                      <div class="actions">
-                        <template x-for="a in (m.actions||[])" :key="a.name">
-                          <button type="button" class="btn" data-size="sm"
-                            :data-variant="a.destructive ? 'destructive' : 'secondary'"
-                            :disabled="h.status!=='online'" @click="startAction(h.id, m.name, a)"
-                            x-text="`${m.name} ${a.name}`"></button>
-                        </template>
-                        <button type="button" class="btn" data-variant="outline" data-size="sm"
-                          @click="openConfig(h.id, m)">⚙ config</button>
-                      </div>
-                    </div>
-                  </template>
-                  <div class="actions justify-end">
-                    <button type="button" class="btn" data-variant="secondary" data-size="sm"
-                      @click="openEditHost(h)">Edit host</button>
-                    <button type="button" class="btn" data-variant="secondary" data-size="sm" x-show="h.status!=='online'"
-                      @click="openRevive(h)">Revive associate</button>
-                    <button type="button" class="btn" data-size="sm" :data-variant="associateStale(h) ? 'warning' : 'outline'"
-                      @click="openUpgrade(h)">Upgrade associate</button>
-                    <button type="button" class="btn" data-variant="destructive" data-size="sm"
-                      @click="openUninstall(h)">Uninstall host</button>
-                  </div>
-                </div>
+            <p class="text-xs text-muted-foreground">
+              <span x-show="!associateLabel(h)">associate build unknown</span>
+              <span
+                x-show="h.associateCodeId"
+                x-text="'associate code ' + h.associateCodeId"
+              ></span>
+              <span
+                x-show="h.associateVersion"
+                x-text="(h.associateCodeId ? ' · built from commit ' : 'associate commit ') + h.associateVersion"
+              ></span>
+              <span
+                x-show="h.connMode==='manager_dial'"
+                x-text="' · manager-dial' + (h.connPort ? ' :'+h.connPort : '')"
+              ></span>
+              <span
+                class="text-destructive font-semibold"
+                x-show="associateStale(h)"
+                x-text="' · out of date, manager deploys ' + expectedAssociate()"
+              ></span>
+            </p>
+            <div
+              class="alert"
+              data-variant="destructive"
+              x-show="associateStale(h)"
+            >
+              <section>
+                This host runs an older associate than the manager deploys, so
+                module fixes shipped with the manager are not in effect here.
+                Use <strong>Upgrade associate</strong> below.
               </section>
             </div>
-          </template>
-        </div>
+            <!-- Host vitals: CPU, memory (used/free/%), and per-mount disk (used/free/total). -->
+            <template x-if="h.health">
+              <div class="panel-muted">
+                <div class="vitals">
+                  <div>
+                    <p class="eyebrow">CPU</p>
+                    <p x-text="`${h.health.cpuPercent||0}%`"></p>
+                  </div>
+                  <div>
+                    <p class="eyebrow">Memory</p>
+                    <p
+                      x-text="`${humanBytes(h.health.memUsedBytes)} used · ${humanBytes((h.health.memTotalBytes||0)-(h.health.memUsedBytes||0))} free · ${h.health.memPercent||0}%`"
+                    ></p>
+                  </div>
+                  <div x-show="h.health.uptimeSeconds">
+                    <p class="eyebrow">Uptime</p>
+                    <p x-text="humanUptime(h.health.uptimeSeconds)"></p>
+                  </div>
+                </div>
+                <template x-if="h.health.disks && h.health.disks.length">
+                  <div class="mt-3">
+                    <p class="eyebrow">Disk</p>
+                    <template x-for="d in h.health.disks" :key="d.mount">
+                      <p class="text-xs">
+                        <span class="font-semibold" x-text="d.mount"></span>
+                        <span
+                          class="ml-2"
+                          x-text="`${humanBytes(d.usedBytes)} used · ${humanBytes((d.totalBytes||0)-(d.usedBytes||0))} free · ${humanBytes(d.totalBytes)} total (${pct(d.usedBytes, d.totalBytes)}%)`"
+                        ></span>
+                      </p>
+                    </template>
+                  </div>
+                </template>
+              </div>
+            </template>
+            <template x-if="!h.modules || h.modules.length===0">
+              <p class="text-xs text-muted-foreground">
+                No modules reported (host offline?).
+              </p>
+            </template>
+            <template x-for="m in (h.modules||[])" :key="m.name">
+              <div class="panel">
+                <div class="flex items-center gap-2 flex-wrap mb-2">
+                  <span class="font-semibold" x-text="m.name"></span>
+                  <span
+                    class="text-xs text-muted-foreground"
+                    x-text="'v'+m.version"
+                  ></span>
+                  <span class="text-xs" x-text="capabilities(m)"></span>
+                </div>
+                <div class="actions">
+                  <template x-for="a in (m.actions||[])" :key="a.name">
+                    <button
+                      type="button"
+                      class="btn"
+                      data-size="sm"
+                      :data-variant="a.destructive ? 'destructive' : 'secondary'"
+                      :disabled="h.status!=='online'"
+                      @click="startAction(h.id, m.name, a)"
+                      x-text="`${m.name} ${a.name}`"
+                    ></button>
+                  </template>
+                  <button
+                    type="button"
+                    class="btn"
+                    data-variant="outline"
+                    data-size="sm"
+                    @click="openConfig(h.id, m)"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/>
+                      <circle cx="12" cy="12" r="3"/>
+                    </svg>
+                    config
+                  </button>
+                </div>
+              </div>
+            </template>
+            <div class="actions justify-end">
+              <button
+                type="button"
+                class="btn"
+                data-variant="secondary"
+                data-size="sm"
+                @click="openEditHost(h)"
+              >
+                Edit host
+              </button>
+              <button
+                type="button"
+                class="btn"
+                data-variant="secondary"
+                data-size="sm"
+                x-show="h.status!=='online'"
+                @click="openRevive(h)"
+              >
+                Revive associate
+              </button>
+              <button
+                type="button"
+                class="btn"
+                data-size="sm"
+                :data-variant="associateStale(h) ? 'warning' : 'outline'"
+                @click="openUpgrade(h)"
+              >
+                Upgrade associate
+              </button>
+              <button
+                type="button"
+                class="btn"
+                data-variant="destructive"
+                data-size="sm"
+                @click="openUninstall(h)"
+              >
+                Uninstall host
+              </button>
+            </div>
+          </div>
+        </section>
       </div>
-
+    </template>
+  </div>
+</div>

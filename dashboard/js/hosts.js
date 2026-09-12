@@ -128,10 +128,23 @@ export const hosts = {
     const parts = [];
     if (h.associateCodeId) parts.push(`associate code ${h.associateCodeId}`);
     if (h.associateVersion) parts.push(`built from commit ${h.associateVersion}`);
-    const o = this.overview || {};
-    const target = o.associateCodeId || o.associateBuild;
+    const target = this.expectedAssociate();
     if (target) parts.push(this.associateStale(h) ? `manager deploys ${target}` : 'matches what the manager deploys');
     return parts.join(' · ');
+  },
+  // expectedAssociate is the version the manager would deploy, in the same terms as
+  // associateLabel so the page-level badge and each host's chip read side by side. "" when the
+  // manager's associate binary carries neither stamp, in which case nothing is compared.
+  expectedAssociate() {
+    const o = this.overview || {};
+    return o.associateCodeId || o.associateBuild || '';
+  },
+  expectedAssociateTitle() {
+    const o = this.overview || {};
+    const parts = [];
+    if (o.associateCodeId) parts.push(`associate code ${o.associateCodeId}`);
+    if (o.associateBuild) parts.push(`built from commit ${o.associateBuild}`);
+    return 'The associate the manager deploys: ' + parts.join(' · ');
   },
   // staleAssociates counts hosts needing an upgrade, for the banner on every page. The
   // manager's own count is authoritative (it is what upgrade-stale acts on); the client-side
