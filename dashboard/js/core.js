@@ -4,6 +4,7 @@ export const core = {
   page: 'overview',
   navOpen: false, // mobile navbar-burger toggle (collapsed by default on narrow viewports)
   statusPanelOpen: false, // Overview "System status" disclosure; collapsed so a healthy fleet stays quiet
+  theme: 'auto', // 'auto' | 'light' | 'dark' — display choice for this browser; applied by the head script
   overview: {},
   hosts: [],
   ready: false,
@@ -18,6 +19,9 @@ export const core = {
   refreshError: '', // set when a refresh couldn't read part of the state (showing older values)
 
   async init() {
+    // The head script has already stored and painted the theme before first paint; this only reads
+    // back which mode is in force so the nav's control shows the right segment pressed.
+    this.theme = window.applyTheme();
     // Tear the live feed down cleanly when the page goes away (refresh/close/navigate) so the
     // server frees this client's SSE subscription promptly instead of waiting on a socket timeout.
     // pagehide covers the bfcache case that a plain unload listener misses.
@@ -222,6 +226,9 @@ export const core = {
     }
     this.refresh();
   },
+  // Display theme. The head script owns storage and the .dark class (it has to run before the
+  // stylesheets); this just hands it the new mode and keeps the control in sync with the result.
+  setTheme(mode) { this.theme = window.applyTheme(mode); },
   hostName(id) { const h = this.hosts.find(x => x.id === id); return h ? h.name : id; },
   // ipKey turns an IP into a zero-padded string so a plain string compare orders octets
   // numerically (so .10 sorts after .9).

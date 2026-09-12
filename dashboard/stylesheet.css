@@ -44,7 +44,15 @@
     --cm-meta: #555;
 }
 
-/* Dark mode is Basecoat's .dark class on <html>, set from prefers-color-scheme in the page head. */
+/* Basecoat sets color-scheme only inside .dark, and the page's meta says "light dark" — so a user
+    on a dark OS who pins the light theme would get dark scrollbars and form widgets on a light page.
+    Say it explicitly for the untinted root. */
+:root:not(.dark) {
+    color-scheme: light;
+}
+
+/* Dark mode is Basecoat's .dark class on <html>, set by the page head from the stored light/dark/
+    auto choice (see the theme control in the nav). */
 .dark {
     --success: oklch(72.3% .219 149.579);
     /* green-500 */
@@ -281,6 +289,16 @@ button.badge {
     color: var(--foreground);
 }
 
+/* The theme control is a nav item, not a page link: separate it from them, and drop the "Theme"
+    label — on a desktop header the three icons speak for themselves. */
+.app-nav-theme {
+    margin-left: .5rem;
+}
+
+.app-nav-theme-label {
+    display: none;
+}
+
 .app-header-actions {
     display: flex;
     align-items: center;
@@ -356,6 +374,19 @@ button.badge {
 
     .app-nav>button {
         text-align: left;
+    }
+
+    /* In the folded menu the icons sit in a column of worded links, so they get their label back
+        and a gap to separate them from the page list. (No rule: the group is fit-content wide, so a
+        border would stop a third of the way across the panel.) */
+    .app-nav-theme {
+        align-self: flex-start;
+        margin-left: 0;
+        margin-top: .75rem;
+    }
+
+    .app-nav-theme-label {
+        display: flex;
     }
 
     .app-main {

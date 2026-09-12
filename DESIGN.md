@@ -124,6 +124,14 @@ can also stream logs from containers or the host system, or display the audit lo
 dashboard and reimported on a fresh install. It includes a robust login page using credentials
 created during install.
 
+#### Theme
+
+Light, dark, or auto, chosen from the control in the nav bar. The choice is stored per browser
+(`localStorage`), not per account — it describes the screen you are looking at, not the fleet — and
+auto follows the OS setting live, with no reload. A small script in the page head applies it before
+the stylesheets load, so the first paint is already in the right theme; the control only hands that
+script the new mode.
+
 #### Status light
 
 The flask in the header is a status light for the whole fleet, and the "System status" panel on

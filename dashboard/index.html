@@ -9,15 +9,35 @@
   <meta name="color-scheme" content="light dark">
   <title>LabAssistant</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <!-- Basecoat themes from a .dark class on <html>, not from prefers-color-scheme. Follow the OS
-       setting, live, so flipping it needs no reload. Runs before the stylesheets so the first paint
-       is already in the right theme. -->
+  <!-- Basecoat themes from a .dark class on <html>, not from prefers-color-scheme directly, so the
+       light/dark/auto control in the nav can override the OS. The choice is a per-browser display
+       preference (localStorage), not manager state: it is about this screen, not the fleet, and it
+       must be readable before any request could answer for it.
+
+       This runs before the stylesheets so the first paint is already in the right theme; applying
+       it from Alpine instead would flash the wrong one on every load. It owns both the storage and
+       the class, and window.applyTheme is the only way in: called with a mode it stores and paints
+       that mode, called bare it just repaints. -->
   <script>
     (() => {
       const dark = matchMedia('(prefers-color-scheme: dark)');
-      const apply = () => document.documentElement.classList.toggle('dark', dark.matches);
-      apply();
-      dark.addEventListener('change', apply);
+      let mode = 'auto';
+      // Storage can be unavailable or blocked (private windows, cleared site data). Auto is then
+      // the fallback and the choice simply doesn't outlive the page.
+      try { mode = localStorage.getItem('theme') || 'auto'; } catch (e) { /* auto */ }
+      const paint = () => document.documentElement.classList.toggle(
+        'dark', mode === 'dark' || (mode === 'auto' && dark.matches));
+      window.applyTheme = (next) => {
+        if (next) {
+          mode = next;
+          try { localStorage.setItem('theme', next); } catch (e) { /* not persisted, still applied */ }
+        }
+        paint();
+        return mode;
+      };
+      paint();
+      // Only auto follows the OS, but repainting in a pinned mode costs nothing and keeps one path.
+      dark.addEventListener('change', paint);
     })();
   </script>
   <link rel="stylesheet" href="/vendor/basecoat-1.0.2.min.css">
@@ -51,6 +71,36 @@
         @click="page='scheduler'; navOpen=false">Scheduler</button>
       <button type="button" :aria-current="page==='audit' && 'page'"
         @click="page='audit'; navOpen=false">Audit</button>
+      <!-- Display theme. It sits in the nav rather than with the header's action buttons so that it
+           folds into the mobile menu alongside the page links: the header has no room for three
+           more controls at phone width. -->
+      <div class="app-nav-theme button-group" role="group" aria-label="Theme">
+        <span class="app-nav-theme-label">Theme</span>
+        <button type="button" class="btn" data-variant="outline" data-size="icon-sm" title="Light theme"
+          aria-label="Light theme" :aria-pressed="theme==='light'" @click="setTheme('light')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/>
+            <path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/>
+            <path d="m19.07 4.93-1.41 1.41"/>
+          </svg>
+        </button>
+        <button type="button" class="btn" data-variant="outline" data-size="icon-sm" title="Dark theme"
+          aria-label="Dark theme" :aria-pressed="theme==='dark'" @click="setTheme('dark')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9"/>
+          </svg>
+        </button>
+        <button type="button" class="btn" data-variant="outline" data-size="icon-sm" title="Follow the system setting"
+          aria-label="Follow the system setting" :aria-pressed="theme==='auto'" @click="setTheme('auto')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/>
+            <line x1="12" x2="12" y1="17" y2="21"/>
+          </svg>
+        </button>
+      </div>
     </nav>
     <div class="app-header-actions">
       <button type="button" class="btn" data-size="sm" @click="addHostOpen=true; navOpen=false">Add Host</button>
