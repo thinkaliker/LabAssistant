@@ -69,9 +69,9 @@
         @click="page='scheduler'; navOpen=false">Scheduler</button>
       <button type="button" :aria-current="page==='audit' && 'page'"
         @click="page='audit'; navOpen=false">Audit</button>
-      <!-- Display theme. It sits in the nav rather than with the header's action buttons so that it
-           folds into the mobile menu alongside the page links: the header has no room for three
-           more controls at phone width. -->
+      <!-- Display theme, mobile copy. On a desktop header the control sits with the action buttons
+           (below); at phone width the header has no room for three more controls, so this copy folds
+           into the menu alongside the page links instead. CSS shows exactly one of the two. -->
       <div class="app-nav-theme button-group" role="group" aria-label="Theme">
         <span class="app-nav-theme-label">Theme</span>
         <button type="button" class="btn" data-variant="outline" data-size="icon-sm" title="Light theme"
@@ -102,6 +102,33 @@
     </nav>
     <div class="app-header-actions">
       <button type="button" class="btn" data-size="sm" @click="addHostOpen=true; navOpen=false">Add Host</button>
+      <!-- Display theme, desktop copy: grouped with the settings and log out buttons. -->
+      <div class="app-header-theme button-group" role="group" aria-label="Theme">
+        <button type="button" class="btn" data-variant="outline" data-size="icon-sm" title="Light theme"
+          aria-label="Light theme" :aria-pressed="theme==='light'" @click="setTheme('light')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/>
+            <path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/>
+            <path d="m19.07 4.93-1.41 1.41"/>
+          </svg>
+        </button>
+        <button type="button" class="btn" data-variant="outline" data-size="icon-sm" title="Dark theme"
+          aria-label="Dark theme" :aria-pressed="theme==='dark'" @click="setTheme('dark')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9"/>
+          </svg>
+        </button>
+        <button type="button" class="btn" data-variant="outline" data-size="icon-sm" title="Follow the system setting"
+          aria-label="Follow the system setting" :aria-pressed="theme==='auto'" @click="setTheme('auto')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/>
+            <line x1="12" x2="12" y1="17" y2="21"/>
+          </svg>
+        </button>
+      </div>
       <button type="button" class="btn" data-variant="ghost" data-size="icon" title="Settings" aria-label="Settings"
         :aria-current="page==='settings' && 'page'" @click="page='settings'; navOpen=false">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"

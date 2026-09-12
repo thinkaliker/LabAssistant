@@ -28,6 +28,7 @@ func (a *App) httpHandler() http.Handler {
 		RotateCert:      a.rotateCert,
 		Instance:        a.instance,
 		SelfUpdate:      a.selfUpdate,
+		ManagerVersion:  a.managerVersion,
 		UpdateLogPath:   a.updateLogPath(),
 		AssociateBuild:  a.assocBuild,
 		AssociateCodeID: a.assocCodeID,

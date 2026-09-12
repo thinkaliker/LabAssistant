@@ -23,6 +23,8 @@
                     <span class="badge" :data-variant="statusVariant(h.status)" x-text="h.status"></span>
                     <span class="font-semibold" x-text="h.name"></span>
                     <span class="text-xs text-muted-foreground" x-text="h.ip"></span>
+                    <span class="badge font-mono" data-variant="outline" x-show="associateLabel(h)"
+                      :title="associateTitle(h)" x-text="associateLabel(h)"></span>
                     <span class="badge" data-variant="destructive" x-show="associateStale(h)"
                       :title="`associate code ${h.associateCodeId||h.associateVersion||'unknown'} — the manager deploys ${overview.associateCodeId||overview.associateBuild}. Upgrade to pick up module fixes.`">associate
                       update required</span>
@@ -44,7 +46,10 @@
                        associate is only replaced at enroll/upgrade time, so a host can sit on old
                        module code indefinitely while the manager is current. -->
                   <p class="text-xs text-muted-foreground">
-                    <span x-text="'associate ' + (h.associateVersion || 'build unknown')"></span>
+                    <span x-show="!associateLabel(h)">associate build unknown</span>
+                    <span x-show="h.associateCodeId" x-text="'associate code ' + h.associateCodeId"></span>
+                    <span x-show="h.associateVersion"
+                      x-text="(h.associateCodeId ? ' · built from commit ' : 'associate commit ') + h.associateVersion"></span>
                     <span x-show="h.connMode==='manager_dial'"
                       x-text="' · manager-dial' + (h.connPort ? ' :'+h.connPort : '')"></span>
                     <span class="text-destructive font-semibold" x-show="associateStale(h)"

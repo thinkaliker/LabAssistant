@@ -126,8 +126,9 @@ created during install.
 
 #### Theme
 
-Light, dark, or auto, chosen from the control in the nav bar. The choice is stored per browser
-(`localStorage`), not per account — it describes the screen you are looking at, not the fleet — and
+Light, dark, or auto, chosen from the control in the header next to settings and log out (in the
+menu on phones). The choice is stored per browser (`localStorage`), not per account — it describes
+the screen you are looking at, not the fleet — and
 auto follows the OS setting live, with no reload. A small script in the page head applies it before
 the stylesheets load, so the first paint is already in the right theme; the control only hands that
 script the new mode.

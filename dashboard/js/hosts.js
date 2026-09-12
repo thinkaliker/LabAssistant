@@ -117,6 +117,22 @@ export const hosts = {
     if (o.associateBuild && h.associateVersion) return h.associateVersion !== o.associateBuild;
     return false;
   },
+  // associateLabel is the host's associate version for display: the code fingerprint when the
+  // associate reports one, since that is the version that decides whether a host needs a push,
+  // else the commit it was built from. "" for a host reporting neither (offline, or not yet
+  // connected since the manager started — both fields are runtime-only).
+  associateLabel(h) {
+    return h.associateCodeId || h.associateVersion || '';
+  },
+  associateTitle(h) {
+    const parts = [];
+    if (h.associateCodeId) parts.push(`associate code ${h.associateCodeId}`);
+    if (h.associateVersion) parts.push(`built from commit ${h.associateVersion}`);
+    const o = this.overview || {};
+    const target = o.associateCodeId || o.associateBuild;
+    if (target) parts.push(this.associateStale(h) ? `manager deploys ${target}` : 'matches what the manager deploys');
+    return parts.join(' · ');
+  },
   // staleAssociates counts hosts needing an upgrade, for the banner on every page. The
   // manager's own count is authoritative (it is what upgrade-stale acts on); the client-side
   // tally is the fallback for an overview that has not loaded yet.

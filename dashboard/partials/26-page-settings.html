@@ -1,5 +1,5 @@
       <!-- Settings -->
-      <div x-show="page==='settings'">
+      <div x-show="page==='settings'" x-init="$watch('page', p => p === 'settings' && checkManagerVersion())">
         <div class="toolbar page-head">
           <h1 class="page-title">Settings</h1>
         </div>
@@ -32,7 +32,21 @@
 
               <hr>
               <div>
-                <h3 class="text-sm font-semibold mb-2">Update manager</h3>
+                <div class="flex flex-wrap items-center gap-2 mb-2">
+                  <h3 class="text-sm font-semibold">Update manager</h3>
+                  <template x-if="managerVersionStatus()">
+                    <span class="badge" :data-variant="managerVersionStatus().variant"
+                      x-text="managerVersionStatus().label"></span>
+                  </template>
+                </div>
+                <div class="flex flex-wrap items-center gap-2 mb-3 text-xs text-muted-foreground">
+                  <span x-show="managerVersionStatus()" x-text="managerVersionStatus()?.text"></span>
+                  <span x-show="managerVersion?.checkedAt"
+                    x-text="'· checked ' + new Date(managerVersion?.checkedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })"></span>
+                  <button type="button" class="btn" data-variant="ghost" data-size="sm"
+                    :class="managerVersionChecking && 'is-loading'" :disabled="managerVersionChecking"
+                    @click="checkManagerVersion(true)">Check now</button>
+                </div>
                 <p class="text-xs text-muted-foreground mb-3">Pull the latest code, rebuild, and restart the manager
                   on this control host. The manager will drop offline briefly, so
                   <strong>you will need to sign in again</strong> once it is back.

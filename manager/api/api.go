@@ -4,10 +4,12 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/thinkaliker/labassistant/manager/actions"
 	"github.com/thinkaliker/labassistant/manager/auditor"
@@ -42,6 +44,9 @@ type Deps struct {
 	Instance string
 	// SelfUpdate runs the manager's own update (pull, rebuild, restart) on the control host.
 	SelfUpdate func() error
+	// ManagerVersion compares the running manager with the tip of its checkout's remote branch.
+	// force skips the cached answer. Nil when the build has no way to check.
+	ManagerVersion func(ctx context.Context, force bool) ManagerVersion
 	// UpdateLogPath is the file selfUpdate streams its output to; the log-tail endpoint reads it.
 	UpdateLogPath string
 	// AssociateBuild is the revision of the associate binary the manager deploys. Empty when
@@ -104,6 +109,7 @@ func Router(d Deps) http.Handler {
 	mux.HandleFunc("PUT /api/v1/hosts/{id}/modules/{name}/config", d.putModuleConfig)
 	mux.HandleFunc("GET /api/v1/backup", d.backup)
 	mux.HandleFunc("POST /api/v1/restore", d.restore)
+	mux.HandleFunc("GET /api/v1/manager/version", d.managerVersion)
 	mux.HandleFunc("POST /api/v1/manager/update", d.managerUpdate)
 	mux.HandleFunc("GET /api/v1/manager/update/logs", d.managerUpdateLogs)
 
@@ -220,6 +226,33 @@ func (d Deps) managerUpdate(w http.ResponseWriter, r *http.Request) {
 		"status": "updating",
 		"detail": "manager is pulling, rebuilding, and restarting; sign in again once it is back",
 	})
+}
+
+// ManagerVersion is what the manager runs against what its remote holds. Every commit field is
+// a full or short hash, or "" when unknown; Error says why a comparison couldn't be made, and
+// UpdateAvailable is only ever true when both Local and Remote are known.
+type ManagerVersion struct {
+	// Running is the commit this manager binary was built from ("<rev>+dirty" for a dirty tree).
+	// It can lag Local when the checkout was pulled but the manager not yet rebuilt.
+	Running string `json:"running"`
+	// Local is the checkout's HEAD; Remote is the tip of the same branch on origin.
+	Local           string    `json:"local"`
+	Remote          string    `json:"remote"`
+	Branch          string    `json:"branch"`
+	UpdateAvailable bool      `json:"updateAvailable"`
+	CheckedAt       time.Time `json:"checkedAt"`
+	Error           string    `json:"error,omitempty"`
+}
+
+// managerVersion reports whether a manager self-update would pull anything. ?refresh=1 skips
+// the manager's cached answer, for an explicit "check now".
+func (d Deps) managerVersion(w http.ResponseWriter, r *http.Request) {
+	if d.ManagerVersion == nil {
+		writeErr(w, http.StatusNotImplemented, "unsupported", "version check is not available")
+		return
+	}
+	force := r.URL.Query().Get("refresh") == "1"
+	writeJSON(w, http.StatusOK, d.ManagerVersion(r.Context(), force))
 }
 
 func (d Deps) listJobs(w http.ResponseWriter, r *http.Request) {

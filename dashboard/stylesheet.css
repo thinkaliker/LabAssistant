@@ -289,14 +289,19 @@ button.badge {
     color: var(--foreground);
 }
 
-/* The theme control is a nav item, not a page link: separate it from them, and drop the "Theme"
-    label — on a desktop header the three icons speak for themselves. */
+/* The theme control has two copies: on a desktop header it sits with the action buttons (a little
+    apart from Add Host, so it reads as its own group), and the nav copy only appears in the folded
+    mobile menu. */
+.app-header-theme {
+    margin-inline: .25rem;
+}
+
 .app-nav-theme {
-    margin-left: .5rem;
+    display: none;
 }
 
 .app-nav-theme-label {
-    display: none;
+    display: flex;
 }
 
 .app-header-actions {
@@ -380,13 +385,13 @@ button.badge {
         and a gap to separate them from the page list. (No rule: the group is fit-content wide, so a
         border would stop a third of the way across the panel.) */
     .app-nav-theme {
+        display: flex;
         align-self: flex-start;
-        margin-left: 0;
         margin-top: .75rem;
     }
 
-    .app-nav-theme-label {
-        display: flex;
+    .app-header-theme {
+        display: none;
     }
 
     .app-main {

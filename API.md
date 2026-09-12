@@ -194,6 +194,7 @@ Non-2xx responses use:
 | `GET /events` | SSE stream of host online/offline, job, and status updates. |
 | `GET /settings` | Read manager settings. |
 | `PUT /settings` | Update manager settings. |
+| `GET /manager/version` | Compare the running manager with the tip of its checkout's branch on `origin` (read-only `git ls-remote`, cached ~10 min; `?refresh=1` forces a fresh check). Returns `{ "running", "local", "remote", "branch", "updateAvailable", "checkedAt", "error"? }`; `error` explains why no comparison was possible (not a checkout, detached HEAD, remote unreachable). |
 | `GET /backup` | Export settings. |
 | `POST /restore` | Import settings. |
 

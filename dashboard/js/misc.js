@@ -7,6 +7,8 @@ export const misc = {
   auditError: '',
   managerUpdating: false,
   managerUpdateError: '',
+  managerVersion: null, // last /manager/version answer: running/local/remote commits, updateAvailable
+  managerVersionChecking: false,
   tokens: [],
   newTokenName: '',
   newTokenAudit: false,
@@ -17,6 +19,41 @@ export const misc = {
   auditPageSlice() {
     const start = (this.auditPage - 1) * this.auditPageSize;
     return this.audit.slice(start, start + this.auditPageSize);
+  },
+  // checkManagerVersion asks whether a self-update would pull anything. The manager caches the
+  // answer (the remote lookup is an SSH round-trip to GitHub), so opening Settings is cheap;
+  // force skips that cache for the explicit "Check now".
+  async checkManagerVersion(force) {
+    if (this.managerVersionChecking) return;
+    this.managerVersionChecking = true;
+    try {
+      const r = await fetch('/api/v1/manager/version' + (force ? '?refresh=1' : ''));
+      if (r.ok) this.managerVersion = await r.json();
+      else if (r.status !== 501) this.managerVersion = { error: 'Failed to check for updates.' };
+    } catch (e) {
+      this.managerVersion = { error: 'Failed to reach the manager.' };
+    } finally {
+      this.managerVersionChecking = false;
+    }
+  },
+  // managerVersionStatus turns the version check into one line and a badge variant. "Pulled but
+  // not rebuilt" gets its own wording: the checkout matches GitHub, yet the running binary is
+  // older, and an update is exactly what brings it current.
+  managerVersionStatus() {
+    const v = this.managerVersion;
+    if (!v) return null;
+    const short = (h) => String(h || '').slice(0, 7);
+    if (v.error) return { variant: 'secondary', label: 'unknown', text: "Couldn't check for updates: " + v.error };
+    if (v.updateAvailable) {
+      return { variant: 'warning', label: 'update available',
+        text: `${short(v.local)} → ${short(v.remote)} on ${v.branch}` };
+    }
+    const running = String(v.running || '').replace(/\+dirty$/, '');
+    if (running && v.local && !v.local.startsWith(running)) {
+      return { variant: 'warning', label: 'rebuild pending',
+        text: `Checkout is at ${short(v.local)} but the manager is running ${short(running)}.` };
+    }
+    return { variant: 'success', label: 'up to date', text: `${short(v.local)} on ${v.branch}` };
   },
   async updateManager() {
     if (this.managerUpdating) return;

@@ -70,6 +70,8 @@ type App struct {
 	// decided on, since it moves only when associate code changes. Empty when the binary was
 	// built without the stamp, in which case the comparison falls back to assocBuild.
 	assocCodeID string
+	// verCache holds the last manager-vs-remote version check (see managerVersion).
+	verCache versionCache
 }
 
 // NewApp builds the manager from its on-disk layout and configuration.
@@ -337,14 +339,26 @@ func (a *App) updateLogPath() string {
 	return filepath.Join(a.layout.Data, "manager-update.log")
 }
 
+// checkoutOf maps the manager executable to the repo it was built in. A standard deploy builds
+// bin/manager inside the checkout, so the repo root is two levels up and scripts/manage.sh
+// drives the update lifecycle.
+func checkoutOf(exe string) string { return filepath.Dir(filepath.Dir(exe)) }
+
+// checkoutDir is the checkout this manager runs from, or "" when the executable can't be found.
+func (a *App) checkoutDir() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	return checkoutOf(exe)
+}
+
 func (a *App) selfUpdate() error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err
 	}
-	// A standard deploy builds bin/manager inside the checkout, so the repo root is two
-	// levels up and scripts/manage.sh drives the update lifecycle.
-	checkout := filepath.Dir(filepath.Dir(exe))
+	checkout := checkoutOf(exe)
 	script := filepath.Join(checkout, "scripts", "manage.sh")
 	if !fileExists(script) {
 		return fmt.Errorf("update script not found at %s", script)
