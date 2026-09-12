@@ -398,6 +398,65 @@ button.badge {
     gap: 1rem;
 }
 
+/* ---- Overview system-status panel ---- */
+
+/* The disclosure header spans the card and carries no button chrome: the chevron is the only
+    affordance, so the row reads as the card's own heading rather than a control sitting in it. */
+.status-panel {
+    margin-top: 1rem;
+}
+
+.status-panel-toggle {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+/* The same tint as the header flask, so the panel and the status light read as one thing. */
+.status-dot {
+    flex: none;
+    width: .625rem;
+    height: .625rem;
+    border-radius: 9999px;
+}
+
+/* The summary gives up its width first: on a phone the heading and the chevron stay put and the
+    count truncates, rather than the row overflowing the card. */
+.status-summary {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.status-chevron {
+    flex: none;
+    margin-left: auto;
+    transition: transform .15s ease;
+}
+
+.status-chevron.is-open {
+    transform: rotate(180deg);
+}
+
+.status-panel-body {
+    margin-top: .25rem;
+}
+
+/* Rules rather than gaps between reasons: a long list still scans as one table. */
+.status-reason {
+    padding-block: .625rem;
+    border-top: 1px solid var(--border);
+}
+
 .stat-value {
     margin-block: .25rem;
     font-size: 1.875rem;

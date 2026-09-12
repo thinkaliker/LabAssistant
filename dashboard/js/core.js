@@ -3,6 +3,7 @@
 export const core = {
   page: 'overview',
   navOpen: false, // mobile navbar-burger toggle (collapsed by default on narrow viewports)
+  statusPanelOpen: false, // Overview "System status" disclosure; collapsed so a healthy fleet stays quiet
   overview: {},
   hosts: [],
   ready: false,
@@ -252,40 +253,120 @@ export const core = {
     if (h > 0) return `${h}h ${m}m`;
     return `${m}m`;
   },
-  // Overall system health, used to tint the flask icon like a status light.
+  // ---- Overall system status ----
+  //
+  // statusReasons enumerates every condition the status light is reacting to. It is the single
+  // source for both the flask icon's tint and the Overview "System status" panel, so the light
+  // and its explanation cannot drift apart — the panel is the answer to "why is it red?", which
+  // a coloured icon on its own can never give.
+  //
   //   crit (red)  — something needs attention now: a host down, an unhealthy container,
   //                 or a sudo password blocking a job.
   //   warn (amber)— degraded but not urgent: updates available, pending approvals,
   //                 a host enrolling, or a stopped/partial service.
-  //   good (green)— all hosts online, all services healthy, nothing pending.
+  //   good (green)— no reasons at all.
+  //
+  // Each reason carries the page that acts on it, so a panel row can link straight there.
+  // Conditions a shell banner already handles (sudo prompts, approvals) carry no page: their
+  // buttons are on screen on every page already, and a link would just point at the banner.
+  statusReasons() {
+    const out = [];
+    const add = (level, key, text, host, page, pageLabel) =>
+      out.push({ level, key, text, host: host || '', page: page || '', pageLabel: pageLabel || '' });
+
+    // ---- crit ----
+    for (const sp of this.sudoPrompts) {
+      add('crit', 'sudo:' + sp.id, `Sudo password needed for ${sp.module} ${sp.action}`, this.hostName(sp.hostId));
+    }
+    for (const h of this.hosts) {
+      if (h.status === 'offline') add('crit', 'host:' + h.id, 'Host is offline', h.name, 'hosts', 'Hosts');
+      else if (h.status === 'error') add('crit', 'host:' + h.id, 'Host reported an error', h.name, 'hosts', 'Hosts');
+    }
+    for (const st of (this.services.stacks || [])) {
+      for (const sv of (st.services || [])) {
+        if (sv.health === 'unhealthy') {
+          add('crit', `unhealthy:${st.hostId}/${st.name}/${sv.name}`, `${st.name} / ${sv.name} is unhealthy`,
+              this.hostName(st.hostId), 'services', 'Services');
+        }
+      }
+    }
+
+    // ---- warn ----
+    if (this.approvals.length) {
+      add('warn', 'approvals', this.approvals.length === 1
+        ? '1 action is awaiting approval' : `${this.approvals.length} actions are awaiting approval`);
+    }
+    // Anything that is neither online nor already counted above: enrolling, or a status this
+    // dashboard doesn't know.
+    for (const h of this.hosts) {
+      if (h.status !== 'online' && h.status !== 'offline' && h.status !== 'error') {
+        add('warn', 'host:' + h.id, `Host is ${h.status || 'in an unknown state'}`, h.name, 'hosts', 'Hosts');
+      }
+    }
+    const packages = this.overview.updates?.packages ?? 0;
+    if (packages > 0) {
+      add('warn', 'packages', packages === 1 ? '1 package update available' : `${packages} package updates available`,
+          '', 'updates', 'Updates');
+    }
+    // One row for stale images, not two: the Updates projection and the per-service
+    // updateAvailable flag describe the same containers from two endpoints, so they are merged
+    // by identity rather than counted twice.
+    const images = new Set();
+    for (const c of (this.updates?.containers || [])) images.add(`${c.hostId}/${c.stack}/${c.service}`);
+    for (const st of (this.services.stacks || [])) {
+      for (const sv of (st.services || [])) {
+        if (this.svcUpdate(sv)) images.add(`${st.hostId}/${st.name}/${sv.name}`);
+      }
+    }
+    if (images.size) {
+      add('warn', 'images', images.size === 1
+        ? '1 container image update available' : `${images.size} container image updates available`,
+        '', 'updates', 'Updates');
+    }
+    for (const st of (this.services.stacks || [])) {
+      if (st.status === 'partial' || st.status === 'stopped') {
+        add('warn', `stack:${st.hostId}/${st.name}`, `Stack ${st.name} is ${st.status}`,
+            this.hostName(st.hostId), 'services', 'Services');
+        continue; // its services are down *because* the stack is; one row says that once
+      }
+      for (const sv of (st.services || [])) {
+        if (sv.status === 'stopped' || sv.status === 'exited') {
+          add('warn', `stopped:${st.hostId}/${st.name}/${sv.name}`, `${st.name} / ${sv.name} is ${sv.status}`,
+              this.hostName(st.hostId), 'services', 'Services');
+        }
+      }
+    }
+    return out;
+  },
+  // The status light itself: crit wins over warn, and no reasons at all means good.
   overallStatus() {
-    if (this.sudoPrompts.length) return 'crit';
-    if (this.hosts.some(h => h.status === 'offline' || h.status === 'error')) return 'crit';
-    for (const st of (this.services.stacks || [])) {
-      for (const sv of (st.services || [])) {
-        if (sv.health === 'unhealthy') return 'crit';
-      }
-    }
-    if (this.approvals.length) return 'warn';
-    if (this.hosts.some(h => h.status !== 'online')) return 'warn'; // enrolling / unknown
-    if ((this.overview.updates?.packages ?? 0) > 0) return 'warn';
-    if ((this.updates?.containers?.length ?? 0) > 0) return 'warn';
-    for (const st of (this.services.stacks || [])) {
-      if (st.status === 'partial' || st.status === 'stopped') return 'warn';
-      for (const sv of (st.services || [])) {
-        if (sv.status === 'stopped' || sv.status === 'exited' || this.svcUpdate(sv)) return 'warn';
-      }
-    }
-    return 'good';
+    const reasons = this.statusReasons();
+    if (reasons.some(r => r.level === 'crit')) return 'crit';
+    return reasons.length ? 'warn' : 'good';
   },
   // Fill color for the flask liquid — the visible status light. Theme tokens (bound as a CSS
   // fill), so it follows light/dark with the rest of the page.
   statusColor() {
     return { good: 'var(--success)', warn: 'var(--warning)', crit: 'var(--destructive)' }[this.overallStatus()];
   },
+  // Headline for the Overview panel: how many reasons, split by severity, so the summary line
+  // is worth reading before expanding the panel.
+  statusSummary() {
+    const reasons = this.statusReasons();
+    if (!reasons.length) return 'All systems healthy';
+    const crit = reasons.filter(r => r.level === 'crit').length;
+    const warn = reasons.length - crit;
+    const bits = [];
+    if (crit) bits.push(`${crit} needing action`);
+    if (warn) bits.push(`${warn} to review`);
+    return bits.join(', ');
+  },
+  // Tooltip on the flask. It names the panel that carries the detail, since the icon is in the
+  // header on every page while the explanation lives on Overview.
   statusTitle() {
-    return { good: 'All systems healthy', warn: 'Attention: updates or issues pending',
-             crit: 'Action required: a host or service needs attention' }[this.overallStatus()];
+    return this.statusReasons().length
+      ? `${this.statusSummary()} — open System status on the Overview page`
+      : 'All systems healthy';
   },
   // Badge variant (Basecoat data-variant) for a host/stack/job state. success and warning are
   // app variants, defined in stylesheet.css.

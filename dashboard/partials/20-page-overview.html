@@ -33,5 +33,45 @@
             </section>
           </div>
         </div>
+
+        <!-- System status: why the flask in the header is lit. That icon is a status light with
+             no explanation — red tells you something is wrong but never which thing — so the
+             reasons behind it are spelled out here. Collapsed by default (a healthy fleet should
+             stay quiet); the summary line carries the counts so the row is worth reading closed. -->
+        <div class="card status-panel">
+          <section>
+            <button type="button" class="status-panel-toggle" :aria-expanded="statusPanelOpen"
+              aria-controls="status-panel-body" @click="statusPanelOpen = !statusPanelOpen">
+              <span class="status-dot" :style="'background-color:' + statusColor()" aria-hidden="true"></span>
+              <span class="font-medium">System status</span>
+              <span class="status-summary text-sm text-muted-foreground" x-text="statusSummary()"></span>
+              <svg class="status-chevron" :class="statusPanelOpen && 'is-open'" width="16" height="16"
+                viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                stroke-linejoin="round" aria-hidden="true">
+                <path d="m6 9 6 6 6-6"/>
+              </svg>
+            </button>
+            <div class="status-panel-body" id="status-panel-body" x-show="statusPanelOpen">
+              <template x-if="statusReasons().length === 0">
+                <p class="text-sm text-muted-foreground">Every host is online, every container is healthy,
+                  and nothing is pending.</p>
+              </template>
+              <template x-for="r in statusReasons()" :key="r.key">
+                <div class="toolbar status-reason">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span class="badge" :data-variant="r.level === 'crit' ? 'destructive' : 'warning'"
+                      x-text="r.level === 'crit' ? 'action' : 'review'"></span>
+                    <span x-text="r.text"></span>
+                    <span class="text-xs text-muted-foreground" x-show="r.host" x-text="r.host"></span>
+                  </div>
+                  <div class="actions">
+                    <button type="button" class="btn" data-variant="outline" data-size="sm" x-show="r.page"
+                      @click="page = r.page" x-text="'Go to ' + r.pageLabel"></button>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </section>
+        </div>
       </div>
 
