@@ -81,7 +81,7 @@
         </div>
 
         <!-- Compose editor panel: pinned to the right half of the viewport (see .compose-panel) -->
-        <div class="card compose-panel" data-size="sm" x-show="compose.open" x-cloak>
+        <div class="card compose-panel" data-size="sm" x-show="compose.open" x-cloak x-ref="composePanel">
           <header>
             <h2 x-text="'Edit compose: '+compose.stack"></h2>
             <p class="font-mono text-xs" x-text="compose.path || ''"></p>

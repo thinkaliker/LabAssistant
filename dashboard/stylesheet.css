@@ -749,6 +749,8 @@ html:has(dialog[open]) {
         width: auto;
         height: 70vh;
         margin-top: 1rem;
+        /* Clear the sticky header when scrolled into view on open. */
+        scroll-margin-top: calc(var(--header-h) + 1rem);
     }
 }
 

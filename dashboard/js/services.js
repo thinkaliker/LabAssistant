@@ -106,6 +106,12 @@ export const services = {
     try { const p = typeof job.params === 'string' ? JSON.parse(job.params) : job.params; if (p && p.stack) stack = p.stack; } catch (e) { /* keep res.stack */ }
     if (composeCM) { composeCM.toTextArea(); composeCM = null; }
     this.compose = { open: true, hostId: job.hostId, stack, path: res.path || '', multiFile: !!res.multiFile, loading: false, busy: false, error: '', status: '' };
+    // On narrow screens the panel flows below the whole stack list rather than pinning beside it,
+    // so it opens off-screen; bring it into view.
+    this.$nextTick(() => {
+      const panel = this.$refs.composePanel;
+      if (panel && window.matchMedia('(max-width: 768px)').matches) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
     if (this.compose.multiFile) return;
     this.$nextTick(() => this.mountEditor(res.content || ''));
   },
