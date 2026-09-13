@@ -235,7 +235,14 @@ export const hosts = {
 
     // Watch every job concurrently — they run in parallel on the manager, so awaiting them in
     // sequence would report the first host's outcome long after the last host had finished.
-    const needCreds = [];
+    //
+    // Each failure is queued for a prompt the moment it lands, not once the whole batch has
+    // settled. A rejected login fails within a second, while a healthy host spends tens of
+    // seconds uploading and restarting — and one whose job never settles would hold the prompts
+    // back for good. Collecting them for the end meant the operator watched hosts go "failed"
+    // and never got asked for the login.
+    const run = this._upgradeAllRun = (this._upgradeAllRun || 0) + 1;
+    this._upgradeAllSkipped = false;
     await Promise.all(started.map(async s => {
       const state = await this.watchJob(s.jobId, 'upgrade associate ' + s.hostName,
         { hostId: s.hostId, module: 'quartermaster', action: 'upgrade' });
@@ -246,10 +253,11 @@ export const hosts = {
       // the operator saw "failed" and had no way back in. authRequired now only decides how the
       // prompt is worded; skipping a host it cannot help is one click.
       const { authRequired, error } = await this.jobFailure(s.jobId);
-      needCreds.push({ hostId: s.hostId, hostName: s.hostName, authRequired, error });
+      // "Skip the rest" covers hosts from this batch that have not failed yet, too.
+      if (run !== this._upgradeAllRun || this._upgradeAllSkipped) return;
+      this.queueCredPrompts([{ hostId: s.hostId, hostName: s.hostName, authRequired, error }]);
     }));
     await this.refresh();
-    this.queueCredPrompts(needCreds);
   },
   // queueCredPrompts starts asking for credentials, one host at a time. A modal per host at
   // once would be unusable on a fleet; a queue lets the operator work through them, and skip
@@ -288,7 +296,7 @@ export const hosts = {
   // skipAllCredPrompts abandons the whole queue. Since every failed host is offered a retry, a
   // fleet-wide problem (manager rebooted, network down) would otherwise mean clicking Skip once
   // per host to get out.
-  skipAllCredPrompts() { this.credQueue = []; this.credPrompt.open = false; },
+  skipAllCredPrompts() { this.credQueue = []; this.credPrompt.open = false; this._upgradeAllSkipped = true; },
   // submitCredPrompt retries one host with the credentials just given, and only waits long
   // enough to find out whether the login was accepted.
   //

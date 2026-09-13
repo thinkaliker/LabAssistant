@@ -1511,7 +1511,7 @@
     <header class="job-panel-head">
       <span class="font-semibold">Job</span>
       <span class="badge" :data-variant="statusVariant(job.state)" x-text="job.state"></span>
-      <span class="text-xs text-muted-foreground" x-show="job.label" x-text="jobTitle(job)"></span>
+      <span class="job-panel-title text-xs text-muted-foreground" x-show="job.label" x-text="jobTitle(job)"></span>
       <!-- Queue indicator: every active job as a clickable chip. Click one to bring its log up;
            the chip on screen is highlighted. Jobs run serially per host, parallel across hosts. -->
       <div class="job-queue" x-show="jobs.length>1">
