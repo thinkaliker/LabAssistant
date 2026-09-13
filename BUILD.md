@@ -31,6 +31,16 @@ and manager API.
 - Config loader + on-disk dirs (`config/ data/ logs/`), base overridable via `--home` /
   `LABASSISTANT_HOME`. See README / API.md for layout.
 - Vendor pinned **Alpine.js** + **Basecoat** (CSS) into `dashboard/vendor/` (no CDN); embed via `go:embed`.
+  The compose editor adds two more, refreshed by hand:
+  - `yaml-<version>.min.js` ([eemeli/yaml](https://github.com/eemeli/yaml), ISC): the single-file
+    ES module from `https://cdn.jsdelivr.net/npm/yaml@<version>/+esm`, with the package's ISC
+    license prepended as a comment and the trailing `//# sourceMappingURL` line removed. Update the
+    import in `dashboard/js/composedoc.js` and `dashboard/jstest/format.test.mjs` when the version
+    changes.
+  - `compose-spec.json` ([compose-spec](https://github.com/compose-spec/compose-spec), Apache-2.0):
+    `schema/compose-spec.json` at a pinned commit, recorded in the file's top-level `$comment`.
+
+  Run `node --test dashboard/jstest/` (or `go test ./dashboard`) after refreshing either.
 
 ## First slice — walking skeleton
 

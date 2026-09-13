@@ -1,0 +1,15 @@
+services:
+    wide:
+        image: example/wide:1
+        environment:
+            A: "1"
+            # B: "2"
+        ports:
+            - "80:80"
+        networks:
+            - front
+    # other:
+    #     image: example/other:1
+networks:
+    front:
+        driver: bridge

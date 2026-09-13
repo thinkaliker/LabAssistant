@@ -8,6 +8,8 @@
 import { core } from './core.js';
 import { hosts } from './hosts.js';
 import { services } from './services.js';
+import { composeform } from './composeform.js';
+import { envedit } from './envedit.js';
 import { updates } from './updates.js';
 import { jobs } from './jobs.js';
 import { actions } from './actions.js';
@@ -18,7 +20,7 @@ import { ansi } from './ansi.js';
 // app() is merged once per page load, so the nested-object references shared by Object.assign
 // are harmless (one component instance). Alpine wraps the result in its reactive proxy.
 window.app = function app() {
-  return Object.assign({}, core, hosts, services, updates, jobs, actions, scheduler, misc, ansi);
+  return Object.assign({}, core, hosts, services, composeform, envedit, updates, jobs, actions, scheduler, misc, ansi);
 };
 
 // x-dialog="expr" drives a native <dialog>: showModal() while expr is truthy, close() once it turns

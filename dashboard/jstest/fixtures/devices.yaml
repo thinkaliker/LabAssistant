@@ -1,0 +1,22 @@
+services:
+  nvr:
+    image: example/nvr:stable
+    shm_size: "512mb"
+    devices:
+      - /dev/bus/usb:/dev/bus/usb
+      # REMOVED: the accelerator moved to the other host
+      # - /dev/apex_0:/dev/apex_0
+      - /dev/dri/renderD128:/dev/dri/renderD128
+      #- /dev/video11:/dev/video11
+    device_cgroup_rules:
+      - "c 189:* rwm"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - type: tmpfs
+        target: /tmp/cache
+        tmpfs:
+          size: 1000000000
+    ports:
+      - "8971:8971"
+      # ──────────────────────────
+      - "8554:8554"

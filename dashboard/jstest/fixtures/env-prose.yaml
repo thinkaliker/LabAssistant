@@ -1,0 +1,16 @@
+services:
+  feeder:
+    image: example/feeder:latest
+    environment:
+      # ──────────────────────────────────
+      # - it retrieves and decodes the signal
+      # - and forwards it to the aggregator
+      # ──────────────────────────────────
+      - FEEDER_HOST=receiver
+      - FEEDER_KEY=abc123
+      #- FEEDER_KEY_UAT=def456
+      - MLAT=yes
+    tmpfs:
+      - /run:exec,size=64M
+    labels:
+      - "com.example.watcher.enable=true"

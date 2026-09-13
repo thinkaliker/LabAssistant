@@ -281,6 +281,27 @@ Omit `service` for stack-level control; include it for a single service (both le
 Logs use `GET /hosts/{host_id}/logs` with service/container parameters. (v1 covers compose services
 only; a user-defined non-docker service registry is deferred.)
 
+#### Compose and .env files
+
+The dashboard's compose editor reads and writes a stack's files through `duo` actions. The compose
+file is the one recorded on the stack's containers (`com.docker.compose.project.config_files`); the
+`.env` is the project env file next to it, which docker compose reads for `${VAR}` substitution.
+
+| Action | Params | Result (`job.result`) | Notes |
+| --- | --- | --- | --- |
+| `read-compose` | `stack` | `stack, path, content, truncated, multiFile, sha256` | Read-only. Content is capped at 1 MiB (`truncated`). |
+| `write-compose` | `stack, content, baseSha256?` | `sha256` | Keeps `<file>.bak`, validates with `docker compose config`, restores on failure. Refused for multi-file stacks. |
+| `read-env` | `stack` | `stack, path, target, outsideDir, content, exists, truncated, sha256` | Read-only. A symlinked `.env` is followed: `target` is the real file, `outsideDir` flags one outside the stack directory. Missing file: `exists: false`. |
+| `write-env` | `stack, content, baseSha256?` | `sha256, created, target` | Validates the candidate first (`docker compose --env-file <candidate> config`), so a rejected edit never touches the live file. Keeps `<target>.bak`; creates a missing file with mode 0600. Capped at 256 KiB. |
+| `deploy` | `stack, service?, removeOrphans?` | — | `docker compose up -d`; `removeOrphans` adds `--remove-orphans` (ignored for multi-file stacks). Destructive: queued for approval. |
+
+- `baseSha256` is the `sha256` from the last read or write. When set, the write fails if the file
+  changed on the host in the meantime (including being created or deleted) instead of overwriting it.
+- `write-env` is deliberately **not** destructive: approvals record their params in the audit log,
+  and these params are the file's contents. Its validation errors have `.env` values masked.
+- Hosts whose associate predates `read-env`/`write-env` don't list them in their module manifest;
+  clients should check the manifest rather than dispatch and fail.
+
 ### Module config
 
 `GET /hosts/{id}/modules/{name}/config` returns the stored config and its schema (from

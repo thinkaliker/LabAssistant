@@ -237,6 +237,14 @@ export const core = {
     const h = this.hosts.find(x => x.id === id);
     return !!h && h.status === 'online';
   },
+  // hostHasAction reports whether a host's associate advertises an action. Features backed by a
+  // newer action (the .env editor) check this, so an older associate shows a disabled control
+  // instead of failing with "unknown action".
+  hostHasAction(hostId, mod, action) {
+    const h = this.hosts.find(x => x.id === hostId);
+    const m = ((h && h.modules) || []).find(x => x.name === mod);
+    return !!m && (m.actions || []).some(a => a.name === action);
+  },
   // humanBytes renders a byte count in binary units (KiB/MiB/GiB/...).
   humanBytes(n) {
     n = Number(n) || 0;

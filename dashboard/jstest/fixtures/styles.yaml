@@ -1,0 +1,27 @@
+services:
+  app:
+    image: example/app:1
+    # ours / VS Code: `# ` at the entry's own column
+    # command: ["serve", "--port", "80"]
+    #hand-typed without a space
+    #user: "1000:1000"
+    working_dir: /srv
+  # A service commented out with blank lines inside it
+  # worker:
+  #   image: example/app:1
+  #
+  #   command: work
+  #   # environment:
+  #   #   QUEUE: default
+# sed-style at column 0 with a space
+#  cron:
+#    image: example/cron:1
+#    restart: always
+# sed-style at column 0 without a space
+#  jobs:
+#    image: example/jobs:1
+  api:
+    image: example/api:1
+    ports:
+#      - "9000:9000"
+      - "9001:9001"

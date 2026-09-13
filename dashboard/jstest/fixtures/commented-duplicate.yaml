@@ -1,0 +1,26 @@
+# Stack for the utility box.
+# Old layout kept for reference:
+# services:
+#   solver:
+#     # needs the host network
+#     image: example/solver:latest
+#     container_name: solver
+#     environment:
+#       - LOG_LEVEL=info
+#       - TZ=Etc/UTC
+#     ports:
+#       - 8191:8191
+#     restart: unless-stopped
+
+services:
+  watcher:
+    image: example/watcher:1
+    container_name: watcher
+    restart: unless-stopped
+    environment:
+      - WATCH_SCHEDULE=0 0 4 * * *
+      - WATCH_CLEANUP=true
+      # Label-scoped: only containers that opt in
+      - WATCH_LABEL_ENABLE=true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock

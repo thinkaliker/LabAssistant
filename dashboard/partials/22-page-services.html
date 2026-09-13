@@ -100,17 +100,194 @@
                   them.</section>
               </div>
             </template>
-            <div x-show="!compose.multiFile" class="compose-editor-wrap">
+            <template x-if="compose.truncated">
+              <div class="alert" data-variant="warning">
+                <section>This compose file is larger than the editor can load, so only its beginning is shown,
+                  read-only. Edit it on the host.</section>
+              </div>
+            </template>
+            <div class="toolbar cf-toolbar" x-show="!compose.multiFile">
+              <div class="flex items-center gap-2 flex-wrap">
+                <div class="button-group" role="group" aria-label="Editor view" x-show="!compose.truncated">
+                  <button type="button" class="btn" data-variant="outline" data-size="sm"
+                    :aria-pressed="compose.mode==='simple'" :class="cform.loading && 'is-loading'"
+                    @click="setComposeMode('simple')">Simple</button>
+                  <button type="button" class="btn" data-variant="outline" data-size="sm"
+                    :aria-pressed="compose.mode==='yaml'" @click="setComposeMode('yaml')">YAML</button>
+                </div>
+                <button type="button" class="btn" data-variant="ghost" data-size="sm" x-show="compose.mode==='simple'"
+                  :disabled="!cform.canUndo" @click="cfUndo()">Undo</button>
+                <button type="button" class="btn" data-variant="ghost" data-size="sm" x-show="compose.mode==='simple'"
+                  @click="cfCollapseAll()">Collapse all</button>
+              </div>
+              <button type="button" class="btn" data-variant="outline" data-size="sm"
+                :class="envEdit.loading && 'is-loading'"
+                :disabled="!hostHasAction(compose.hostId,'duo','read-env') || envEdit.loading"
+                :title="hostHasAction(compose.hostId,'duo','read-env') ? 'Edit this stack\'s .env file' : 'Upgrade this host\'s associate to edit its .env file'"
+                @click="openEnv()">.env</button>
+            </div>
+            <p class="text-sm text-muted-foreground" x-show="compose.mode==='yaml' && cform.blocked"
+              x-text="'The simple view can\'t show this file. ' + cform.blocked"></p>
+
+            <!-- Simple view: one flat row list (see js/composerows.js); nesting is the row's depth. -->
+            <div class="cf-view" x-show="!compose.multiFile && compose.mode==='simple'" x-cloak>
+              <div class="cf-scroll">
+                <template x-for="row in cform.rows" :key="row.id">
+                  <div class="cf-row" :class="'cf-t-' + row.t" :style="'--cf-depth:' + row.depth" :data-row="row.id">
+                    <!-- Section / group header -->
+                    <template x-if="row.t==='section' || row.t==='group'">
+                      <div class="cf-line">
+                        <button type="button" class="cf-toggle" :aria-expanded="row.open" :title="row.desc"
+                          @click="cfToggleOpen(row)">
+                          <svg class="chevron" :class="row.open && 'is-open'" width="14" height="14" viewBox="0 0 24 24"
+                            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                            stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+                          <span class="cf-key" :class="row.itemLabel && 'is-item'" x-text="row.label"></span>
+                          <span class="cf-summary" x-show="!row.open && row.summary && !row.itemLabel" x-text="row.summary"></span>
+                        </button>
+                        <span class="cf-warn" x-show="row.warn" x-text="row.warn"></span>
+                        <div class="cf-actions">
+                          <button type="button" class="btn" data-variant="ghost" data-size="icon-xs" x-show="row.canRename"
+                            title="Rename" aria-label="Rename" @click="cfRenamePrompt(row)">
+                            <svg class="cf-i" width="14" height="14" aria-hidden="true"><use href="#cf-i-rename"/></svg></button>
+                          <button type="button" class="btn" data-variant="ghost" data-size="icon-xs" x-show="row.flow"
+                            title="One entry per line (lets items be disabled)" aria-label="Convert to one entry per line"
+                            @click="cfToBlock(row)"><svg class="cf-i" width="14" height="14" aria-hidden="true"><use href="#cf-i-list"/></svg></button>
+                          <button type="button" class="btn" data-variant="ghost" data-size="icon-xs" x-show="row.canDisable"
+                            title="Disable (comment out)" aria-label="Disable" @click="cfToggle(row)">
+                            <svg class="cf-i" width="14" height="14" aria-hidden="true"><use href="#cf-i-disable"/></svg></button>
+                          <button type="button" class="btn" data-variant="ghost" data-size="icon-xs" x-show="row.canRemove"
+                            title="Remove" aria-label="Remove" @click="cfRemove(row)">
+                            <svg class="cf-i" width="14" height="14" aria-hidden="true"><use href="#cf-i-remove"/></svg></button>
+                        </div>
+                      </div>
+                    </template>
+                    <!-- Values: field, key/value, list item, inline-list item -->
+                    <template x-if="row.t==='field' || row.t==='kv' || row.t==='item' || row.t==='flowitem'">
+                      <div class="cf-line">
+                        <label class="cf-key" x-show="row.t==='field'" :for="'cf-' + row.id" :title="row.desc"
+                          x-text="row.label"></label>
+                        <input class="input cf-key-input" x-show="row.t==='kv' || (row.t==='flowitem' && row.label)"
+                          :value="row.label" aria-label="Name" spellcheck="false"
+                          @keydown.enter="$event.target.blur()" @change="cfRename(row, $event.target.value)">
+                        <div class="cf-control" :class="(row.t==='item' || (row.t==='flowitem' && !row.label)) && 'is-wide'">
+                          <template x-if="!row.multiline">
+                            <input class="input" :id="'cf-' + row.id" :value="row.value" spellcheck="false"
+                              :list="row.options ? 'cf-dl-' + row.id : null" :aria-label="row.label || 'Value'"
+                              @keydown.enter="$event.target.blur()"
+                              @keydown.escape="$event.target.value = row.value; $event.target.blur()"
+                              @input="cfPending(row, $event.target.value)" @change="cfSet(row, $event.target.value)">
+                          </template>
+                          <template x-if="row.multiline">
+                            <textarea class="textarea font-mono" :id="'cf-' + row.id" :value="row.value" rows="3"
+                              spellcheck="false" :aria-label="row.label || 'Value'"
+                              @input="cfPending(row, $event.target.value)" @change="cfSet(row, $event.target.value)"></textarea>
+                          </template>
+                          <template x-if="row.options">
+                            <datalist :id="'cf-dl-' + row.id">
+                              <template x-for="o in row.options" :key="o"><option :value="o"></option></template>
+                            </datalist>
+                          </template>
+                          <span class="cf-warn" x-show="row.warn" x-text="row.warn"></span>
+                        </div>
+                        <div class="cf-actions">
+                          <button type="button" class="btn" data-variant="ghost" data-size="icon-xs" x-show="row.canDisable"
+                            title="Disable (comment out)" aria-label="Disable" @click="cfToggle(row)">
+                            <svg class="cf-i" width="14" height="14" aria-hidden="true"><use href="#cf-i-disable"/></svg></button>
+                          <button type="button" class="btn" data-variant="ghost" data-size="icon-xs" x-show="row.canRemove"
+                            title="Remove" aria-label="Remove" @click="cfRemove(row)">
+                            <svg class="cf-i" width="14" height="14" aria-hidden="true"><use href="#cf-i-remove"/></svg></button>
+                        </div>
+                      </div>
+                    </template>
+                    <!-- Read-only YAML (anchors, merge keys, multi-line inline lists) -->
+                    <template x-if="row.t==='raw'">
+                      <div class="cf-line">
+                        <span class="cf-key" x-text="row.label"></span>
+                        <div class="cf-control">
+                          <pre class="cf-raw" x-text="row.source"></pre>
+                          <span class="text-xs text-muted-foreground" x-text="'Uses a ' + row.reason + ' — edit it in the YAML view.'"></span>
+                        </div>
+                        <div class="cf-actions">
+                          <button type="button" class="btn" data-variant="ghost" data-size="icon-xs" x-show="row.canDisable"
+                            title="Disable (comment out)" aria-label="Disable" @click="cfToggle(row)">
+                            <svg class="cf-i" width="14" height="14" aria-hidden="true"><use href="#cf-i-disable"/></svg></button>
+                          <button type="button" class="btn" data-variant="ghost" data-size="icon-xs" x-show="row.canRemove"
+                            title="Remove" aria-label="Remove" @click="cfRemove(row)">
+                            <svg class="cf-i" width="14" height="14" aria-hidden="true"><use href="#cf-i-remove"/></svg></button>
+                        </div>
+                      </div>
+                    </template>
+                    <!-- Disabled (commented-out) entry -->
+                    <template x-if="row.t==='disabled'">
+                      <div class="cf-line">
+                        <button type="button" class="cf-toggle" :aria-expanded="row.open" title="Show the commented-out lines"
+                          @click="cfToggleFragment(row)">
+                          <svg class="chevron" :class="row.open && 'is-open'" width="14" height="14" viewBox="0 0 24 24"
+                            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                            stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+                          <span class="cf-key" x-text="row.label || row.summary"></span>
+                          <span class="cf-summary" x-show="row.label && row.summary" x-text="row.summary"></span>
+                          <span class="badge" data-variant="outline">disabled</span>
+                        </button>
+                        <div class="cf-actions">
+                          <button type="button" class="btn" data-variant="outline" data-size="xs" :disabled="row.duplicate"
+                            @click="cfToggle(row)">Enable</button>
+                          <button type="button" class="btn" data-variant="ghost" data-size="icon-xs" title="Remove"
+                            aria-label="Remove" @click="cfRemove(row)">
+                            <svg class="cf-i" width="14" height="14" aria-hidden="true"><use href="#cf-i-remove"/></svg></button>
+                        </div>
+                        <p class="cf-note" x-show="row.note" x-text="row.note"></p>
+                        <pre class="cf-raw cf-fragment" x-show="row.open" x-text="row.fragment"></pre>
+                      </div>
+                    </template>
+                    <!-- Add rows -->
+                    <template x-if="row.t==='add'">
+                      <div class="cf-line cf-add-line">
+                        <template x-if="row.addKind==='field'">
+                          <button type="button" class="btn" data-variant="ghost" data-size="sm" @click="cfOpenPicker(row)">
+                            <svg class="cf-i" width="14" height="14" aria-hidden="true"><use href="#cf-i-plus"/></svg>
+                            <span x-text="row.label + '…'"></span></button>
+                        </template>
+                        <template x-if="row.addKind==='objitem'">
+                          <button type="button" class="btn" data-variant="ghost" data-size="sm" @click="cfAddFrom(row, $el)">
+                            <svg class="cf-i" width="14" height="14" aria-hidden="true"><use href="#cf-i-plus"/></svg>
+                            <span x-text="row.label"></span></button>
+                        </template>
+                        <template x-if="!['field','objitem'].includes(row.addKind)">
+                          <div class="cf-add">
+                            <input class="input cf-add-key" x-show="['kv','named','namedkv','flowkv'].includes(row.addKind)"
+                              spellcheck="false" :placeholder="row.addKind==='named' ? 'name' : 'key'"
+                              :aria-label="row.label + ': name'" @keydown.enter="cfAddFrom(row, $el)">
+                            <input class="input cf-add-value" x-show="['kv','item','flowitem','flowkv'].includes(row.addKind)"
+                              spellcheck="false" placeholder="value" :aria-label="row.label + ': value'"
+                              @keydown.enter="cfAddFrom(row, $el)">
+                            <button type="button" class="btn" data-variant="outline" data-size="sm" @click="cfAddFrom(row, $el)"
+                              x-text="row.label"></button>
+                          </div>
+                        </template>
+                      </div>
+                    </template>
+                  </div>
+                </template>
+              </div>
+              <p class="text-sm text-destructive" x-show="cform.error" x-text="cform.error"></p>
+              <ul class="cf-warnings" x-show="cform.warnings.length">
+                <template x-for="w in cform.warnings" :key="w"><li x-text="w"></li></template>
+              </ul>
+            </div>
+
+            <div x-show="!compose.multiFile && compose.mode==='yaml'" class="compose-editor-wrap">
               <textarea x-ref="composeEditor"></textarea>
             </div>
             <p class="text-sm text-destructive" x-show="compose.error" x-text="compose.error"></p>
             <p class="text-sm text-success" x-show="compose.status" x-text="compose.status"></p>
           </section>
           <footer class="gap-2">
-            <button type="button" class="btn" :disabled="compose.loading || compose.multiFile || compose.busy"
-              @click="saveCompose()">Save</button>
+            <button type="button" class="btn" :disabled="compose.loading || compose.multiFile || compose.truncated || compose.busy"
+              :class="compose.busy && 'is-loading'" @click="saveCompose()">Save</button>
             <button type="button" class="btn" data-variant="warning"
-              :disabled="compose.loading || compose.multiFile || compose.busy"
+              :disabled="compose.loading || compose.multiFile || compose.truncated || compose.busy"
               @click="saveAndRedeploy()">Save &amp; redeploy</button>
             <button type="button" class="btn" data-variant="outline" @click="closeCompose()">Close</button>
           </footer>

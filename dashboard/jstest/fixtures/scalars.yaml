@@ -1,0 +1,34 @@
+services:
+  scalars:
+    image: example/scalars:1
+    command: |
+      echo one
+      # not a comment: part of the script
+      echo two
+    entrypoint: |-
+      /bin/sh -c
+    healthcheck:
+      test: >-
+        curl -f
+        http://localhost/health
+      interval: 10s
+    labels:
+      keep.newlines: |+
+        trailing
+
+      folded.plain: this is a plain
+        scalar across lines
+      quoted.multi: "a quoted
+        value"
+      octal: 0755
+      version: 3.10
+      yes.bool: yes
+      port: "80:80"
+      sexagesimal: 22:22
+      single: 'it''s'
+      tilde: ~
+      explicit.null: null
+    user: "1000"
+    cpus: 1.5
+    privileged: false
+    stop_grace_period: 1m30s

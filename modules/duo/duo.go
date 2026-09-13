@@ -26,6 +26,8 @@ type Module struct {
 	mu      sync.Mutex
 	stacks  []*Stack               // simulated state (used only when docker is absent)
 	updates map[string]imageUpdate // image -> digests, populated by check-updates
+
+	validateEnv envValidator // write-env's compose check; nil means validateComposeEnv (tests replace it)
 }
 
 // imageUpdate records the digest a local image was pulled at and the digest the registry now
@@ -92,7 +94,10 @@ func (m *Module) Manifest() module.Manifest {
 	// check-updates takes an optional scope: no stack = the whole host, stack = one project,
 	// stack+service = one image.
 	optTarget := json.RawMessage(`{"type":"object","properties":{"stack":{"type":"string"},"service":{"type":"string"}}}`)
-	composeParams := json.RawMessage(`{"type":"object","properties":{"stack":{"type":"string"},"content":{"type":"string"}},"required":["stack","content"]}`)
+	// baseSha256 is the sha256 the reading action returned; when set, the write is refused if the
+	// file changed on the host in the meantime.
+	composeParams := json.RawMessage(`{"type":"object","properties":{"stack":{"type":"string"},"content":{"type":"string"},"baseSha256":{"type":"string"}},"required":["stack","content"]}`)
+	deployParams := json.RawMessage(`{"type":"object","properties":{"stack":{"type":"string"},"service":{"type":"string"},"removeOrphans":{"type":"boolean"}},"required":["stack"]}`)
 	mk := func(name, desc string) module.ActionSpec {
 		return module.ActionSpec{
 			Name: name, Description: desc, ParamsSchema: params,
@@ -133,9 +138,27 @@ func (m *Module) Manifest() module.Manifest {
 				Streams:        true,
 			},
 			{
+				Name:           "read-env",
+				Description:    "Read a stack's project .env file.",
+				ParamsSchema:   params,
+				Privilege:      module.PrivilegeElevated,
+				ReadOnly:       true,
+				DefaultTimeout: 30 * time.Second,
+			},
+			{
+				// Deliberately not Destructive: an approval records the action's params in the
+				// permanent audit log, and these params are the .env contents (usually secrets).
+				Name:           "write-env",
+				Description:    "Overwrite a stack's project .env file (validates first, keeps a .bak).",
+				ParamsSchema:   composeParams,
+				Privilege:      module.PrivilegeElevated,
+				DefaultTimeout: 2 * time.Minute,
+				Streams:        true,
+			},
+			{
 				Name:           "deploy",
 				Description:    "Apply a stack's compose file (docker compose up -d).",
-				ParamsSchema:   params,
+				ParamsSchema:   deployParams,
 				Privilege:      module.PrivilegeElevated,
 				Destructive:    true,
 				DefaultTimeout: 5 * time.Minute,
@@ -197,6 +220,10 @@ type actionParams struct {
 	Stack   string `json:"stack"`
 	Service string `json:"service"`
 	Content string `json:"content"`
+	// BaseSHA256 guards write-compose/write-env against overwriting a file changed on the host.
+	BaseSHA256 string `json:"baseSha256,omitempty"`
+	// RemoveOrphans makes deploy remove containers of services no longer in the compose file.
+	RemoveOrphans bool `json:"removeOrphans,omitempty"`
 }
 
 func (m *Module) Execute(ctx context.Context, req module.ActionRequest, emit func(module.Event)) (module.Result, error) {
@@ -233,6 +260,22 @@ func (m *Module) executeSimulated(ctx context.Context, req module.ActionRequest,
 			return module.Result{State: module.JobFailed, Error: "stack is required"}, nil
 		}
 		return simulate(ctx, emit, "writing compose for "+p.Stack, "wrote compose (simulated)")
+	case "read-env":
+		if p.Stack == "" {
+			return module.Result{State: module.JobFailed, Error: "stack is required"}, nil
+		}
+		content := fmt.Sprintf("# simulated .env for %s\nTZ=Etc/UTC\nPUID=1000\n# PGID=1000\nDB_PASSWORD='s3cret value'\n", p.Stack)
+		path := "/srv/" + p.Stack + "/.env"
+		data, _ := json.Marshal(map[string]any{
+			"stack": p.Stack, "path": path, "target": path, "outsideDir": false,
+			"content": content, "exists": true, "truncated": false, "sha256": sha256Hex([]byte(content)),
+		})
+		return module.Result{State: module.JobSucceeded, Data: data}, nil
+	case "write-env":
+		if p.Stack == "" {
+			return module.Result{State: module.JobFailed, Error: "stack is required"}, nil
+		}
+		return simulate(ctx, emit, "writing .env for "+p.Stack, "wrote .env (simulated)")
 	case "check-updates":
 		emit(module.Event{Kind: module.EventState, State: module.JobRunning})
 		emit(module.Event{Kind: module.EventLog, Message: "checked for image updates (simulated)"})

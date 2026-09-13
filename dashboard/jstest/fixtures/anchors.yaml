@@ -1,0 +1,19 @@
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+
+x-common: &common
+  restart: unless-stopped
+  logging: *logging
+
+services:
+  one:
+    <<: *common
+    image: example/one:1
+    ports: !reset []
+  two:
+    <<: *common
+    image: example/two:1
+    environment: !override
+      MODE: two

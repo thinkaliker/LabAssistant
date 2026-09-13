@@ -1,0 +1,15 @@
+services:
+  flow:
+    image: example/flow:1
+    command: ["npm", "run", "start"]
+    dns: [1.1.1.1, 9.9.9.9]
+    sysctls: {net.core.somaxconn: 1024}
+    ports: []
+      # - "80:80"
+    cap_add: [NET_ADMIN,
+      SYS_TIME]
+    labels: {}
+    extra_hosts:
+      # - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U app" ] # spaced flow

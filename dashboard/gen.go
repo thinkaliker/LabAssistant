@@ -30,6 +30,7 @@ var parts = []string{
 	"50-modals.html",
 	"60-job-panel.html",
 	"70-host-modals.html",
+	"72-compose-modals.html",
 	"90-foot.html",
 }
 

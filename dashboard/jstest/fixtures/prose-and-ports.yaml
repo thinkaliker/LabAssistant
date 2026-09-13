@@ -1,0 +1,34 @@
+services:
+  printer:
+    image: example/printer:0.9
+    container_name: printer
+    # Usage:
+    #   docker compose up -d printer
+    #   docker compose logs -f printer
+    # LINUX: host networking is needed for discovery
+    # macOS/WINDOWS: use the port list below instead
+    network_mode: host
+    #ports:
+    #  - "8000:8000"   # web ui
+    #  - "990:990"     # ftps
+    #  - "2021:2021/udp" # discovery
+    #
+    # Note: keep the ports above in sync with the firewall
+    volumes:
+      - ./data:/app/data
+      # - ./logs:/app/logs
+    environment:
+      - TZ=Etc/UTC
+      # - DEBUG=true
+      # - it retrieves the queue from the printer
+  # Optional: a database for history
+  # postgres:
+  #   image: postgres:16
+  #   environment:
+  #     POSTGRES_PASSWORD: example
+  web:
+    image: example/web:2
+    # MariaDB: small footprint, used by the app below
+    # Start with:  docker compose up -d web
+    ports:
+      - "3000:3000"

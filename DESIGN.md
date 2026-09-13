@@ -114,8 +114,9 @@ timezone or the host's timezone.
 
 A slim, lightweight web dashboard to view health and status of hosts/docker containers, kick off
 actions manually, add/remove hosts, manage scheduled tasks, and edit config files (specifically
-docker compose files on hosts). It is a frontend for the manager via its API. It validates
-compose files before writing to the host and keeps a local copy for undos.
+docker compose files on hosts). It is a frontend for the manager via its API. Compose files are
+validated on the host before they are kept, and the previous version is saved alongside as a
+`.bak`.
 
 Every status from the associates can result in an approval action or an automatic one (e.g. run
 qup once a week automatically without asking, or automatically rotate certs prior to expiry). It
@@ -123,6 +124,30 @@ can also stream logs from containers or the host system, or display the audit lo
 (non-editable). All settings (hosts, certs, settings, cron jobs, etc.) can be backed up from the
 dashboard and reimported on a fresh install. It includes a robust login page using credentials
 created during install.
+
+#### Compose editor
+
+A stack's compose file opens in a side panel with two views of the same text, **Simple** and
+**YAML**; switching between them before saving loses nothing.
+
+- **Simple** is a form: every key/value is a text box, nested blocks (a service, `ports`,
+  `environment`, a long-syntax volume) collapse, and an "Add field" picker lists every field the
+  compose specification supports at that spot, with its description (from the vendored
+  compose-spec JSON schema).
+- **Disable** comments an entry out with `#` instead of deleting it — a single value, a list item,
+  or a whole service — and **Enable** restores it. Lines commented out by hand are recognized too;
+  comments that are notes rather than config are left alone.
+- Edits change only the lines they touch: formatting and comments elsewhere are kept byte for byte,
+  and an edit that would change the file's meaning in any other way is refused. Anchors, merge keys
+  and multi-line inline lists are shown read-only and edited in the YAML view.
+- Warnings flag what compose will reject on save, such as a service that `depends_on` a disabled one.
+- **Save & redeploy** runs `docker compose up -d --remove-orphans`, so the containers of disabled or
+  removed services are removed rather than left running.
+- **.env** opens the project `.env` (the file compose reads for `${VAR}`) as variable rows with the
+  same disable/enable, or as raw text. Secret-looking values are masked until revealed. A missing
+  file is created on first save.
+
+A save is refused when the file changed on the host since it was opened.
 
 #### Theme
 

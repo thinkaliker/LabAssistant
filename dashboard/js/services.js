@@ -5,9 +5,21 @@
 // because every user of it lives in this file, and there is one app() component per page.
 let composeCM = null;
 
+// mode: 'simple' (the form view, composeform.js) or 'yaml'. original is the text as loaded or last
+// saved, for the unsaved-changes check; sha256 is what the host reported for it, so a save can't
+// silently overwrite a file changed on the host meanwhile.
+const closedCompose = () => ({
+  open: false, hostId: '', stack: '', path: '', multiFile: false, loading: false, busy: false, error: '', status: '',
+  mode: 'yaml', truncated: false, original: '', sha256: '',
+});
+
+// Same normalization the editors apply (CodeMirror splits on CRLF too), so a CRLF file isn't
+// "changed" just by being opened.
+const normalizeText = (s) => String(s || '').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+
 export const services = {
   services: { stacks: [] },
-  compose: { open: false, hostId: '', stack: '', path: '', multiFile: false, loading: false, busy: false, error: '', status: '' },
+  compose: closedCompose(),
   checkingServices: [], // "hostId/stack/service" keys with an in-flight single-image check
   updatingServices: [], // same keys, for an in-flight single-service pull/recreate
 
@@ -84,6 +96,8 @@ export const services = {
   // read needs a sudo password, the sudo banner appears and submitSudo() routes the retry's
   // result back through openComposeFromJob().
   async editCompose(st) {
+    if (this.compose.open && (this.compose.hostId !== st.hostId || this.compose.stack !== st.name) && this.composeDirty()
+      && !confirm(`Discard unsaved changes to ${this.compose.stack}'s compose file?`)) return;
     try {
       const out = await this.dispatchSilent(st.hostId, 'duo', 'read-compose', { stack: st.name });
       if (!out || !out.jobId) { alert('Could not start compose read.'); return; }
@@ -105,7 +119,12 @@ export const services = {
     let stack = res.stack || '';
     try { const p = typeof job.params === 'string' ? JSON.parse(job.params) : job.params; if (p && p.stack) stack = p.stack; } catch (e) { /* keep res.stack */ }
     if (composeCM) { composeCM.toTextArea(); composeCM = null; }
-    this.compose = { open: true, hostId: job.hostId, stack, path: res.path || '', multiFile: !!res.multiFile, loading: false, busy: false, error: '', status: '' };
+    const content = normalizeText(res.content);
+    this.compose = {
+      ...closedCompose(), open: true, hostId: job.hostId, stack, path: res.path || '', multiFile: !!res.multiFile,
+      truncated: !!res.truncated, original: content, sha256: res.sha256 || '',
+    };
+    this.cfReset();
     // On narrow screens the panel flows below the whole stack list rather than pinning beside it,
     // so it opens off-screen; bring it into view.
     this.$nextTick(() => {
@@ -113,7 +132,50 @@ export const services = {
       if (panel && window.matchMedia('(max-width: 768px)').matches) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
     if (this.compose.multiFile) return;
-    this.$nextTick(() => this.mountEditor(res.content || ''));
+    this.$nextTick(async () => {
+      this.mountEditor(content);
+      // A file cut off at the read limit must not be saved back: YAML only, read-only.
+      if (this.compose.truncated) {
+        if (composeCM) composeCM.setOption('readOnly', true);
+        return;
+      }
+      let preferred = 'simple';
+      try { preferred = localStorage.getItem('composeMode') || 'simple'; } catch (e) { /* storage blocked */ }
+      if (preferred === 'simple') await this.setComposeMode('simple', true);
+    });
+  },
+  // setComposeMode switches between the form and YAML views. Both edit the same text: the form
+  // re-reads whatever the YAML editor holds, and hands its text back on the way out. A document
+  // the form can't represent (a YAML error, several documents) keeps the YAML view, with the
+  // reason shown.
+  async setComposeMode(mode, initial = false) {
+    if (!this.compose.open || (mode === this.compose.mode && !initial)) return;
+    if (mode === 'simple') {
+      const stack = this.compose.stack;
+      const ok = await this.cfLoad(this.yamlValue());
+      if (!this.compose.open || this.compose.stack !== stack) return; // closed or switched meanwhile
+      if (!ok) { this.compose.mode = 'yaml'; return; }
+      this.compose.mode = 'simple';
+    } else {
+      this.cfFlush();
+      const text = this.cfText();
+      if (text !== null && composeCM && composeCM.getValue() !== text) composeCM.setValue(text);
+      else if (text !== null && !composeCM && this.$refs.composeEditor) this.$refs.composeEditor.value = text;
+      this.cform.blocked = '';
+      this.compose.mode = 'yaml';
+      // CodeMirror measures itself while visible; it was hidden behind the form.
+      this.$nextTick(() => composeCM && composeCM.refresh());
+    }
+    if (!initial) { try { localStorage.setItem('composeMode', mode); } catch (e) { /* storage blocked */ } }
+  },
+  yamlValue() {
+    if (composeCM) return composeCM.getValue();
+    const ta = this.$refs.composeEditor;
+    return ta ? ta.value : '';
+  },
+  composeDirty() {
+    if (!this.compose.open || this.compose.multiFile || this.compose.truncated) return false;
+    return normalizeText(this.editorValue()) !== this.compose.original;
   },
   mountEditor(content) {
     const ta = this.$refs.composeEditor;
@@ -142,13 +204,14 @@ export const services = {
     composeCM.setSize(null, '60vh');
     setTimeout(() => composeCM && composeCM.refresh(), 50);
   },
+  // editorValue is the text a save writes. The form's text only counts while it holds a document;
+  // otherwise the YAML editor (which always has the file) does, so a save can never send nothing.
   editorValue() {
-    if (composeCM) return composeCM.getValue();
-    const ta = this.$refs.composeEditor;
-    return ta ? ta.value : '';
+    const text = this.compose.mode === 'simple' ? this.cfText() : null;
+    return text !== null ? text : this.yamlValue();
   },
   async writeCompose(content) {
-    const out = await this.dispatchSilent(this.compose.hostId, 'duo', 'write-compose', { stack: this.compose.stack, content });
+    const out = await this.dispatchSilent(this.compose.hostId, 'duo', 'write-compose', { stack: this.compose.stack, content, baseSha256: this.compose.sha256 });
     if (!out || !out.jobId) { this.compose.error = 'Could not start save.'; return false; }
     const res = await this.awaitJob(out.jobId);
     const job = res.job;
@@ -157,24 +220,36 @@ export const services = {
     // again, writing the file twice.
     if (res.timedOut) { this.compose.error = 'Save is still running — watch the job panel, and re-read the file before saving again.'; return false; }
     if (!job || job.state !== 'succeeded') { this.compose.error = (job && job.error) || 'Save failed (see validation message).'; return false; }
+    // The next save is checked against what was just written. An associate too old to report a
+    // hash doesn't check at all, so there is nothing to send.
+    let result = job.result;
+    try { if (typeof result === 'string') result = JSON.parse(result); } catch (e) { result = null; }
+    this.compose.sha256 = (result && result.sha256) || '';
+    this.compose.original = normalizeText(content);
     return true;
   },
   async saveCompose() {
+    this.cfFlush();
     this.compose.error = ''; this.compose.status = ''; this.compose.busy = true;
     const ok = await this.writeCompose(this.editorValue());
     this.compose.busy = false;
     if (ok) { this.compose.status = 'Saved.'; this.refresh(); }
   },
   async saveAndRedeploy() {
+    this.cfFlush();
     this.compose.error = ''; this.compose.status = ''; this.compose.busy = true;
     const ok = await this.writeCompose(this.editorValue());
     this.compose.busy = false;
     if (!ok) return;
     this.compose.status = 'Saved. Redeploy queued — confirm it in the approvals banner.';
-    await this.runAction(this.compose.hostId, 'duo', 'deploy', { stack: this.compose.stack });
+    // --remove-orphans: services disabled or deleted in the editor should actually go away, not
+    // keep running as orphans of the project. (The associate ignores it for multi-file stacks.)
+    await this.runAction(this.compose.hostId, 'duo', 'deploy', { stack: this.compose.stack, removeOrphans: true });
   },
   closeCompose() {
+    if (this.composeDirty() && !confirm(`Discard unsaved changes to ${this.compose.stack}'s compose file?`)) return;
     if (composeCM) { composeCM.toTextArea(); composeCM = null; }
-    this.compose = { open: false, hostId: '', stack: '', path: '', multiFile: false, loading: false, busy: false, error: '', status: '' };
+    this.cfReset();
+    this.compose = closedCompose();
   },
 };

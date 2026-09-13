@@ -50,7 +50,7 @@ flowchart LR
 | --- | --- |
 | **associate** | Per-host agent and sole entrypoint. Holds a persistent mTLS stream to the manager (status, heartbeat, log streaming), serializes commands in a queue, and elevates via a helper for privileged actions. |
 | **manager** | The control host. Owns host/module state (`state.json`), the CA and issued certs, and the API the dashboard consumes. Derives liveness from the stream. |
-| **dashboard** | Slim web UI (frontend for the manager API): host/container health, manual actions, add/remove hosts, scheduled tasks, compose-file editing with validation + undo, log streaming, audit view, backup/restore, and login. |
+| **dashboard** | Slim web UI (frontend for the manager API): host/container health, manual actions, add/remove hosts, scheduled tasks, compose-file editing (a form or raw YAML, with disable-by-commenting and validation) plus `.env` editing, log streaming, audit view, backup/restore, and login. |
 
 The manager has three internal packages:
 
@@ -67,7 +67,7 @@ into the associate for v1).
 
 | Module | Purpose |
 | --- | --- |
-| **duo** | **d**ocker **u**pdater/**o**rchestrator — image update checks (Watchtower-style), compose start/stop/restart, docker log streaming. On hosts without the `docker` CLI it stays empty; set `LABASSISTANT_DEMO=1` on the associate to seed demo stacks for a docker-less walkthrough. |
+| **duo** | **d**ocker **u**pdater/**o**rchestrator — image update checks (Watchtower-style), compose start/stop/restart, compose and `.env` file reads/writes for the editor, docker log streaming. On hosts without the `docker` CLI it stays empty; set `LABASSISTANT_DEMO=1` on the associate to seed demo stacks for a docker-less walkthrough. |
 | **qup** | **q**uick **up**dater — dry-run + apply host package updates, distro-detected (Debian-based today). |
 | **sys** | **sys**tem — host commands: logs, reboot (confirmed), interfaces, disk usage, uptime, service restarts. |
 
@@ -138,6 +138,9 @@ cd ~/LabAssistant
 To pull, rebuild, and restart in one step: `./scripts/manage.sh update`. Running by hand
 (`--no-service`) instead? `go build -o bin/manager ./cmd/manager`, then
 `pkill -f 'bin/manager serve'` and `./bin/manager serve`.
+
+`go test ./...` also runs the dashboard's JavaScript tests (`dashboard/jstest`, via
+`node --test dashboard/jstest/`) when Node 22.7+ is installed, and skips them otherwise.
 
 Open the dashboard at `http://<vm>:8080` (or whichever `http_addr` you set). To enroll a host without the SSH flow, mint a bundle
 with `./bin/manager enroll -name <host>` (see [BUILD.md](BUILD.md)).

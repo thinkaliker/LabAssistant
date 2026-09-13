@@ -1,0 +1,7 @@
+# volumes:
+#   data:
+# services:
+#   app:
+#     image: example/app:1
+#     volumes:
+#       - data:/data

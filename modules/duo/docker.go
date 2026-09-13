@@ -107,15 +107,27 @@ func parseHealth(psStatus string) string {
 
 func (m *Module) executeDocker(ctx context.Context, req module.ActionRequest, emit func(module.Event)) (module.Result, error) {
 	var p actionParams
+	var perr error
 	if len(req.Params) > 0 {
-		_ = json.Unmarshal(req.Params, &p)
+		perr = json.Unmarshal(req.Params, &p)
 	}
 
 	// These manage their own event/result lifecycle (read returns data, the rest stream).
 	switch req.Action {
 	case "read-compose":
 		return m.readCompose(ctx, p)
-	case "write-compose":
+	case "read-env":
+		return m.readEnv(ctx, p)
+	case "write-compose", "write-env":
+		// The manager caps request bodies at 1 MiB and cuts the rest off, which surfaces here as
+		// unparseable params. Writing the remains (or failing with "stack is required") would hide
+		// that the content was too large.
+		if perr != nil {
+			return module.Result{State: module.JobFailed, Error: "invalid params (content over 1 MiB?): " + perr.Error()}, nil
+		}
+		if req.Action == "write-env" {
+			return m.writeEnv(ctx, p, emit)
+		}
 		return m.writeCompose(ctx, p, emit)
 	case "check-updates":
 		return m.checkUpdates(ctx, p, emit)
@@ -158,28 +170,53 @@ func (m *Module) executeDocker(ctx context.Context, req module.ActionRequest, em
 	return module.Result{State: module.JobSucceeded}, nil
 }
 
-// composePath resolves a stack's compose file path from the compose project labels. multiFile
-// is true when the project was created from several compose files (comma-separated), in which
-// case callers must not blindly overwrite. Querying the label directly (rather than the JSON
-// label blob) keeps comma-containing values intact.
-func (m *Module) composePath(ctx context.Context, stack string) (path string, multiFile bool, err error) {
+// composeFiles resolves every compose file a stack was created from, from the compose project
+// labels. Querying the label directly (rather than the JSON label blob) keeps comma-containing
+// values intact.
+func (m *Module) composeFiles(ctx context.Context, stack string) ([]string, error) {
 	if stack == "" {
-		return "", false, fmt.Errorf("stack is required")
+		return nil, fmt.Errorf("stack is required")
 	}
 	out, err := exec.CommandContext(ctx, "docker", "ps", "-a",
 		"--filter", "label=com.docker.compose.project="+stack,
 		"--format", `{{.Label "com.docker.compose.project.config_files"}}`).Output()
 	if err != nil {
-		return "", false, fmt.Errorf("docker ps: %w", err)
+		return nil, fmt.Errorf("docker ps: %w", err)
 	}
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+	if files := parseConfigFiles(string(out)); len(files) > 0 {
+		return files, nil
+	}
+	return nil, fmt.Errorf("no compose file recorded for stack %q", stack)
+}
+
+// parseConfigFiles takes the first container's non-empty config_files label from `docker ps`
+// output (one label per line) and splits it into paths.
+func parseConfigFiles(out string) []string {
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 		if line = strings.TrimSpace(line); line == "" {
 			continue
 		}
-		parts := strings.Split(line, ",")
-		return strings.TrimSpace(parts[0]), len(parts) > 1, nil
+		var files []string
+		for _, f := range strings.Split(line, ",") {
+			if f = strings.TrimSpace(f); f != "" {
+				files = append(files, f)
+			}
+		}
+		if len(files) > 0 {
+			return files
+		}
 	}
-	return "", false, fmt.Errorf("no compose file recorded for stack %q", stack)
+	return nil
+}
+
+// composePath resolves a stack's (first) compose file path. multiFile is true when the project
+// was created from several compose files, in which case callers must not blindly overwrite.
+func (m *Module) composePath(ctx context.Context, stack string) (path string, multiFile bool, err error) {
+	files, err := m.composeFiles(ctx, stack)
+	if err != nil {
+		return "", false, err
+	}
+	return files[0], len(files) > 1, nil
 }
 
 // readCompose returns a stack's compose file content in Result.Data.
@@ -192,13 +229,14 @@ func (m *Module) readCompose(ctx context.Context, p actionParams) (module.Result
 	if err != nil {
 		return module.Result{State: module.JobFailed, Error: fmt.Sprintf("read %s: %v", path, err)}, nil
 	}
+	sum := sha256Hex(b) // of the whole file, so write-compose can detect changes made meanwhile
 	truncated := false
 	if len(b) > maxComposeBytes {
 		b, truncated = b[:maxComposeBytes], true
 	}
 	data, _ := json.Marshal(map[string]any{
 		"stack": p.Stack, "path": path, "content": string(b),
-		"truncated": truncated, "multiFile": multi,
+		"truncated": truncated, "multiFile": multi, "sha256": sum,
 	})
 	return module.Result{State: module.JobSucceeded, Data: data}, nil
 }
@@ -218,10 +256,17 @@ func (m *Module) writeCompose(ctx context.Context, p actionParams, emit func(mod
 	if fi, serr := os.Stat(path); serr == nil {
 		mode = fi.Mode().Perm()
 	}
-	if cur, rerr := os.ReadFile(path); rerr == nil {
+	cur, rerr := os.ReadFile(path)
+	// A read error leaves cur nil, whose sum never matches one read-compose returned.
+	if p.BaseSHA256 != "" && p.BaseSHA256 != sha256Hex(cur) {
+		return module.Result{State: module.JobFailed, Error: "the compose file changed on the host since it was opened; reopen it and reapply your edits"}, nil
+	}
+	backedUp := false
+	if rerr == nil {
 		if werr := os.WriteFile(path+".bak", cur, mode); werr != nil {
 			return module.Result{State: module.JobFailed, Error: fmt.Sprintf("write backup: %v", werr)}, nil
 		}
+		backedUp = true
 		emit(module.Event{Kind: module.EventLog, Message: "backed up to " + path + ".bak"})
 	}
 	if err := os.WriteFile(path, []byte(p.Content), mode); err != nil {
@@ -232,7 +277,8 @@ func (m *Module) writeCompose(ctx context.Context, p actionParams, emit func(mod
 	if out, verr := exec.CommandContext(ctx, "docker", "compose", "-f", path, "config", "-q").CombinedOutput(); verr != nil {
 		msg := strings.TrimSpace(string(out))
 		emit(module.Event{Kind: module.EventLog, Message: "validation failed: " + msg})
-		if cur, rerr := os.ReadFile(path + ".bak"); rerr == nil {
+		// Only this run's backup: a .bak left by an earlier save holds older content.
+		if backedUp {
 			_ = os.WriteFile(path, cur, mode)
 			emit(module.Event{Kind: module.EventLog, Message: "restored from backup"})
 		}
@@ -240,24 +286,38 @@ func (m *Module) writeCompose(ctx context.Context, p actionParams, emit func(mod
 	}
 	emit(module.Event{Kind: module.EventLog, Message: "compose file is valid"})
 	emit(module.Event{Kind: module.EventState, State: module.JobSucceeded})
-	return module.Result{State: module.JobSucceeded}, nil
+	data, _ := json.Marshal(map[string]any{"sha256": sha256Hex([]byte(p.Content))})
+	return module.Result{State: module.JobSucceeded, Data: data}, nil
 }
 
 // deploy applies a stack's compose file with `docker compose up -d`.
 func (m *Module) deploy(ctx context.Context, p actionParams, emit func(module.Event)) (module.Result, error) {
-	path, _, err := m.composePath(ctx, p.Stack)
+	path, multi, err := m.composePath(ctx, p.Stack)
 	if err != nil {
 		return module.Result{State: module.JobFailed, Error: err.Error()}, nil
 	}
-	args := []string{"compose", "-f", path, "up", "-d"}
-	if p.Service != "" {
-		args = append(args, p.Service)
+	if p.RemoveOrphans && multi {
+		emit(module.Event{Kind: module.EventLog, Message: "not removing orphans: stack uses multiple compose files"})
 	}
-	if err := streamDocker(ctx, emit, args...); err != nil {
+	if err := streamDocker(ctx, emit, composeUpArgs(path, multi, p)...); err != nil {
 		return module.Result{State: module.JobFailed, Error: err.Error()}, nil
 	}
 	emit(module.Event{Kind: module.EventState, State: module.JobSucceeded})
 	return module.Result{State: module.JobSucceeded}, nil
+}
+
+// composeUpArgs builds deploy's `docker compose up` arguments. --remove-orphans is honoured only
+// for single-file stacks: deploy passes just the first file, so on a multi-file stack the services
+// defined in the other files would look orphaned and be removed.
+func composeUpArgs(path string, multi bool, p actionParams) []string {
+	args := []string{"compose", "-f", path, "up", "-d"}
+	if p.RemoveOrphans && !multi {
+		args = append(args, "--remove-orphans")
+	}
+	if p.Service != "" {
+		args = append(args, p.Service)
+	}
+	return args
 }
 
 // update pulls newer images and recreates containers for a stack or one service.

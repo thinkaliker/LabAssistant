@@ -41,8 +41,9 @@ export const actions = {
     this.sudoModal = { open: false, id: '', hostId: '', module: '', action: '', password: '', error: '' };
     this.refresh();
     if (!jobId) return;
-    // A re-dispatched compose read feeds the editor instead of the generic job modal.
+    // A re-dispatched compose or .env read feeds its editor instead of the generic job modal.
     if (action === 'read-compose') { this.openComposeFromJob(await this.awaitJob(jobId)); }
+    else if (action === 'read-env') { this.openEnvFromJob(await this.awaitJob(jobId)); }
     else this.watchJob(jobId, mod + '/' + action);
   },
   async cancelSudo(id) {

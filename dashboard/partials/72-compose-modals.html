@@ -1,0 +1,175 @@
+  <!-- Icons shared by the simple compose editor's rows (<use href="#cf-i-…">), defined once rather
+       than repeated on every row. -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" fill="none" stroke="currentColor"
+    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <symbol id="cf-i-disable" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></symbol>
+    <symbol id="cf-i-remove" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+    <symbol id="cf-i-rename" viewBox="0 0 24 24"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></symbol>
+    <symbol id="cf-i-list" viewBox="0 0 24 24"><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/></symbol>
+    <symbol id="cf-i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+    <symbol id="cf-i-eye" viewBox="0 0 24 24"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></symbol>
+  </svg>
+
+  <!-- Simple compose editor: "Add field" picker. Lists every compose-spec field that isn't set yet,
+       with its description; a field that is only commented out is enabled instead of added. -->
+  <dialog class="dialog" x-dialog="cform.picker.open" @close="cform.picker.open=false" aria-labelledby="cf-picker-title">
+    <div class="dialog-lg">
+      <header>
+        <h2 id="cf-picker-title" x-text="'Add to ' + cform.picker.title"></h2>
+        <p>Every field docker compose supports here. Search by name or description.</p>
+      </header>
+      <section class="grid gap-3">
+        <input class="input" type="search" placeholder="Search fields" x-ref="cfPickerSearch"
+          x-model="cform.picker.query" aria-label="Search fields"
+          @keydown.enter="cfPickerList().length === 1 && cfPick(cfPickerList()[0])">
+        <div class="cf-picker-list">
+          <template x-for="f in cfPickerList()" :key="f.key">
+            <button type="button" class="cf-pick" @click="cfPick(f)">
+              <span class="cf-pick-head">
+                <span class="font-mono font-medium" x-text="f.key"></span>
+                <span class="badge" data-variant="secondary" x-show="f.disabledId">commented out: enable</span>
+                <span class="badge" data-variant="outline" x-show="f.deprecated">deprecated</span>
+              </span>
+              <span class="cf-pick-desc" x-show="f.description" x-text="f.description"></span>
+            </button>
+          </template>
+          <p class="text-sm text-muted-foreground" x-show="!cfPickerList().length">No matching fields.</p>
+        </div>
+        <div class="field" x-show="cform.picker.allowCustom">
+          <label for="cf-picker-custom">Custom extension field</label>
+          <div class="button-group w-full">
+            <input id="cf-picker-custom" class="input" type="text" placeholder="x-my-setting" spellcheck="false"
+              x-model="cform.picker.custom" @keydown.enter="cfPickCustom()">
+            <button type="button" class="btn" data-variant="outline" @click="cfPickCustom()">Add</button>
+          </div>
+        </div>
+        <p class="text-sm text-destructive" x-show="cform.error && cform.picker.open" x-text="cform.error"></p>
+      </section>
+      <footer>
+        <button type="button" class="btn" data-variant="outline" @click="cform.picker.open=false">Close</button>
+      </footer>
+    </div>
+  </dialog>
+
+  <!-- .env editor for the stack open in the compose panel. Rows edit the file line by line (see
+       js/dotenv.js); Raw edits the text directly. Esc / backdrop are vetoed while saving, and ask
+       before discarding edits. -->
+  <dialog class="dialog" x-dialog="envEdit.open" @cancel="envCancel($event)" @close="envEdit.open && envClosed()"
+    aria-labelledby="env-title">
+    <div class="dialog-lg">
+      <header>
+        <h2 id="env-title" x-text="'.env for ' + envEdit.stack"></h2>
+        <p class="font-mono text-xs">
+          <span x-text="envEdit.path"></span>
+          <span class="badge" data-variant="secondary" x-show="!envEdit.exists">new file</span>
+        </p>
+        <p class="text-xs" x-show="envEdit.target && envEdit.target !== envEdit.path">
+          <span class="text-muted-foreground">links to</span> <span class="font-mono" x-text="envEdit.target"></span>
+          <span class="badge" data-variant="warning" x-show="envEdit.outsideDir"
+            title="Other stacks may use this file too">outside the stack directory</span>
+        </p>
+      </header>
+      <section class="grid gap-3">
+        <template x-if="envEdit.truncated">
+          <div class="alert" data-variant="warning">
+            <section>This file is larger than the editor can load, so only its beginning is shown and saving is
+              disabled.</section>
+          </div>
+        </template>
+        <div class="toolbar">
+          <div class="button-group" role="group" aria-label="Editor view">
+            <button type="button" class="btn" data-variant="outline" data-size="sm" :aria-pressed="envEdit.mode==='simple'"
+              @click="envSetMode('simple')">Simple</button>
+            <button type="button" class="btn" data-variant="outline" data-size="sm" :aria-pressed="envEdit.mode==='raw'"
+              @click="envSetMode('raw')">Raw</button>
+          </div>
+          <span class="text-xs text-muted-foreground">Values are read by docker compose for <code>${VAR}</code> in the
+            compose file.</span>
+        </div>
+
+        <div class="env-rows" x-show="envEdit.mode==='simple'">
+          <p class="text-sm text-muted-foreground" x-show="!envEdit.rows.length">No variables yet.</p>
+          <template x-for="row in envEdit.rows" :key="row.id + ':' + row.key">
+            <div class="env-row" :class="'env-t-' + row.t" :data-row="row.key || row.id">
+              <template x-if="row.t==='section'">
+                <h3 class="env-section" x-text="row.text"></h3>
+              </template>
+              <template x-if="row.t==='var' || row.t==='disabled'">
+                <div class="env-line">
+                  <input class="input font-mono" :value="row.key" spellcheck="false" aria-label="Name"
+                    @keydown.enter="$event.target.blur()" @change="envSetKey(row, $event.target.value)">
+                  <div class="env-value">
+                    <template x-if="!row.multiline">
+                      <input class="input font-mono" :type="row.secret && !envRevealed(row) ? 'password' : 'text'"
+                        :value="row.value" spellcheck="false" autocomplete="off" data-1p-ignore data-lpignore="true"
+                        :aria-label="row.key + ' value'" @keydown.enter="$event.target.blur()"
+                        @change="envSet(row, $event.target.value)">
+                    </template>
+                    <template x-if="row.multiline">
+                      <span class="text-xs text-muted-foreground">Spans several lines — edit it in the Raw view.</span>
+                    </template>
+                    <button type="button" class="btn" data-variant="ghost" data-size="icon-xs" x-show="row.secret && !row.multiline"
+                      :aria-pressed="envRevealed(row)" :title="envRevealed(row) ? 'Hide value' : 'Show value'"
+                      aria-label="Show value" @click="envToggleReveal(row)">
+                      <svg class="cf-i" width="14" height="14" aria-hidden="true"><use href="#cf-i-eye"/></svg></button>
+                  </div>
+                  <div class="cf-actions">
+                    <button type="button" class="btn" data-variant="outline" data-size="xs" x-show="row.t==='disabled'"
+                      @click="envToggle(row)">Enable</button>
+                    <button type="button" class="btn" data-variant="ghost" data-size="icon-xs"
+                      x-show="row.t==='var' && !row.multiline" title="Disable (comment out)" aria-label="Disable"
+                      @click="envToggle(row)"><svg class="cf-i" width="14" height="14" aria-hidden="true"><use href="#cf-i-disable"/></svg></button>
+                    <button type="button" class="btn" data-variant="ghost" data-size="icon-xs" title="Remove"
+                      aria-label="Remove" @click="envRemove(row)"><svg class="cf-i" width="14" height="14" aria-hidden="true"><use href="#cf-i-remove"/></svg></button>
+                  </div>
+                  <p class="env-help" x-show="row.help || row.shadowed"
+                    x-text="row.shadowed ? 'Set again further down; that later value is the one compose uses.' : row.help"></p>
+                </div>
+              </template>
+              <template x-if="row.t==='bare'">
+                <div class="env-line">
+                  <span class="font-mono text-sm" x-text="row.key"></span>
+                  <span class="text-xs text-muted-foreground">taken from the environment docker compose runs in</span>
+                  <div class="cf-actions">
+                    <button type="button" class="btn" data-variant="ghost" data-size="icon-xs" title="Remove"
+                      aria-label="Remove" @click="envRemove(row)"><svg class="cf-i" width="14" height="14" aria-hidden="true"><use href="#cf-i-remove"/></svg></button>
+                  </div>
+                </div>
+              </template>
+              <template x-if="row.t==='invalid'">
+                <div class="env-line">
+                  <pre class="cf-raw" x-text="row.text"></pre>
+                  <span class="text-xs text-destructive" x-text="'Compose will reject this line: ' + row.error + '. Fix it in the Raw view.'"></span>
+                  <div class="cf-actions">
+                    <button type="button" class="btn" data-variant="ghost" data-size="icon-xs" title="Remove"
+                      aria-label="Remove" @click="envRemove(row)"><svg class="cf-i" width="14" height="14" aria-hidden="true"><use href="#cf-i-remove"/></svg></button>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </template>
+          <div class="env-add">
+            <input class="input font-mono env-add-key" placeholder="NAME" spellcheck="false" aria-label="New variable name"
+              @keydown.enter="envAddFrom($el)">
+            <input class="input font-mono env-add-value" placeholder="value" spellcheck="false" autocomplete="off"
+              aria-label="New variable value" @keydown.enter="envAddFrom($el)">
+            <button type="button" class="btn" data-variant="outline" data-size="sm" @click="envAddFrom($el)">Add variable</button>
+          </div>
+        </div>
+
+        <textarea class="textarea font-mono env-raw" x-show="envEdit.mode==='raw'" x-model="envEdit.raw" rows="16"
+          spellcheck="false" autocomplete="off" aria-label=".env contents"></textarea>
+
+        <p class="text-sm text-destructive" x-show="envEdit.error" x-text="envEdit.error"></p>
+        <p class="text-sm text-success" x-show="envEdit.status" x-text="envEdit.status"></p>
+      </section>
+      <footer>
+        <button type="button" class="btn" data-variant="outline" :disabled="envEdit.busy" @click="closeEnv()">Close</button>
+        <button type="button" class="btn" :class="envEdit.busy && 'is-loading'" :disabled="envEdit.busy || envEdit.truncated"
+          @click="saveEnv(false)">Save</button>
+        <button type="button" class="btn" data-variant="warning" :disabled="envEdit.busy || envEdit.truncated"
+          @click="saveEnv(true)">Save &amp; redeploy</button>
+      </footer>
+    </div>
+  </dialog>
+
