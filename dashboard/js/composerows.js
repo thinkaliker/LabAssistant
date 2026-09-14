@@ -83,7 +83,7 @@ export function buildRows(doc, S, ui = {}) {
         id: e.id, t: 'disabled', entryId: e.id, depth, label: e.key != null ? e.key : '', summary,
         fragment: e.fragment.replace(/\n$/, ''), open: shown.has(e.id), duplicate: e.duplicate,
         note: e.duplicate ? `Another "${e.key}" is active here, so this copy can't be enabled.`
-          : isService ? 'If its container is running, Save & redeploy removes it.' : '',
+          : isService ? 'Save & redeploy removes its container while "Remove orphaned containers" is checked.' : '',
       });
       return;
     }

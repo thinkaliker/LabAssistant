@@ -84,7 +84,7 @@ test('rows: structure, routing and notes', () => {
   assert.equal(rows.filter((r) => r.entryId === id(['services', 'web', 'healthcheck', 'test']) && r.t === 'flowitem').length, 4);
   assert.equal(row(id(['services', 'web', 'volumes', 0])).label, 'bind ./html → /usr/share/nginx/html');
   const redis = rows.find((r) => r.t === 'disabled' && r.label === 'redis');
-  assert.match(redis.note, /Save & redeploy removes it/);
+  assert.match(redis.note, /Save & redeploy removes its container while "Remove orphaned containers" is checked/);
   assert.equal(redis.summary, 'redis:7');
   assert.ok(rows.some((r) => r.t === 'add' && r.addKind === 'named' && r.label === 'Add service'));
   assert.ok(rows.some((r) => r.t === 'add' && r.addKind === 'kv' && r.entryId === id(['services', 'web', 'environment'])));

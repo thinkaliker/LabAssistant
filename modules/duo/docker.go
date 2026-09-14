@@ -290,28 +290,32 @@ func (m *Module) writeCompose(ctx context.Context, p actionParams, emit func(mod
 	return module.Result{State: module.JobSucceeded, Data: data}, nil
 }
 
-// deploy applies a stack's compose file with `docker compose up -d`.
+// deploy applies a stack's compose files with `docker compose up -d`.
 func (m *Module) deploy(ctx context.Context, p actionParams, emit func(module.Event)) (module.Result, error) {
-	path, multi, err := m.composePath(ctx, p.Stack)
+	files, err := m.composeFiles(ctx, p.Stack)
 	if err != nil {
 		return module.Result{State: module.JobFailed, Error: err.Error()}, nil
 	}
-	if p.RemoveOrphans && multi {
-		emit(module.Event{Kind: module.EventLog, Message: "not removing orphans: stack uses multiple compose files"})
-	}
-	if err := streamDocker(ctx, emit, composeUpArgs(path, multi, p)...); err != nil {
+	if err := streamDocker(ctx, emit, composeUpArgs(p.Stack, files, p)...); err != nil {
 		return module.Result{State: module.JobFailed, Error: err.Error()}, nil
 	}
 	emit(module.Event{Kind: module.EventState, State: module.JobSucceeded})
 	return module.Result{State: module.JobSucceeded}, nil
 }
 
-// composeUpArgs builds deploy's `docker compose up` arguments. --remove-orphans is honoured only
-// for single-file stacks: deploy passes just the first file, so on a multi-file stack the services
-// defined in the other files would look orphaned and be removed.
-func composeUpArgs(path string, multi bool, p actionParams) []string {
-	args := []string{"compose", "-f", path, "up", "-d"}
-	if p.RemoveOrphans && !multi {
+// composeUpArgs builds deploy's `docker compose up` arguments against exactly the project the
+// stack's containers belong to. Left to itself compose names the project after COMPOSE_PROJECT_NAME,
+// `name:` or the directory, which need not match a stack started with -p: up would then create a
+// second copy of the stack, and --remove-orphans would look for orphans in that copy. Every
+// recorded file is passed for the same reason — with only the first, the services defined in the
+// others would be recreated without their overrides, or removed as orphans.
+func composeUpArgs(stack string, files []string, p actionParams) []string {
+	args := []string{"compose", "-p", stack}
+	for _, f := range files {
+		args = append(args, "-f", f)
+	}
+	args = append(args, "up", "-d")
+	if p.RemoveOrphans {
 		args = append(args, "--remove-orphans")
 	}
 	if p.Service != "" {

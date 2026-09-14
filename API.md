@@ -293,14 +293,15 @@ file is the one recorded on the stack's containers (`com.docker.compose.project.
 | `write-compose` | `stack, content, baseSha256?` | `sha256` | Keeps `<file>.bak`, validates with `docker compose config`, restores on failure. Refused for multi-file stacks. |
 | `read-env` | `stack` | `stack, path, target, outsideDir, content, exists, truncated, sha256` | Read-only. A symlinked `.env` is followed: `target` is the real file, `outsideDir` flags one outside the stack directory. Missing file: `exists: false`. |
 | `write-env` | `stack, content, baseSha256?` | `sha256, created, target` | Validates the candidate first (`docker compose --env-file <candidate> config`), so a rejected edit never touches the live file. Keeps `<target>.bak`; creates a missing file with mode 0600. Capped at 256 KiB. |
-| `deploy` | `stack, service?, removeOrphans?` | — | `docker compose up -d`; `removeOrphans` adds `--remove-orphans` (ignored for multi-file stacks). Destructive: queued for approval. |
+| `deploy` | `stack, service?, removeOrphans?` | — | `docker compose -p <stack> -f <file>… up -d`, with every compose file the stack was created from, so it always acts on the stack's own project; `removeOrphans` adds `--remove-orphans`. Destructive: queued for approval. |
 
 - `baseSha256` is the `sha256` from the last read or write. When set, the write fails if the file
   changed on the host in the meantime (including being created or deleted) instead of overwriting it.
 - `write-env` is deliberately **not** destructive: approvals record their params in the audit log,
   and these params are the file's contents. Its validation errors have `.env` values masked.
 - Hosts whose associate predates `read-env`/`write-env` don't list them in their module manifest;
-  clients should check the manifest rather than dispatch and fail.
+  clients should check the manifest rather than dispatch and fail. Likewise, an associate whose
+  `deploy` params schema has no `removeOrphans` ignores that param.
 
 ### Module config
 

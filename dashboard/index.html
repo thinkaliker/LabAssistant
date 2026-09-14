@@ -201,6 +201,8 @@
                   <span class="font-medium" x-text="`${ap.module} ${ap.action}`"></span>
                   <span class="text-xs" x-text="hostName(ap.hostId)"></span>
                   <span class="badge" data-variant="destructive" x-show="ap.destructive">destructive</span>
+                  <span class="badge" data-variant="outline" x-show="ap.params && ap.params.removeOrphans"
+                    title="Also removes containers of services that are no longer in the compose file">removes orphans</span>
                 </div>
                 <div class="actions">
                   <button type="button" class="btn" data-variant="success" data-size="sm"
@@ -649,6 +651,9 @@
                   <div class="actions svc-stack-actions">
                     <button type="button" class="btn" data-variant="secondary" data-size="sm"
                       @click="editCompose(st)">edit compose</button>
+                    <button type="button" class="btn" data-variant="secondary" data-size="sm"
+                      :disabled="!hostOnline(st.hostId)" title="Apply the compose file on the host (docker compose up -d)"
+                      @click="openRedeploy(st)">redeploy</button>
                     <button type="button" class="btn" data-variant="success" data-size="sm"
                       @click="svcAction(st,'','start')">start</button>
                     <button type="button" class="btn" data-variant="destructive" data-size="sm"
@@ -904,12 +909,16 @@
             <p class="text-sm text-destructive" x-show="compose.error" x-text="compose.error"></p>
             <p class="text-sm text-success" x-show="compose.status" x-text="compose.status"></p>
           </section>
-          <footer class="gap-2">
+          <footer class="gap-2 flex-wrap">
             <button type="button" class="btn" :disabled="compose.loading || compose.multiFile || compose.truncated || compose.busy"
               :class="compose.busy && 'is-loading'" @click="saveCompose()">Save</button>
             <button type="button" class="btn" data-variant="warning"
               :disabled="compose.loading || compose.multiFile || compose.truncated || compose.busy"
               @click="saveAndRedeploy()">Save &amp; redeploy</button>
+            <label class="label" x-show="!compose.multiFile && !compose.truncated" :title="orphansTitle(compose.hostId)">
+              <input type="checkbox" class="input" :checked="compose.removeOrphans && canRemoveOrphans(compose.hostId)"
+                :disabled="!canRemoveOrphans(compose.hostId)" @change="compose.removeOrphans = $event.target.checked">
+              Remove orphaned containers</label>
             <button type="button" class="btn" data-variant="outline" @click="closeCompose()">Close</button>
           </footer>
         </div>
@@ -1994,6 +2003,45 @@
           @click="saveEnv(false)">Save</button>
         <button type="button" class="btn" data-variant="warning" :disabled="envEdit.busy || envEdit.truncated"
           @click="saveEnv(true)">Save &amp; redeploy</button>
+        <label class="label footer-option" :title="orphansTitle(envEdit.hostId)">
+          <input type="checkbox" class="input" :checked="envEdit.removeOrphans && canRemoveOrphans(envEdit.hostId)"
+            :disabled="!canRemoveOrphans(envEdit.hostId)" @change="envEdit.removeOrphans = $event.target.checked">
+          Remove orphaned containers</label>
+      </footer>
+    </div>
+  </dialog>
+
+  <!-- Stack redeploy (the stack card's "redeploy"): applies the compose file as it is on the host,
+       e.g. after editing it there. Queued for approval like every deploy. -->
+  <dialog class="dialog" x-dialog="redeploy.open" @close="redeploy.open=false" aria-labelledby="redeploy-title">
+    <div>
+      <header>
+        <h2 id="redeploy-title" x-text="'Redeploy ' + redeploy.stack"></h2>
+        <p x-text="hostName(redeploy.hostId)"></p>
+      </header>
+      <section class="grid gap-3">
+        <p class="text-sm">Runs <code>docker compose up -d</code> with the compose file on the host, recreating
+          containers whose configuration changed. It is queued for approval.</p>
+        <div class="redeploy-files font-mono text-xs">
+          <template x-for="f in redeploy.files" :key="f"><div x-text="f"></div></template>
+        </div>
+        <div class="alert" data-variant="warning" x-show="redeploy.unsaved">
+          <section>The compose editor has unsaved changes to this stack. They are not part of this redeploy — use
+            Save &amp; redeploy there to include them.</section>
+        </div>
+        <div class="grid gap-2">
+          <label class="label">
+            <input type="checkbox" class="input" :checked="redeploy.removeOrphans && canRemoveOrphans(redeploy.hostId)"
+              :disabled="!canRemoveOrphans(redeploy.hostId)" @change="redeploy.removeOrphans = $event.target.checked">
+            Remove orphaned containers</label>
+          <p class="text-sm text-muted-foreground" x-text="canRemoveOrphans(redeploy.hostId)
+            ? 'Removes the containers of services that are no longer in the compose file, instead of leaving them running.'
+            : 'Upgrade this host\'s associate to remove orphaned containers on redeploy.'"></p>
+        </div>
+      </section>
+      <footer>
+        <button type="button" class="btn" data-variant="outline" @click="redeploy.open=false">Cancel</button>
+        <button type="button" class="btn" data-variant="warning" @click="confirmRedeploy()">Redeploy</button>
       </footer>
     </div>
   </dialog>

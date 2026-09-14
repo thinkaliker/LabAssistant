@@ -10,7 +10,7 @@ const MAX_ENV_BYTES = 256 * 1024;
 const closedEnv = () => ({
   open: false, loading: false, busy: false, hostId: '', stack: '', path: '', target: '', outsideDir: false,
   exists: false, truncated: false, sha256: '', mode: 'simple', raw: '', original: '', rows: [], reveal: [],
-  error: '', status: '',
+  error: '', status: '', removeOrphans: true,
 });
 
 export const envedit = {
@@ -134,7 +134,7 @@ export const envedit = {
     } finally {
       e.busy = false;
     }
-    if (redeploy && !e.error) await this.runAction(e.hostId, 'duo', 'deploy', { stack: e.stack });
+    if (redeploy && !e.error) await this.runAction(e.hostId, 'duo', 'deploy', this.deployParams(e.hostId, e.stack, e.removeOrphans));
   },
   // envCancel vetoes Esc / backdrop closes while saving, or when there are unsaved edits the user
   // wants to keep.

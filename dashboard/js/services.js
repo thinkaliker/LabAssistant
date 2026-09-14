@@ -10,8 +10,12 @@ let composeCM = null;
 // silently overwrite a file changed on the host meanwhile.
 const closedCompose = () => ({
   open: false, hostId: '', stack: '', path: '', multiFile: false, loading: false, busy: false, error: '', status: '',
-  mode: 'yaml', truncated: false, original: '', sha256: '',
+  mode: 'yaml', truncated: false, original: '', sha256: '', removeOrphans: true,
 });
+
+// The stack card's redeploy dialog. unsaved: the compose editor holds edits to this stack that the
+// redeploy (of the file on the host) won't include.
+const closedRedeploy = () => ({ open: false, hostId: '', stack: '', files: [], unsaved: false, removeOrphans: true });
 
 // Same normalization the editors apply (CodeMirror splits on CRLF too), so a CRLF file isn't
 // "changed" just by being opened.
@@ -20,6 +24,7 @@ const normalizeText = (s) => String(s || '').replace(/^\uFEFF/, '').replace(/\r\
 export const services = {
   services: { stacks: [] },
   compose: closedCompose(),
+  redeploy: closedRedeploy(),
   checkingServices: [], // "hostId/stack/service" keys with an in-flight single-image check
   updatingServices: [], // same keys, for an in-flight single-service pull/recreate
 
@@ -242,9 +247,36 @@ export const services = {
     this.compose.busy = false;
     if (!ok) return;
     this.compose.status = 'Saved. Redeploy queued — confirm it in the approvals banner.';
-    // --remove-orphans: services disabled or deleted in the editor should actually go away, not
-    // keep running as orphans of the project. (The associate ignores it for multi-file stacks.)
-    await this.runAction(this.compose.hostId, 'duo', 'deploy', { stack: this.compose.stack, removeOrphans: true });
+    const { hostId, stack, removeOrphans } = this.compose;
+    await this.runAction(hostId, 'duo', 'deploy', this.deployParams(hostId, stack, removeOrphans));
+  },
+  // ---- redeploy ----
+  // Every redeploy (compose editor, .env editor, stack card) offers "Remove orphaned containers":
+  // docker compose up --remove-orphans, which removes the containers of services that were
+  // disabled or deleted from the compose file instead of leaving them running outside it.
+  canRemoveOrphans(hostId) { return this.hostActionHasParam(hostId, 'duo', 'deploy', 'removeOrphans'); },
+  orphansTitle(hostId) {
+    return this.canRemoveOrphans(hostId)
+      ? 'Also remove containers of services that are no longer in the compose file (docker compose up --remove-orphans)'
+      : 'Upgrade this host\'s associate to remove orphaned containers on redeploy';
+  },
+  // removeOrphans is sent only to an associate that understands it, so the approval banner never
+  // announces a cleanup that an older associate would skip.
+  deployParams(hostId, stack, removeOrphans) {
+    return removeOrphans && this.canRemoveOrphans(hostId) ? { stack, removeOrphans: true } : { stack };
+  },
+  // openRedeploy applies the compose file as it is on the host — edited there, or saved earlier.
+  openRedeploy(st) {
+    const unsaved = this.compose.open && this.compose.hostId === st.hostId && this.compose.stack === st.name && this.composeDirty();
+    this.redeploy = {
+      ...closedRedeploy(), open: true, hostId: st.hostId, stack: st.name, unsaved,
+      files: String(st.path || '').split(',').map(f => f.trim()).filter(Boolean),
+    };
+  },
+  async confirmRedeploy() {
+    const { hostId, stack, removeOrphans } = this.redeploy;
+    this.redeploy = closedRedeploy();
+    await this.runAction(hostId, 'duo', 'deploy', this.deployParams(hostId, stack, removeOrphans));
   },
   closeCompose() {
     if (this.composeDirty() && !confirm(`Discard unsaved changes to ${this.compose.stack}'s compose file?`)) return;

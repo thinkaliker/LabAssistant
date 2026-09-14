@@ -245,6 +245,16 @@ export const core = {
     const m = ((h && h.modules) || []).find(x => x.name === mod);
     return !!m && (m.actions || []).some(a => a.name === action);
   },
+  // hostActionHasParam is the same check for one param of an action. An associate ignores params
+  // it doesn't know, so a control for a newer param would otherwise silently do nothing.
+  hostActionHasParam(hostId, mod, action, param) {
+    const h = this.hosts.find(x => x.id === hostId);
+    const m = ((h && h.modules) || []).find(x => x.name === mod);
+    const a = m && (m.actions || []).find(x => x.name === action);
+    let schema = a && a.paramsSchema;
+    if (typeof schema === 'string') { try { schema = JSON.parse(schema); } catch (e) { schema = null; } }
+    return !!(schema && schema.properties && Object.prototype.hasOwnProperty.call(schema.properties, param));
+  },
   // humanBytes renders a byte count in binary units (KiB/MiB/GiB/...).
   humanBytes(n) {
     n = Number(n) || 0;

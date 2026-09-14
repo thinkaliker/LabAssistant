@@ -141,8 +141,11 @@ A stack's compose file opens in a side panel with two views of the same text, **
   and an edit that would change the file's meaning in any other way is refused. Anchors, merge keys
   and multi-line inline lists are shown read-only and edited in the YAML view.
 - Warnings flag what compose will reject on save, such as a service that `depends_on` a disabled one.
-- **Save & redeploy** runs `docker compose up -d --remove-orphans`, so the containers of disabled or
-  removed services are removed rather than left running.
+- **Save & redeploy** runs `docker compose up -d`. With **Remove orphaned containers** checked (the
+  default) it adds `--remove-orphans`, so the containers of disabled or removed services are removed
+  rather than left running. A stack's **redeploy** button offers the same choice for a compose file
+  edited on the host itself, as does the `.env` dialog's Save & redeploy. A host whose associate
+  predates the option shows it disabled.
 - **.env** opens the project `.env` (the file compose reads for `${VAR}`) as variable rows with the
   same disable/enable, or as raw text. Secret-looking values are masked until revealed. A missing
   file is created on first save.

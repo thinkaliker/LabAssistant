@@ -685,6 +685,21 @@ html:has(dialog[open]) {
     font-weight: 600;
 }
 
+/* A checkbox that changes what a dialog's main button does ("Remove orphaned containers" beside
+    Save & redeploy). Phones stack the footer bottom-up, which puts it, as the last child, directly
+    above that button; once the footer is a row it moves to the far left, apart from the buttons. */
+@media (min-width: 40rem) {
+    .dialog footer>.footer-option {
+        order: -1;
+        margin-inline-end: auto;
+    }
+}
+
+/* Compose file paths are long and have no spaces to wrap at. */
+.redeploy-files {
+    overflow-wrap: anywhere;
+}
+
 /* ---- Services ---- */
 
 @media screen and (min-width: 769px) {

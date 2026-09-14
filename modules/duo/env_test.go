@@ -357,19 +357,22 @@ func TestWriteActionsRejectUnparseableParams(t *testing.T) {
 }
 
 func TestComposeUpArgs(t *testing.T) {
+	one := []string{"/s/c.yaml"}
+	two := []string{"/s/c.yaml", "/s/c.override.yaml"}
 	cases := []struct {
 		name  string
-		multi bool
+		files []string
 		p     actionParams
 		want  []string
 	}{
-		{"plain", false, actionParams{}, []string{"compose", "-f", "/s/c.yaml", "up", "-d"}},
-		{"orphans", false, actionParams{RemoveOrphans: true}, []string{"compose", "-f", "/s/c.yaml", "up", "-d", "--remove-orphans"}},
-		{"orphans skipped for multi-file", true, actionParams{RemoveOrphans: true}, []string{"compose", "-f", "/s/c.yaml", "up", "-d"}},
-		{"service", false, actionParams{RemoveOrphans: true, Service: "web"}, []string{"compose", "-f", "/s/c.yaml", "up", "-d", "--remove-orphans", "web"}},
+		{"plain", one, actionParams{}, []string{"compose", "-p", "media", "-f", "/s/c.yaml", "up", "-d"}},
+		{"orphans", one, actionParams{RemoveOrphans: true}, []string{"compose", "-p", "media", "-f", "/s/c.yaml", "up", "-d", "--remove-orphans"}},
+		{"multi-file passes every file", two, actionParams{RemoveOrphans: true},
+			[]string{"compose", "-p", "media", "-f", "/s/c.yaml", "-f", "/s/c.override.yaml", "up", "-d", "--remove-orphans"}},
+		{"service", one, actionParams{RemoveOrphans: true, Service: "web"}, []string{"compose", "-p", "media", "-f", "/s/c.yaml", "up", "-d", "--remove-orphans", "web"}},
 	}
 	for _, c := range cases {
-		if got := composeUpArgs("/s/c.yaml", c.multi, c.p); !reflect.DeepEqual(got, c.want) {
+		if got := composeUpArgs("media", c.files, c.p); !reflect.DeepEqual(got, c.want) {
 			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
 		}
 	}

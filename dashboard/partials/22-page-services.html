@@ -28,6 +28,9 @@
                   <div class="actions svc-stack-actions">
                     <button type="button" class="btn" data-variant="secondary" data-size="sm"
                       @click="editCompose(st)">edit compose</button>
+                    <button type="button" class="btn" data-variant="secondary" data-size="sm"
+                      :disabled="!hostOnline(st.hostId)" title="Apply the compose file on the host (docker compose up -d)"
+                      @click="openRedeploy(st)">redeploy</button>
                     <button type="button" class="btn" data-variant="success" data-size="sm"
                       @click="svcAction(st,'','start')">start</button>
                     <button type="button" class="btn" data-variant="destructive" data-size="sm"
@@ -283,12 +286,16 @@
             <p class="text-sm text-destructive" x-show="compose.error" x-text="compose.error"></p>
             <p class="text-sm text-success" x-show="compose.status" x-text="compose.status"></p>
           </section>
-          <footer class="gap-2">
+          <footer class="gap-2 flex-wrap">
             <button type="button" class="btn" :disabled="compose.loading || compose.multiFile || compose.truncated || compose.busy"
               :class="compose.busy && 'is-loading'" @click="saveCompose()">Save</button>
             <button type="button" class="btn" data-variant="warning"
               :disabled="compose.loading || compose.multiFile || compose.truncated || compose.busy"
               @click="saveAndRedeploy()">Save &amp; redeploy</button>
+            <label class="label" x-show="!compose.multiFile && !compose.truncated" :title="orphansTitle(compose.hostId)">
+              <input type="checkbox" class="input" :checked="compose.removeOrphans && canRemoveOrphans(compose.hostId)"
+                :disabled="!canRemoveOrphans(compose.hostId)" @change="compose.removeOrphans = $event.target.checked">
+              Remove orphaned containers</label>
             <button type="button" class="btn" data-variant="outline" @click="closeCompose()">Close</button>
           </footer>
         </div>
