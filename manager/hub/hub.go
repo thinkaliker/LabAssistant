@@ -10,10 +10,12 @@ import (
 	"io"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/peer"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/thinkaliker/labassistant/manager/jobs"
@@ -42,6 +44,7 @@ type Hub struct {
 
 	mu    sync.Mutex
 	conns map[string]*conn
+	cfg   *pb.SessionConfig // sent in every HelloAck and pushed on change; nil = associate defaults
 
 	logMu sync.Mutex
 	logs  map[string]chan []byte // streamID -> log chunk channel
@@ -77,6 +80,43 @@ func (h *Hub) Uninstall(hostID string) error {
 	return h.sendTo(hostID, &pb.ManagerMessage{Payload: &pb.ManagerMessage_Uninstall{
 		Uninstall: &pb.Uninstall{Reason: "removed by operator"},
 	}})
+}
+
+// SetIntervals records the associates' heartbeat and status-poll intervals and pushes them to
+// every connected host. Hosts that connect later get them in their HelloAck.
+func (h *Hub) SetIntervals(heartbeat, status time.Duration) {
+	cfg := &pb.SessionConfig{HeartbeatInterval: durationpb.New(heartbeat), StatusInterval: durationpb.New(status)}
+	h.mu.Lock()
+	h.cfg = cfg
+	h.mu.Unlock()
+	h.broadcast(&pb.ManagerMessage{Payload: &pb.ManagerMessage_Config{Config: cfg}})
+}
+
+// RefreshAll asks every connected host for a fresh heartbeat and every module's status. It
+// returns how many hosts the request reached; replies arrive asynchronously on their streams.
+func (h *Hub) RefreshAll() int {
+	return h.broadcast(&pb.ManagerMessage{Payload: &pb.ManagerMessage_StatusRequest{
+		StatusRequest: &pb.StatusRequest{IncludeHealth: true},
+	}})
+}
+
+// broadcast sends msg to every connected host and returns how many accepted it.
+func (h *Hub) broadcast(msg *pb.ManagerMessage) int {
+	h.mu.Lock()
+	ids := make([]string, 0, len(h.conns))
+	for id := range h.conns {
+		ids = append(ids, id)
+	}
+	h.mu.Unlock()
+	n := 0
+	for _, id := range ids {
+		if err := h.sendTo(id, msg); err != nil {
+			slog.Warn("broadcast to associate failed", "host", id, "err", err)
+			continue
+		}
+		n++
+	}
+	return n
 }
 
 func (h *Hub) sendTo(hostID string, msg *pb.ManagerMessage) error {
@@ -176,12 +216,6 @@ func (h *Hub) serveStream(ctx context.Context, hostID string, stream mgrStream) 
 		"modules", len(hello.GetModules()), "build", hello.GetAssociateVersion(),
 		"codeId", hello.GetCodeId())
 
-	c.send <- &pb.ManagerMessage{Payload: &pb.ManagerMessage_HelloAck{HelloAck: &pb.HelloAck{
-		Accepted:        true,
-		ProtocolVersion: ProtocolVersion,
-		ServerTime:      timestamppb.Now(),
-	}}}
-
 	go h.sendLoop(ctx, stream, c)
 
 	for {
@@ -239,8 +273,17 @@ func (h *Hub) handle(hostID string, msg *pb.AssociateMessage) {
 	}
 }
 
+// register makes c the host's live connection. The HelloAck is queued under the same lock that
+// broadcasts read conns through, so nothing sent to the host can overtake it — the associate
+// requires HelloAck to be the first frame — and it carries the current session config.
 func (h *Hub) register(c *conn) {
 	h.mu.Lock()
+	c.send <- &pb.ManagerMessage{Payload: &pb.ManagerMessage_HelloAck{HelloAck: &pb.HelloAck{
+		Accepted:        true,
+		ProtocolVersion: ProtocolVersion,
+		ServerTime:      timestamppb.Now(),
+		Config:          h.cfg,
+	}}}
 	if old, ok := h.conns[c.hostID]; ok {
 		close(old.send)
 	}

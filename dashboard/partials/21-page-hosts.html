@@ -12,6 +12,22 @@
         x-text="'latest ' + expectedAssociate()"
       ></span>
     </div>
+    <div class="flex items-center gap-2 flex-wrap">
+    <!-- Asks every connected associate for a heartbeat + module statuses now; results arrive
+         over the live feed like any other update. -->
+    <button
+      type="button"
+      class="btn"
+      data-variant="outline"
+      data-size="sm"
+      x-show="hosts.length>0"
+      :class="hostsRefreshing && 'is-loading'"
+      :disabled="hostsRefreshing"
+      title="Request a heartbeat and status update from every connected host"
+      @click="refreshAllHosts()"
+    >
+      Refresh
+    </button>
     <div
       class="button-group"
       role="group"
@@ -39,6 +55,7 @@
       >
         IP
       </button>
+    </div>
     </div>
   </div>
   <template x-if="hosts.length===0">

@@ -118,6 +118,8 @@ func (s *session) handle(msg *pb.ManagerMessage) {
 		s.onCommand(p.Command)
 	case *pb.ManagerMessage_StatusRequest:
 		go s.onStatusRequest(p.StatusRequest)
+	case *pb.ManagerMessage_Config:
+		s.applyConfig(p.Config)
 	case *pb.ManagerMessage_Cancel:
 		// TODO(slice-4): cancel a running job.
 	case *pb.ManagerMessage_LogRequest:
@@ -295,6 +297,9 @@ func (s *session) runCommand(cmd *pb.Command) {
 }
 
 func (s *session) onStatusRequest(req *pb.StatusRequest) {
+	if req.GetIncludeHealth() {
+		s.sendHeartbeat()
+	}
 	for _, name := range s.a.order {
 		if req.GetModule() != "" && req.GetModule() != name {
 			continue

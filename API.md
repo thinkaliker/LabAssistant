@@ -167,6 +167,7 @@ Non-2xx responses use:
 | `DELETE /hosts/{id}` | Remove a host (revokes its cert). |
 | `POST /hosts/{id}/upgrade` | Push the manager's current associate build to the host and restart it (keeps cert/bundle). Returns `{ "jobId": "..." }`. |
 | `POST /hosts/upgrade-stale` | Same, for every host running older *associate code* — hosts whose associate code already matches are skipped, even when the manager is newer. Takes no body: each host is tried with the manager's SSH key/agent and its own stored `sshUser`. Returns `{ "started": [{ "hostId", "hostName", "jobId" }], "failed": [{ "hostId", "hostName", "error" }] }` — one job per host, failures reported per host rather than aborting the batch. A host whose job fails for want of credentials has `{ "authRequired": true }` in its job result; retry that host through `POST /hosts/{id}/upgrade` with a login it accepts. The flag is a hint, not a filter — it is derived from the host's error text, so any failed host is worth offering a retry. |
+| `POST /hosts/refresh` | Ask every connected associate for a heartbeat and all module statuses right now instead of waiting for the next tick. Returns `202 { "requested": n }` (hosts the request reached); the updates arrive on the event stream as `host_updated`. |
 | `GET /hosts/{id}/status` | Live health and per-module states. |
 | `GET /hosts/{id}/modules` | Enabled modules with manifests and detection results. |
 | `POST /hosts/{id}/modules/{name}:enable` | Enable a module on the host. |
@@ -193,7 +194,7 @@ Non-2xx responses use:
 | `GET /audit` | Read the audit log. |
 | `GET /events` | SSE stream of host online/offline, job, and status updates. |
 | `GET /settings` | Read manager settings. |
-| `PUT /settings` | Update manager settings. |
+| `PUT /settings` | Update manager settings. Omitted fields keep their current value. `heartbeatSeconds` (default 30) and `statusPollSeconds` (default 60) set how often associates send vitals and re-poll module statuses; both must be 5–3600 and are pushed to connected associates immediately. |
 | `GET /manager/version` | Compare the running manager with the tip of its checkout's branch on `origin` (read-only `git ls-remote`, cached ~10 min; `?refresh=1` forces a fresh check). Returns `{ "running", "local", "remote", "branch", "updateAvailable", "checkedAt", "error"? }`; `error` explains why no comparison was possible (not a checkout, detached HEAD, remote unreachable). |
 | `GET /backup` | Export settings. |
 | `POST /restore` | Import settings. |

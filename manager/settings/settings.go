@@ -22,7 +22,20 @@ import (
 type Manager struct {
 	LogLevel        string `json:"logLevel"`
 	DefaultTimezone string `json:"defaultTimezone"`
+	// HeartbeatSeconds is how often associates send host vitals; StatusPollSeconds is how often
+	// they re-query module statuses. Both are pushed to connected associates when changed.
+	HeartbeatSeconds  int `json:"heartbeatSeconds"`
+	StatusPollSeconds int `json:"statusPollSeconds"`
 }
+
+// Defaults and bounds for the associate refresh intervals. The floor keeps a typo from turning
+// every host into a busy loop of docker/apt queries; the ceiling keeps "online" meaningful.
+const (
+	DefaultHeartbeatSeconds  = 30
+	DefaultStatusPollSeconds = 60
+	MinIntervalSeconds       = 5
+	MaxIntervalSeconds       = 3600
+)
 
 // Token is an API token record (the plaintext is shown only once at creation).
 type Token struct {
@@ -51,7 +64,11 @@ type Store struct {
 
 // Load reads settings from path (missing file yields defaults).
 func Load(path string) (*Store, error) {
-	s := &Store{path: path, d: data{Manager: Manager{LogLevel: "info"}, AuthUsername: "admin"}}
+	s := &Store{path: path, d: data{Manager: Manager{
+		LogLevel:          "info",
+		HeartbeatSeconds:  DefaultHeartbeatSeconds,
+		StatusPollSeconds: DefaultStatusPollSeconds,
+	}, AuthUsername: "admin"}}
 	b, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s, nil

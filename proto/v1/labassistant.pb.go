@@ -360,6 +360,7 @@ type ManagerMessage struct {
 	//	*ManagerMessage_StatusRequest
 	//	*ManagerMessage_RotateCert
 	//	*ManagerMessage_Uninstall
+	//	*ManagerMessage_Config
 	Payload       isManagerMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -465,6 +466,15 @@ func (x *ManagerMessage) GetUninstall() *Uninstall {
 	return nil
 }
 
+func (x *ManagerMessage) GetConfig() *SessionConfig {
+	if x != nil {
+		if x, ok := x.Payload.(*ManagerMessage_Config); ok {
+			return x.Config
+		}
+	}
+	return nil
+}
+
 type isManagerMessage_Payload interface {
 	isManagerMessage_Payload()
 }
@@ -497,6 +507,10 @@ type ManagerMessage_Uninstall struct {
 	Uninstall *Uninstall `protobuf:"bytes,7,opt,name=uninstall,proto3,oneof"`
 }
 
+type ManagerMessage_Config struct {
+	Config *SessionConfig `protobuf:"bytes,8,opt,name=config,proto3,oneof"`
+}
+
 func (*ManagerMessage_HelloAck) isManagerMessage_Payload() {}
 
 func (*ManagerMessage_Command) isManagerMessage_Payload() {}
@@ -511,6 +525,63 @@ func (*ManagerMessage_RotateCert) isManagerMessage_Payload() {}
 
 func (*ManagerMessage_Uninstall) isManagerMessage_Payload() {}
 
+func (*ManagerMessage_Config) isManagerMessage_Payload() {}
+
+// SessionConfig carries manager-side tunables for a live session. It rides on HelloAck at connect
+// and is pushed again whenever the operator changes it. Unset/zero durations mean "keep the
+// associate's built-in default", so an older manager that never sends one changes nothing.
+type SessionConfig struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	HeartbeatInterval *durationpb.Duration   `protobuf:"bytes,1,opt,name=heartbeat_interval,json=heartbeatInterval,proto3" json:"heartbeat_interval,omitempty"` // how often vitals are sent
+	StatusInterval    *durationpb.Duration   `protobuf:"bytes,2,opt,name=status_interval,json=statusInterval,proto3" json:"status_interval,omitempty"`          // how often module statuses are re-polled
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *SessionConfig) Reset() {
+	*x = SessionConfig{}
+	mi := &file_v1_labassistant_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionConfig) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionConfig) ProtoMessage() {}
+
+func (x *SessionConfig) ProtoReflect() protoreflect.Message {
+	mi := &file_v1_labassistant_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionConfig.ProtoReflect.Descriptor instead.
+func (*SessionConfig) Descriptor() ([]byte, []int) {
+	return file_v1_labassistant_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *SessionConfig) GetHeartbeatInterval() *durationpb.Duration {
+	if x != nil {
+		return x.HeartbeatInterval
+	}
+	return nil
+}
+
+func (x *SessionConfig) GetStatusInterval() *durationpb.Duration {
+	if x != nil {
+		return x.StatusInterval
+	}
+	return nil
+}
+
 // RotateCert delivers a freshly issued client certificate; the associate persists it and
 // reconnects using the new identity. The pinned CA is unchanged.
 type RotateCert struct {
@@ -523,7 +594,7 @@ type RotateCert struct {
 
 func (x *RotateCert) Reset() {
 	*x = RotateCert{}
-	mi := &file_v1_labassistant_proto_msgTypes[2]
+	mi := &file_v1_labassistant_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -535,7 +606,7 @@ func (x *RotateCert) String() string {
 func (*RotateCert) ProtoMessage() {}
 
 func (x *RotateCert) ProtoReflect() protoreflect.Message {
-	mi := &file_v1_labassistant_proto_msgTypes[2]
+	mi := &file_v1_labassistant_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -548,7 +619,7 @@ func (x *RotateCert) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RotateCert.ProtoReflect.Descriptor instead.
 func (*RotateCert) Descriptor() ([]byte, []int) {
-	return file_v1_labassistant_proto_rawDescGZIP(), []int{2}
+	return file_v1_labassistant_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *RotateCert) GetCertPem() []byte {
@@ -577,7 +648,7 @@ type Uninstall struct {
 
 func (x *Uninstall) Reset() {
 	*x = Uninstall{}
-	mi := &file_v1_labassistant_proto_msgTypes[3]
+	mi := &file_v1_labassistant_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -589,7 +660,7 @@ func (x *Uninstall) String() string {
 func (*Uninstall) ProtoMessage() {}
 
 func (x *Uninstall) ProtoReflect() protoreflect.Message {
-	mi := &file_v1_labassistant_proto_msgTypes[3]
+	mi := &file_v1_labassistant_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -602,7 +673,7 @@ func (x *Uninstall) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Uninstall.ProtoReflect.Descriptor instead.
 func (*Uninstall) Descriptor() ([]byte, []int) {
-	return file_v1_labassistant_proto_rawDescGZIP(), []int{3}
+	return file_v1_labassistant_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Uninstall) GetReason() string {
@@ -630,7 +701,7 @@ type Hello struct {
 
 func (x *Hello) Reset() {
 	*x = Hello{}
-	mi := &file_v1_labassistant_proto_msgTypes[4]
+	mi := &file_v1_labassistant_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -642,7 +713,7 @@ func (x *Hello) String() string {
 func (*Hello) ProtoMessage() {}
 
 func (x *Hello) ProtoReflect() protoreflect.Message {
-	mi := &file_v1_labassistant_proto_msgTypes[4]
+	mi := &file_v1_labassistant_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -655,7 +726,7 @@ func (x *Hello) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Hello.ProtoReflect.Descriptor instead.
 func (*Hello) Descriptor() ([]byte, []int) {
-	return file_v1_labassistant_proto_rawDescGZIP(), []int{4}
+	return file_v1_labassistant_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Hello) GetProtocolVersion() uint32 {
@@ -699,13 +770,14 @@ type HelloAck struct {
 	ProtocolVersion uint32                 `protobuf:"varint,2,opt,name=protocol_version,json=protocolVersion,proto3" json:"protocol_version,omitempty"` // version the manager will speak
 	Message         string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`                                         // reason when accepted == false
 	ServerTime      *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=server_time,json=serverTime,proto3" json:"server_time,omitempty"`
+	Config          *SessionConfig         `protobuf:"bytes,5,opt,name=config,proto3" json:"config,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
 
 func (x *HelloAck) Reset() {
 	*x = HelloAck{}
-	mi := &file_v1_labassistant_proto_msgTypes[5]
+	mi := &file_v1_labassistant_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -717,7 +789,7 @@ func (x *HelloAck) String() string {
 func (*HelloAck) ProtoMessage() {}
 
 func (x *HelloAck) ProtoReflect() protoreflect.Message {
-	mi := &file_v1_labassistant_proto_msgTypes[5]
+	mi := &file_v1_labassistant_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -730,7 +802,7 @@ func (x *HelloAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HelloAck.ProtoReflect.Descriptor instead.
 func (*HelloAck) Descriptor() ([]byte, []int) {
-	return file_v1_labassistant_proto_rawDescGZIP(), []int{5}
+	return file_v1_labassistant_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *HelloAck) GetAccepted() bool {
@@ -761,6 +833,13 @@ func (x *HelloAck) GetServerTime() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *HelloAck) GetConfig() *SessionConfig {
+	if x != nil {
+		return x.Config
+	}
+	return nil
+}
+
 type Command struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"` // manager-issued; idempotency key
@@ -775,7 +854,7 @@ type Command struct {
 
 func (x *Command) Reset() {
 	*x = Command{}
-	mi := &file_v1_labassistant_proto_msgTypes[6]
+	mi := &file_v1_labassistant_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -787,7 +866,7 @@ func (x *Command) String() string {
 func (*Command) ProtoMessage() {}
 
 func (x *Command) ProtoReflect() protoreflect.Message {
-	mi := &file_v1_labassistant_proto_msgTypes[6]
+	mi := &file_v1_labassistant_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -800,7 +879,7 @@ func (x *Command) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Command.ProtoReflect.Descriptor instead.
 func (*Command) Descriptor() ([]byte, []int) {
-	return file_v1_labassistant_proto_rawDescGZIP(), []int{6}
+	return file_v1_labassistant_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *Command) GetJobId() string {
@@ -854,7 +933,7 @@ type CancelJob struct {
 
 func (x *CancelJob) Reset() {
 	*x = CancelJob{}
-	mi := &file_v1_labassistant_proto_msgTypes[7]
+	mi := &file_v1_labassistant_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -866,7 +945,7 @@ func (x *CancelJob) String() string {
 func (*CancelJob) ProtoMessage() {}
 
 func (x *CancelJob) ProtoReflect() protoreflect.Message {
-	mi := &file_v1_labassistant_proto_msgTypes[7]
+	mi := &file_v1_labassistant_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -879,7 +958,7 @@ func (x *CancelJob) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelJob.ProtoReflect.Descriptor instead.
 func (*CancelJob) Descriptor() ([]byte, []int) {
-	return file_v1_labassistant_proto_rawDescGZIP(), []int{7}
+	return file_v1_labassistant_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *CancelJob) GetJobId() string {
@@ -901,7 +980,7 @@ type LogStreamRequest struct {
 
 func (x *LogStreamRequest) Reset() {
 	*x = LogStreamRequest{}
-	mi := &file_v1_labassistant_proto_msgTypes[8]
+	mi := &file_v1_labassistant_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -913,7 +992,7 @@ func (x *LogStreamRequest) String() string {
 func (*LogStreamRequest) ProtoMessage() {}
 
 func (x *LogStreamRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_v1_labassistant_proto_msgTypes[8]
+	mi := &file_v1_labassistant_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -926,7 +1005,7 @@ func (x *LogStreamRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogStreamRequest.ProtoReflect.Descriptor instead.
 func (*LogStreamRequest) Descriptor() ([]byte, []int) {
-	return file_v1_labassistant_proto_rawDescGZIP(), []int{8}
+	return file_v1_labassistant_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *LogStreamRequest) GetStreamId() string {
@@ -959,14 +1038,15 @@ func (x *LogStreamRequest) GetParams() []byte {
 
 type StatusRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Module        string                 `protobuf:"bytes,1,opt,name=module,proto3" json:"module,omitempty"` // empty = all modules
+	Module        string                 `protobuf:"bytes,1,opt,name=module,proto3" json:"module,omitempty"`                                     // empty = all modules
+	IncludeHealth bool                   `protobuf:"varint,2,opt,name=include_health,json=includeHealth,proto3" json:"include_health,omitempty"` // also send a fresh Heartbeat right away
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *StatusRequest) Reset() {
 	*x = StatusRequest{}
-	mi := &file_v1_labassistant_proto_msgTypes[9]
+	mi := &file_v1_labassistant_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -978,7 +1058,7 @@ func (x *StatusRequest) String() string {
 func (*StatusRequest) ProtoMessage() {}
 
 func (x *StatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_v1_labassistant_proto_msgTypes[9]
+	mi := &file_v1_labassistant_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -991,7 +1071,7 @@ func (x *StatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusRequest.ProtoReflect.Descriptor instead.
 func (*StatusRequest) Descriptor() ([]byte, []int) {
-	return file_v1_labassistant_proto_rawDescGZIP(), []int{9}
+	return file_v1_labassistant_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *StatusRequest) GetModule() string {
@@ -999,6 +1079,13 @@ func (x *StatusRequest) GetModule() string {
 		return x.Module
 	}
 	return ""
+}
+
+func (x *StatusRequest) GetIncludeHealth() bool {
+	if x != nil {
+		return x.IncludeHealth
+	}
+	return false
 }
 
 type Heartbeat struct {
@@ -1011,7 +1098,7 @@ type Heartbeat struct {
 
 func (x *Heartbeat) Reset() {
 	*x = Heartbeat{}
-	mi := &file_v1_labassistant_proto_msgTypes[10]
+	mi := &file_v1_labassistant_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1023,7 +1110,7 @@ func (x *Heartbeat) String() string {
 func (*Heartbeat) ProtoMessage() {}
 
 func (x *Heartbeat) ProtoReflect() protoreflect.Message {
-	mi := &file_v1_labassistant_proto_msgTypes[10]
+	mi := &file_v1_labassistant_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1036,7 +1123,7 @@ func (x *Heartbeat) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Heartbeat.ProtoReflect.Descriptor instead.
 func (*Heartbeat) Descriptor() ([]byte, []int) {
-	return file_v1_labassistant_proto_rawDescGZIP(), []int{10}
+	return file_v1_labassistant_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *Heartbeat) GetSentAt() *timestamppb.Timestamp {
@@ -1067,7 +1154,7 @@ type HostHealth struct {
 
 func (x *HostHealth) Reset() {
 	*x = HostHealth{}
-	mi := &file_v1_labassistant_proto_msgTypes[11]
+	mi := &file_v1_labassistant_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1079,7 +1166,7 @@ func (x *HostHealth) String() string {
 func (*HostHealth) ProtoMessage() {}
 
 func (x *HostHealth) ProtoReflect() protoreflect.Message {
-	mi := &file_v1_labassistant_proto_msgTypes[11]
+	mi := &file_v1_labassistant_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1092,7 +1179,7 @@ func (x *HostHealth) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HostHealth.ProtoReflect.Descriptor instead.
 func (*HostHealth) Descriptor() ([]byte, []int) {
-	return file_v1_labassistant_proto_rawDescGZIP(), []int{11}
+	return file_v1_labassistant_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *HostHealth) GetCpuPercent() float64 {
@@ -1148,7 +1235,7 @@ type DiskUsage struct {
 
 func (x *DiskUsage) Reset() {
 	*x = DiskUsage{}
-	mi := &file_v1_labassistant_proto_msgTypes[12]
+	mi := &file_v1_labassistant_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1160,7 +1247,7 @@ func (x *DiskUsage) String() string {
 func (*DiskUsage) ProtoMessage() {}
 
 func (x *DiskUsage) ProtoReflect() protoreflect.Message {
-	mi := &file_v1_labassistant_proto_msgTypes[12]
+	mi := &file_v1_labassistant_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1173,7 +1260,7 @@ func (x *DiskUsage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiskUsage.ProtoReflect.Descriptor instead.
 func (*DiskUsage) Descriptor() ([]byte, []int) {
-	return file_v1_labassistant_proto_rawDescGZIP(), []int{12}
+	return file_v1_labassistant_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *DiskUsage) GetMount() string {
@@ -1208,7 +1295,7 @@ type StatusUpdate struct {
 
 func (x *StatusUpdate) Reset() {
 	*x = StatusUpdate{}
-	mi := &file_v1_labassistant_proto_msgTypes[13]
+	mi := &file_v1_labassistant_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1220,7 +1307,7 @@ func (x *StatusUpdate) String() string {
 func (*StatusUpdate) ProtoMessage() {}
 
 func (x *StatusUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_v1_labassistant_proto_msgTypes[13]
+	mi := &file_v1_labassistant_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1233,7 +1320,7 @@ func (x *StatusUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusUpdate.ProtoReflect.Descriptor instead.
 func (*StatusUpdate) Descriptor() ([]byte, []int) {
-	return file_v1_labassistant_proto_rawDescGZIP(), []int{13}
+	return file_v1_labassistant_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *StatusUpdate) GetModule() string {
@@ -1268,7 +1355,7 @@ type CommandAck struct {
 
 func (x *CommandAck) Reset() {
 	*x = CommandAck{}
-	mi := &file_v1_labassistant_proto_msgTypes[14]
+	mi := &file_v1_labassistant_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1280,7 +1367,7 @@ func (x *CommandAck) String() string {
 func (*CommandAck) ProtoMessage() {}
 
 func (x *CommandAck) ProtoReflect() protoreflect.Message {
-	mi := &file_v1_labassistant_proto_msgTypes[14]
+	mi := &file_v1_labassistant_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1293,7 +1380,7 @@ func (x *CommandAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandAck.ProtoReflect.Descriptor instead.
 func (*CommandAck) Descriptor() ([]byte, []int) {
-	return file_v1_labassistant_proto_rawDescGZIP(), []int{14}
+	return file_v1_labassistant_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *CommandAck) GetJobId() string {
@@ -1331,7 +1418,7 @@ type JobEvent struct {
 
 func (x *JobEvent) Reset() {
 	*x = JobEvent{}
-	mi := &file_v1_labassistant_proto_msgTypes[15]
+	mi := &file_v1_labassistant_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1343,7 +1430,7 @@ func (x *JobEvent) String() string {
 func (*JobEvent) ProtoMessage() {}
 
 func (x *JobEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_v1_labassistant_proto_msgTypes[15]
+	mi := &file_v1_labassistant_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1356,7 +1443,7 @@ func (x *JobEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobEvent.ProtoReflect.Descriptor instead.
 func (*JobEvent) Descriptor() ([]byte, []int) {
-	return file_v1_labassistant_proto_rawDescGZIP(), []int{15}
+	return file_v1_labassistant_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *JobEvent) GetJobId() string {
@@ -1413,7 +1500,7 @@ type JobResult struct {
 
 func (x *JobResult) Reset() {
 	*x = JobResult{}
-	mi := &file_v1_labassistant_proto_msgTypes[16]
+	mi := &file_v1_labassistant_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1425,7 +1512,7 @@ func (x *JobResult) String() string {
 func (*JobResult) ProtoMessage() {}
 
 func (x *JobResult) ProtoReflect() protoreflect.Message {
-	mi := &file_v1_labassistant_proto_msgTypes[16]
+	mi := &file_v1_labassistant_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1438,7 +1525,7 @@ func (x *JobResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobResult.ProtoReflect.Descriptor instead.
 func (*JobResult) Descriptor() ([]byte, []int) {
-	return file_v1_labassistant_proto_rawDescGZIP(), []int{16}
+	return file_v1_labassistant_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *JobResult) GetJobId() string {
@@ -1480,7 +1567,7 @@ type LogChunk struct {
 
 func (x *LogChunk) Reset() {
 	*x = LogChunk{}
-	mi := &file_v1_labassistant_proto_msgTypes[17]
+	mi := &file_v1_labassistant_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1492,7 +1579,7 @@ func (x *LogChunk) String() string {
 func (*LogChunk) ProtoMessage() {}
 
 func (x *LogChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_v1_labassistant_proto_msgTypes[17]
+	mi := &file_v1_labassistant_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1505,7 +1592,7 @@ func (x *LogChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogChunk.ProtoReflect.Descriptor instead.
 func (*LogChunk) Descriptor() ([]byte, []int) {
-	return file_v1_labassistant_proto_rawDescGZIP(), []int{17}
+	return file_v1_labassistant_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *LogChunk) GetStreamId() string {
@@ -1543,7 +1630,7 @@ type ModuleInfo struct {
 
 func (x *ModuleInfo) Reset() {
 	*x = ModuleInfo{}
-	mi := &file_v1_labassistant_proto_msgTypes[18]
+	mi := &file_v1_labassistant_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1555,7 +1642,7 @@ func (x *ModuleInfo) String() string {
 func (*ModuleInfo) ProtoMessage() {}
 
 func (x *ModuleInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_v1_labassistant_proto_msgTypes[18]
+	mi := &file_v1_labassistant_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1568,7 +1655,7 @@ func (x *ModuleInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModuleInfo.ProtoReflect.Descriptor instead.
 func (*ModuleInfo) Descriptor() ([]byte, []int) {
-	return file_v1_labassistant_proto_rawDescGZIP(), []int{18}
+	return file_v1_labassistant_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ModuleInfo) GetName() string {
@@ -1630,7 +1717,7 @@ type ActionSpec struct {
 
 func (x *ActionSpec) Reset() {
 	*x = ActionSpec{}
-	mi := &file_v1_labassistant_proto_msgTypes[19]
+	mi := &file_v1_labassistant_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1642,7 +1729,7 @@ func (x *ActionSpec) String() string {
 func (*ActionSpec) ProtoMessage() {}
 
 func (x *ActionSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_v1_labassistant_proto_msgTypes[19]
+	mi := &file_v1_labassistant_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1655,7 +1742,7 @@ func (x *ActionSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActionSpec.ProtoReflect.Descriptor instead.
 func (*ActionSpec) Descriptor() ([]byte, []int) {
-	return file_v1_labassistant_proto_rawDescGZIP(), []int{19}
+	return file_v1_labassistant_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ActionSpec) GetName() string {
@@ -1731,7 +1818,7 @@ type Detection struct {
 
 func (x *Detection) Reset() {
 	*x = Detection{}
-	mi := &file_v1_labassistant_proto_msgTypes[20]
+	mi := &file_v1_labassistant_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1743,7 +1830,7 @@ func (x *Detection) String() string {
 func (*Detection) ProtoMessage() {}
 
 func (x *Detection) ProtoReflect() protoreflect.Message {
-	mi := &file_v1_labassistant_proto_msgTypes[20]
+	mi := &file_v1_labassistant_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1756,7 +1843,7 @@ func (x *Detection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Detection.ProtoReflect.Descriptor instead.
 func (*Detection) Descriptor() ([]byte, []int) {
-	return file_v1_labassistant_proto_rawDescGZIP(), []int{20}
+	return file_v1_labassistant_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *Detection) GetApplicable() bool {
@@ -1787,7 +1874,7 @@ const file_v1_labassistant_proto_rawDesc = "" +
 	"job_result\x18\x05 \x01(\v2\x1a.labassistant.v1.JobResultH\x00R\tjobResult\x128\n" +
 	"\tlog_chunk\x18\x06 \x01(\v2\x19.labassistant.v1.LogChunkH\x00R\blogChunk\x12/\n" +
 	"\x03ack\x18\a \x01(\v2\x1b.labassistant.v1.CommandAckH\x00R\x03ackB\t\n" +
-	"\apayload\"\xcc\x03\n" +
+	"\apayload\"\x86\x04\n" +
 	"\x0eManagerMessage\x128\n" +
 	"\thello_ack\x18\x01 \x01(\v2\x19.labassistant.v1.HelloAckH\x00R\bhelloAck\x124\n" +
 	"\acommand\x18\x02 \x01(\v2\x18.labassistant.v1.CommandH\x00R\acommand\x124\n" +
@@ -1797,8 +1884,12 @@ const file_v1_labassistant_proto_rawDesc = "" +
 	"\x0estatus_request\x18\x05 \x01(\v2\x1e.labassistant.v1.StatusRequestH\x00R\rstatusRequest\x12>\n" +
 	"\vrotate_cert\x18\x06 \x01(\v2\x1b.labassistant.v1.RotateCertH\x00R\n" +
 	"rotateCert\x12:\n" +
-	"\tuninstall\x18\a \x01(\v2\x1a.labassistant.v1.UninstallH\x00R\tuninstallB\t\n" +
-	"\apayload\"@\n" +
+	"\tuninstall\x18\a \x01(\v2\x1a.labassistant.v1.UninstallH\x00R\tuninstall\x128\n" +
+	"\x06config\x18\b \x01(\v2\x1e.labassistant.v1.SessionConfigH\x00R\x06configB\t\n" +
+	"\apayload\"\x9d\x01\n" +
+	"\rSessionConfig\x12H\n" +
+	"\x12heartbeat_interval\x18\x01 \x01(\v2\x19.google.protobuf.DurationR\x11heartbeatInterval\x12B\n" +
+	"\x0fstatus_interval\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\x0estatusInterval\"@\n" +
 	"\n" +
 	"RotateCert\x12\x19\n" +
 	"\bcert_pem\x18\x01 \x01(\fR\acertPem\x12\x17\n" +
@@ -1810,13 +1901,14 @@ const file_v1_labassistant_proto_rawDesc = "" +
 	"\ahost_id\x18\x02 \x01(\tR\x06hostId\x12+\n" +
 	"\x11associate_version\x18\x03 \x01(\tR\x10associateVersion\x125\n" +
 	"\amodules\x18\x04 \x03(\v2\x1b.labassistant.v1.ModuleInfoR\amodules\x12\x17\n" +
-	"\acode_id\x18\x05 \x01(\tR\x06codeId\"\xa8\x01\n" +
+	"\acode_id\x18\x05 \x01(\tR\x06codeId\"\xe0\x01\n" +
 	"\bHelloAck\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12)\n" +
 	"\x10protocol_version\x18\x02 \x01(\rR\x0fprotocolVersion\x12\x18\n" +
 	"\amessage\x18\x03 \x01(\tR\amessage\x12;\n" +
 	"\vserver_time\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"serverTime\"\xc2\x01\n" +
+	"serverTime\x126\n" +
+	"\x06config\x18\x05 \x01(\v2\x1e.labassistant.v1.SessionConfigR\x06config\"\xc2\x01\n" +
 	"\aCommand\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x16\n" +
 	"\x06module\x18\x02 \x01(\tR\x06module\x12\x16\n" +
@@ -1830,9 +1922,10 @@ const file_v1_labassistant_proto_rawDesc = "" +
 	"\tstream_id\x18\x01 \x01(\tR\bstreamId\x12\x12\n" +
 	"\x04stop\x18\x02 \x01(\bR\x04stop\x12\x16\n" +
 	"\x06module\x18\x03 \x01(\tR\x06module\x12\x16\n" +
-	"\x06params\x18\x04 \x01(\fR\x06params\"'\n" +
+	"\x06params\x18\x04 \x01(\fR\x06params\"N\n" +
 	"\rStatusRequest\x12\x16\n" +
-	"\x06module\x18\x01 \x01(\tR\x06module\"u\n" +
+	"\x06module\x18\x01 \x01(\tR\x06module\x12%\n" +
+	"\x0einclude_health\x18\x02 \x01(\bR\rincludeHealth\"u\n" +
 	"\tHeartbeat\x123\n" +
 	"\asent_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x06sentAt\x123\n" +
 	"\x06health\x18\x02 \x01(\v2\x1b.labassistant.v1.HostHealthR\x06health\"\xf5\x01\n" +
@@ -1940,76 +2033,81 @@ func file_v1_labassistant_proto_rawDescGZIP() []byte {
 }
 
 var file_v1_labassistant_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_v1_labassistant_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
+var file_v1_labassistant_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
 var file_v1_labassistant_proto_goTypes = []any{
 	(Privilege)(0),                // 0: labassistant.v1.Privilege
 	(EventKind)(0),                // 1: labassistant.v1.EventKind
 	(JobState)(0),                 // 2: labassistant.v1.JobState
 	(*AssociateMessage)(nil),      // 3: labassistant.v1.AssociateMessage
 	(*ManagerMessage)(nil),        // 4: labassistant.v1.ManagerMessage
-	(*RotateCert)(nil),            // 5: labassistant.v1.RotateCert
-	(*Uninstall)(nil),             // 6: labassistant.v1.Uninstall
-	(*Hello)(nil),                 // 7: labassistant.v1.Hello
-	(*HelloAck)(nil),              // 8: labassistant.v1.HelloAck
-	(*Command)(nil),               // 9: labassistant.v1.Command
-	(*CancelJob)(nil),             // 10: labassistant.v1.CancelJob
-	(*LogStreamRequest)(nil),      // 11: labassistant.v1.LogStreamRequest
-	(*StatusRequest)(nil),         // 12: labassistant.v1.StatusRequest
-	(*Heartbeat)(nil),             // 13: labassistant.v1.Heartbeat
-	(*HostHealth)(nil),            // 14: labassistant.v1.HostHealth
-	(*DiskUsage)(nil),             // 15: labassistant.v1.DiskUsage
-	(*StatusUpdate)(nil),          // 16: labassistant.v1.StatusUpdate
-	(*CommandAck)(nil),            // 17: labassistant.v1.CommandAck
-	(*JobEvent)(nil),              // 18: labassistant.v1.JobEvent
-	(*JobResult)(nil),             // 19: labassistant.v1.JobResult
-	(*LogChunk)(nil),              // 20: labassistant.v1.LogChunk
-	(*ModuleInfo)(nil),            // 21: labassistant.v1.ModuleInfo
-	(*ActionSpec)(nil),            // 22: labassistant.v1.ActionSpec
-	(*Detection)(nil),             // 23: labassistant.v1.Detection
-	nil,                           // 24: labassistant.v1.Detection.CapabilitiesEntry
-	(*timestamppb.Timestamp)(nil), // 25: google.protobuf.Timestamp
+	(*SessionConfig)(nil),         // 5: labassistant.v1.SessionConfig
+	(*RotateCert)(nil),            // 6: labassistant.v1.RotateCert
+	(*Uninstall)(nil),             // 7: labassistant.v1.Uninstall
+	(*Hello)(nil),                 // 8: labassistant.v1.Hello
+	(*HelloAck)(nil),              // 9: labassistant.v1.HelloAck
+	(*Command)(nil),               // 10: labassistant.v1.Command
+	(*CancelJob)(nil),             // 11: labassistant.v1.CancelJob
+	(*LogStreamRequest)(nil),      // 12: labassistant.v1.LogStreamRequest
+	(*StatusRequest)(nil),         // 13: labassistant.v1.StatusRequest
+	(*Heartbeat)(nil),             // 14: labassistant.v1.Heartbeat
+	(*HostHealth)(nil),            // 15: labassistant.v1.HostHealth
+	(*DiskUsage)(nil),             // 16: labassistant.v1.DiskUsage
+	(*StatusUpdate)(nil),          // 17: labassistant.v1.StatusUpdate
+	(*CommandAck)(nil),            // 18: labassistant.v1.CommandAck
+	(*JobEvent)(nil),              // 19: labassistant.v1.JobEvent
+	(*JobResult)(nil),             // 20: labassistant.v1.JobResult
+	(*LogChunk)(nil),              // 21: labassistant.v1.LogChunk
+	(*ModuleInfo)(nil),            // 22: labassistant.v1.ModuleInfo
+	(*ActionSpec)(nil),            // 23: labassistant.v1.ActionSpec
+	(*Detection)(nil),             // 24: labassistant.v1.Detection
+	nil,                           // 25: labassistant.v1.Detection.CapabilitiesEntry
 	(*durationpb.Duration)(nil),   // 26: google.protobuf.Duration
+	(*timestamppb.Timestamp)(nil), // 27: google.protobuf.Timestamp
 }
 var file_v1_labassistant_proto_depIdxs = []int32{
-	7,  // 0: labassistant.v1.AssociateMessage.hello:type_name -> labassistant.v1.Hello
-	13, // 1: labassistant.v1.AssociateMessage.heartbeat:type_name -> labassistant.v1.Heartbeat
-	16, // 2: labassistant.v1.AssociateMessage.status:type_name -> labassistant.v1.StatusUpdate
-	18, // 3: labassistant.v1.AssociateMessage.job_event:type_name -> labassistant.v1.JobEvent
-	19, // 4: labassistant.v1.AssociateMessage.job_result:type_name -> labassistant.v1.JobResult
-	20, // 5: labassistant.v1.AssociateMessage.log_chunk:type_name -> labassistant.v1.LogChunk
-	17, // 6: labassistant.v1.AssociateMessage.ack:type_name -> labassistant.v1.CommandAck
-	8,  // 7: labassistant.v1.ManagerMessage.hello_ack:type_name -> labassistant.v1.HelloAck
-	9,  // 8: labassistant.v1.ManagerMessage.command:type_name -> labassistant.v1.Command
-	10, // 9: labassistant.v1.ManagerMessage.cancel:type_name -> labassistant.v1.CancelJob
-	11, // 10: labassistant.v1.ManagerMessage.log_request:type_name -> labassistant.v1.LogStreamRequest
-	12, // 11: labassistant.v1.ManagerMessage.status_request:type_name -> labassistant.v1.StatusRequest
-	5,  // 12: labassistant.v1.ManagerMessage.rotate_cert:type_name -> labassistant.v1.RotateCert
-	6,  // 13: labassistant.v1.ManagerMessage.uninstall:type_name -> labassistant.v1.Uninstall
-	21, // 14: labassistant.v1.Hello.modules:type_name -> labassistant.v1.ModuleInfo
-	25, // 15: labassistant.v1.HelloAck.server_time:type_name -> google.protobuf.Timestamp
-	26, // 16: labassistant.v1.Command.timeout:type_name -> google.protobuf.Duration
-	25, // 17: labassistant.v1.Heartbeat.sent_at:type_name -> google.protobuf.Timestamp
-	14, // 18: labassistant.v1.Heartbeat.health:type_name -> labassistant.v1.HostHealth
-	15, // 19: labassistant.v1.HostHealth.disks:type_name -> labassistant.v1.DiskUsage
-	25, // 20: labassistant.v1.StatusUpdate.observed_at:type_name -> google.protobuf.Timestamp
-	1,  // 21: labassistant.v1.JobEvent.kind:type_name -> labassistant.v1.EventKind
-	2,  // 22: labassistant.v1.JobEvent.state:type_name -> labassistant.v1.JobState
-	25, // 23: labassistant.v1.JobEvent.at:type_name -> google.protobuf.Timestamp
-	2,  // 24: labassistant.v1.JobResult.state:type_name -> labassistant.v1.JobState
-	22, // 25: labassistant.v1.ModuleInfo.actions:type_name -> labassistant.v1.ActionSpec
-	23, // 26: labassistant.v1.ModuleInfo.detection:type_name -> labassistant.v1.Detection
-	0,  // 27: labassistant.v1.ActionSpec.privilege:type_name -> labassistant.v1.Privilege
-	26, // 28: labassistant.v1.ActionSpec.default_timeout:type_name -> google.protobuf.Duration
-	24, // 29: labassistant.v1.Detection.capabilities:type_name -> labassistant.v1.Detection.CapabilitiesEntry
-	3,  // 30: labassistant.v1.ManagerService.Connect:input_type -> labassistant.v1.AssociateMessage
-	4,  // 31: labassistant.v1.AssociateService.Attach:input_type -> labassistant.v1.ManagerMessage
-	4,  // 32: labassistant.v1.ManagerService.Connect:output_type -> labassistant.v1.ManagerMessage
-	3,  // 33: labassistant.v1.AssociateService.Attach:output_type -> labassistant.v1.AssociateMessage
-	32, // [32:34] is the sub-list for method output_type
-	30, // [30:32] is the sub-list for method input_type
-	30, // [30:30] is the sub-list for extension type_name
-	30, // [30:30] is the sub-list for extension extendee
-	0,  // [0:30] is the sub-list for field type_name
+	8,  // 0: labassistant.v1.AssociateMessage.hello:type_name -> labassistant.v1.Hello
+	14, // 1: labassistant.v1.AssociateMessage.heartbeat:type_name -> labassistant.v1.Heartbeat
+	17, // 2: labassistant.v1.AssociateMessage.status:type_name -> labassistant.v1.StatusUpdate
+	19, // 3: labassistant.v1.AssociateMessage.job_event:type_name -> labassistant.v1.JobEvent
+	20, // 4: labassistant.v1.AssociateMessage.job_result:type_name -> labassistant.v1.JobResult
+	21, // 5: labassistant.v1.AssociateMessage.log_chunk:type_name -> labassistant.v1.LogChunk
+	18, // 6: labassistant.v1.AssociateMessage.ack:type_name -> labassistant.v1.CommandAck
+	9,  // 7: labassistant.v1.ManagerMessage.hello_ack:type_name -> labassistant.v1.HelloAck
+	10, // 8: labassistant.v1.ManagerMessage.command:type_name -> labassistant.v1.Command
+	11, // 9: labassistant.v1.ManagerMessage.cancel:type_name -> labassistant.v1.CancelJob
+	12, // 10: labassistant.v1.ManagerMessage.log_request:type_name -> labassistant.v1.LogStreamRequest
+	13, // 11: labassistant.v1.ManagerMessage.status_request:type_name -> labassistant.v1.StatusRequest
+	6,  // 12: labassistant.v1.ManagerMessage.rotate_cert:type_name -> labassistant.v1.RotateCert
+	7,  // 13: labassistant.v1.ManagerMessage.uninstall:type_name -> labassistant.v1.Uninstall
+	5,  // 14: labassistant.v1.ManagerMessage.config:type_name -> labassistant.v1.SessionConfig
+	26, // 15: labassistant.v1.SessionConfig.heartbeat_interval:type_name -> google.protobuf.Duration
+	26, // 16: labassistant.v1.SessionConfig.status_interval:type_name -> google.protobuf.Duration
+	22, // 17: labassistant.v1.Hello.modules:type_name -> labassistant.v1.ModuleInfo
+	27, // 18: labassistant.v1.HelloAck.server_time:type_name -> google.protobuf.Timestamp
+	5,  // 19: labassistant.v1.HelloAck.config:type_name -> labassistant.v1.SessionConfig
+	26, // 20: labassistant.v1.Command.timeout:type_name -> google.protobuf.Duration
+	27, // 21: labassistant.v1.Heartbeat.sent_at:type_name -> google.protobuf.Timestamp
+	15, // 22: labassistant.v1.Heartbeat.health:type_name -> labassistant.v1.HostHealth
+	16, // 23: labassistant.v1.HostHealth.disks:type_name -> labassistant.v1.DiskUsage
+	27, // 24: labassistant.v1.StatusUpdate.observed_at:type_name -> google.protobuf.Timestamp
+	1,  // 25: labassistant.v1.JobEvent.kind:type_name -> labassistant.v1.EventKind
+	2,  // 26: labassistant.v1.JobEvent.state:type_name -> labassistant.v1.JobState
+	27, // 27: labassistant.v1.JobEvent.at:type_name -> google.protobuf.Timestamp
+	2,  // 28: labassistant.v1.JobResult.state:type_name -> labassistant.v1.JobState
+	23, // 29: labassistant.v1.ModuleInfo.actions:type_name -> labassistant.v1.ActionSpec
+	24, // 30: labassistant.v1.ModuleInfo.detection:type_name -> labassistant.v1.Detection
+	0,  // 31: labassistant.v1.ActionSpec.privilege:type_name -> labassistant.v1.Privilege
+	26, // 32: labassistant.v1.ActionSpec.default_timeout:type_name -> google.protobuf.Duration
+	25, // 33: labassistant.v1.Detection.capabilities:type_name -> labassistant.v1.Detection.CapabilitiesEntry
+	3,  // 34: labassistant.v1.ManagerService.Connect:input_type -> labassistant.v1.AssociateMessage
+	4,  // 35: labassistant.v1.AssociateService.Attach:input_type -> labassistant.v1.ManagerMessage
+	4,  // 36: labassistant.v1.ManagerService.Connect:output_type -> labassistant.v1.ManagerMessage
+	3,  // 37: labassistant.v1.AssociateService.Attach:output_type -> labassistant.v1.AssociateMessage
+	36, // [36:38] is the sub-list for method output_type
+	34, // [34:36] is the sub-list for method input_type
+	34, // [34:34] is the sub-list for extension type_name
+	34, // [34:34] is the sub-list for extension extendee
+	0,  // [0:34] is the sub-list for field type_name
 }
 
 func init() { file_v1_labassistant_proto_init() }
@@ -2034,6 +2132,7 @@ func file_v1_labassistant_proto_init() {
 		(*ManagerMessage_StatusRequest)(nil),
 		(*ManagerMessage_RotateCert)(nil),
 		(*ManagerMessage_Uninstall)(nil),
+		(*ManagerMessage_Config)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -2041,7 +2140,7 @@ func file_v1_labassistant_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_v1_labassistant_proto_rawDesc), len(file_v1_labassistant_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   22,
+			NumMessages:   23,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

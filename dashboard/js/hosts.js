@@ -9,6 +9,7 @@ const credGraceMs = 2500;
 export const hosts = {
   expanded: null,
   hostSort: 'name', // 'name' | 'ip' — how the Hosts list is ordered
+  hostsRefreshing: false,
   addHostOpen: false,
   // Edit Host modal. editHost holds the working copy; editHostOrig captures the values at open
   // time so we can detect changes to the associate-baked fields (connMode/connPort) and warn.
@@ -62,6 +63,23 @@ export const hosts = {
     }
     this.cfg.open = false;
     this.refresh();
+  },
+  // refreshAllHosts asks every connected associate for a heartbeat and fresh module statuses.
+  // The replies come back over the live feed, so this only holds the spinner long enough for the
+  // first of them to land rather than waiting on anything.
+  async refreshAllHosts() {
+    this.hostsRefreshing = true;
+    try {
+      const r = await fetch('/api/v1/hosts/refresh', { method: 'POST' });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        alert('refresh failed: ' + ((e.error && e.error.message) || r.status));
+        return;
+      }
+      await new Promise(res => this._later(res, 1000));
+    } finally {
+      this.hostsRefreshing = false;
+    }
   },
   toggle(id) { this.expanded = this.expanded === id ? null : id; },
   openUninstall(h) {

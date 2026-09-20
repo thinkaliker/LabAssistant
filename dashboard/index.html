@@ -369,6 +369,22 @@
         x-text="'latest ' + expectedAssociate()"
       ></span>
     </div>
+    <div class="flex items-center gap-2 flex-wrap">
+    <!-- Asks every connected associate for a heartbeat + module statuses now; results arrive
+         over the live feed like any other update. -->
+    <button
+      type="button"
+      class="btn"
+      data-variant="outline"
+      data-size="sm"
+      x-show="hosts.length>0"
+      :class="hostsRefreshing && 'is-loading'"
+      :disabled="hostsRefreshing"
+      title="Request a heartbeat and status update from every connected host"
+      @click="refreshAllHosts()"
+    >
+      Refresh
+    </button>
     <div
       class="button-group"
       role="group"
@@ -396,6 +412,7 @@
       >
         IP
       </button>
+    </div>
     </div>
   </div>
   <template x-if="hosts.length===0">
@@ -1152,7 +1169,7 @@
       </div>
 
       <!-- Settings -->
-      <div x-show="page==='settings'" x-init="$watch('page', p => p === 'settings' && checkManagerVersion())">
+      <div x-show="page==='settings'" x-init="$watch('page', p => { if (p === 'settings') checkManagerVersion(); else if (settingsDirty) { settingsDirty = false; refresh(); } })">
         <div class="toolbar page-head">
           <h1 class="page-title">Settings</h1>
         </div>
@@ -1162,7 +1179,7 @@
             <header>
               <h2>Manager</h2>
             </header>
-            <section class="grid gap-4">
+            <section class="grid gap-4" @input="settingsDirty = true" @change="settingsDirty = true">
               <div class="grid gap-4 sm:grid-cols-2">
                 <div class="field">
                   <label for="set-log-level">Log level</label>
@@ -1177,6 +1194,19 @@
                   <label for="set-timezone">Default timezone</label>
                   <input id="set-timezone" class="input" type="text" x-model="settings.defaultTimezone"
                     placeholder="America/Los_Angeles">
+                </div>
+                <div class="field">
+                  <label for="set-heartbeat">Heartbeat interval (seconds)</label>
+                  <input id="set-heartbeat" class="input" type="number" min="5" max="3600" step="1"
+                    x-model.number="settings.heartbeatSeconds">
+                  <p class="text-xs text-muted-foreground">How often hosts report CPU, memory, disk and uptime.</p>
+                </div>
+                <div class="field">
+                  <label for="set-status-poll">Status poll interval (seconds)</label>
+                  <input id="set-status-poll" class="input" type="number" min="5" max="3600" step="1"
+                    x-model.number="settings.statusPollSeconds">
+                  <p class="text-xs text-muted-foreground">How often hosts re-check containers and packages. Only
+                    changes are sent.</p>
                 </div>
               </div>
               <div>

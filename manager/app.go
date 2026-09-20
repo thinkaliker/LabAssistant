@@ -199,6 +199,7 @@ func NewApp(layout paths.Layout, cfg config.Config) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	h.SetIntervals(api.IntervalsOf(set.Manager()))
 	mc, err := modconfig.Load(layout.ModConfigFile())
 	if err != nil {
 		return nil, err

@@ -2,8 +2,10 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/thinkaliker/labassistant/manager/settings"
 )
@@ -13,17 +15,39 @@ func (d Deps) getSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d Deps) putSettings(w http.ResponseWriter, r *http.Request) {
-	var m settings.Manager
+	// Decode over the current settings so a client that omits a field (an older dashboard, a
+	// script setting only the log level) leaves it as it was instead of zeroing it.
+	m := d.Settings.Manager()
 	if err := json.NewDecoder(r.Body).Decode(&m); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_request", "invalid JSON")
 		return
+	}
+	for name, v := range map[string]int{"heartbeatSeconds": m.HeartbeatSeconds, "statusPollSeconds": m.StatusPollSeconds} {
+		if v < settings.MinIntervalSeconds || v > settings.MaxIntervalSeconds {
+			writeErr(w, http.StatusBadRequest, "bad_request",
+				fmt.Sprintf("%s must be between %d and %d", name, settings.MinIntervalSeconds, settings.MaxIntervalSeconds))
+			return
+		}
 	}
 	if err := d.Settings.UpdateManager(m); err != nil {
 		writeErr(w, http.StatusInternalServerError, "error", err.Error())
 		return
 	}
+	d.Hub.SetIntervals(IntervalsOf(m))
 	d.Aud.Record("settings_updated", "", "user", "manager settings updated", nil)
 	writeJSON(w, http.StatusOK, d.Settings.Manager())
+}
+
+// IntervalsOf converts the stored refresh settings into the heartbeat and status-poll intervals
+// the hub pushes to associates.
+func IntervalsOf(m settings.Manager) (heartbeat, status time.Duration) {
+	return time.Duration(m.HeartbeatSeconds) * time.Second, time.Duration(m.StatusPollSeconds) * time.Second
+}
+
+// refreshHosts asks every connected associate for a fresh heartbeat and module statuses now,
+// rather than waiting for the next tick. Replies land on the event feed like any other update.
+func (d Deps) refreshHosts(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusAccepted, map[string]int{"requested": d.Hub.RefreshAll()})
 }
 
 // getModuleConfig returns the stored per-host module config plus its schema (from the

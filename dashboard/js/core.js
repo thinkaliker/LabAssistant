@@ -12,7 +12,10 @@ export const core = {
   authUser: '',
   login: { username: '', password: '' },
   loginError: '',
-  settings: { logLevel: 'info', defaultTimezone: '' },
+  settings: { logLevel: 'info', defaultTimezone: '', heartbeatSeconds: 30, statusPollSeconds: 60 },
+  // settingsDirty is set while the Settings form has unsaved edits. Every heartbeat triggers a
+  // full refresh, which would otherwise overwrite whatever is being typed every few seconds.
+  settingsDirty: false,
   instanceId: '', // manager process marker; a change means it restarted underneath us
   stale: false, // manager restarted, so this page's session/state is no longer valid
   staleReason: '', // 'restart' | 'auth' — which of the two invalidated this page
@@ -194,7 +197,7 @@ export const core = {
     this.approvals = await this._load('/api/v1/approvals', this.approvals, failed);
     this.sudoPrompts = await this._load('/api/v1/sudo', this.sudoPrompts, failed);
     await this._loadAudit();
-    this.settings = await this._load('/api/v1/settings', this.settings, failed);
+    if (!this.settingsDirty) this.settings = await this._load('/api/v1/settings', this.settings, failed);
     this.tokens = await this._load('/api/v1/auth/tokens', this.tokens, quiet);
     this.refreshError = failed.length
       ? `Couldn't refresh ${failed.length === 1 ? 'one part' : failed.length + ' parts'} of the dashboard — showing the last values read successfully.`
@@ -219,11 +222,18 @@ export const core = {
     }
   },
   async saveSettings() {
-    const r = await fetch('/api/v1/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(this.settings) });
+    const body = {
+      ...this.settings,
+      heartbeatSeconds: Number(this.settings.heartbeatSeconds),
+      statusPollSeconds: Number(this.settings.statusPollSeconds),
+    };
+    const r = await fetch('/api/v1/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!r.ok) {
       const e = await r.json().catch(() => ({}));
       alert('Failed to save settings: ' + ((e.error && e.error.message) || r.status));
+      return; // keep the edits on screen so they can be corrected
     }
+    this.settingsDirty = false;
     this.refresh();
   },
   // Display theme. The head script owns storage and the .dark class (it has to run before the

@@ -73,6 +73,7 @@ func Router(d Deps) http.Handler {
 	// Fleet-wide, so no host id — it selects its own targets. Distinct path shape from
 	// /hosts/{id}/upgrade above, so the two patterns cannot overlap.
 	mux.HandleFunc("POST /api/v1/hosts/upgrade-stale", d.upgradeStale)
+	mux.HandleFunc("POST /api/v1/hosts/refresh", d.refreshHosts)
 	mux.HandleFunc("GET /api/v1/hosts/{id}/status", d.getHost)
 	mux.HandleFunc("GET /api/v1/hosts/{id}/modules", d.getModules)
 	mux.HandleFunc("POST /api/v1/hosts/{id}/modules/{name}/actions/{action}", d.runAction)

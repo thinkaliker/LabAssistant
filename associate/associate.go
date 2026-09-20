@@ -28,8 +28,14 @@ const (
 	// ProtocolVersion is the wire protocol version the associate speaks.
 	ProtocolVersion = 1
 
+	// heartbeatInterval is the default vitals cadence; the manager can override it per session
+	// (see SessionConfig), as it can statusInterval below.
 	heartbeatInterval = 30 * time.Second
 	reconnectBackoff  = 5 * time.Second
+
+	// minInterval floors any interval the manager pushes, so a bad value can't turn a ticker
+	// into a busy loop of docker/apt queries.
+	minInterval = 5 * time.Second
 
 	// statusInterval is how often each module's status is re-queried and published without
 	// anything asking for it. Status was only ever published at connect and right after an
@@ -262,7 +268,10 @@ func (a *Associate) runStream(ctx context.Context, cancel context.CancelFunc, st
 		active:     map[string]bool{},
 		logs:       map[string]context.CancelFunc{},
 		lastStatus: map[string][32]byte{},
+		hbEvery:    make(chan time.Duration, 1),
+		stEvery:    make(chan time.Duration, 1),
 	}
+	s.applyConfig(ack.GetHelloAck().GetConfig())
 	go s.sendLoop()
 	go s.heartbeatLoop()
 	go s.commandWorker()
@@ -306,6 +315,43 @@ type session struct {
 
 	statusMu   sync.Mutex
 	lastStatus map[string][32]byte // module -> hash of the last status published this session
+
+	// hbEvery/stEvery carry a new heartbeat/status interval to their loops. Capacity 1, and
+	// applyConfig replaces a pending value rather than blocking, so only the latest one counts.
+	hbEvery chan time.Duration
+	stEvery chan time.Duration
+}
+
+// applyConfig hands manager-pushed intervals to the loops. A nil config or unset duration keeps
+// whatever the loop is already using.
+func (s *session) applyConfig(c *pb.SessionConfig) {
+	if c == nil {
+		return
+	}
+	if c.GetHeartbeatInterval() != nil {
+		setInterval(s.hbEvery, c.GetHeartbeatInterval().AsDuration())
+	}
+	if c.GetStatusInterval() != nil {
+		setInterval(s.stEvery, c.GetStatusInterval().AsDuration())
+	}
+}
+
+func setInterval(ch chan time.Duration, d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	d = max(d, minInterval)
+	for {
+		select {
+		case ch <- d:
+			return
+		default:
+			select {
+			case <-ch: // drop the stale pending value
+			default:
+			}
+		}
+	}
 }
 
 func (s *session) sendLoop() {
@@ -339,6 +385,8 @@ func (s *session) statusLoop() {
 		select {
 		case <-s.ctx.Done():
 			return
+		case d := <-s.stEvery:
+			t.Reset(d)
 		case <-t.C:
 			s.pollStatuses()
 		}
@@ -348,13 +396,19 @@ func (s *session) statusLoop() {
 func (s *session) heartbeatLoop() {
 	t := time.NewTicker(heartbeatInterval)
 	defer t.Stop()
-	s.send(&pb.AssociateMessage{Payload: &pb.AssociateMessage_Heartbeat{Heartbeat: &pb.Heartbeat{SentAt: timestamppb.Now(), Health: gatherHealth()}}})
+	s.sendHeartbeat()
 	for {
 		select {
 		case <-s.ctx.Done():
 			return
+		case d := <-s.hbEvery:
+			t.Reset(d)
 		case <-t.C:
-			s.send(&pb.AssociateMessage{Payload: &pb.AssociateMessage_Heartbeat{Heartbeat: &pb.Heartbeat{SentAt: timestamppb.Now(), Health: gatherHealth()}}})
+			s.sendHeartbeat()
 		}
 	}
+}
+
+func (s *session) sendHeartbeat() {
+	s.send(&pb.AssociateMessage{Payload: &pb.AssociateMessage_Heartbeat{Heartbeat: &pb.Heartbeat{SentAt: timestamppb.Now(), Health: gatherHealth()}}})
 }

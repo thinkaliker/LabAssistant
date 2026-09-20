@@ -48,7 +48,16 @@ message ManagerMessage {
     StatusRequest status_request = 5;
     RotateCert rotate_cert = 6;
     Uninstall uninstall = 7;
+    SessionConfig config = 8;
   }
+}
+
+// SessionConfig carries manager-side tunables for a live session. It rides on HelloAck at connect
+// and is pushed again whenever the operator changes it. Unset/zero durations mean "keep the
+// associate's built-in default", so an older manager that never sends one changes nothing.
+message SessionConfig {
+  google.protobuf.Duration heartbeat_interval = 1;  // how often vitals are sent
+  google.protobuf.Duration status_interval = 2;     // how often module statuses are re-polled
 }
 
 // RotateCert delivers a freshly issued client certificate; the associate persists it and
@@ -85,6 +94,7 @@ message HelloAck {
   uint32 protocol_version = 2;       // version the manager will speak
   string message = 3;                // reason when accepted == false
   google.protobuf.Timestamp server_time = 4;
+  SessionConfig config = 5;
 }
 
 // ---- Commands (manager -> associate) ----
@@ -111,6 +121,7 @@ message LogStreamRequest {
 
 message StatusRequest {
   string module = 1;                 // empty = all modules
+  bool include_health = 2;           // also send a fresh Heartbeat right away
 }
 
 // ---- Status / health (associate -> manager) ----
