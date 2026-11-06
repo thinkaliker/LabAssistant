@@ -23,6 +23,16 @@ window.app = function app() {
   return Object.assign({}, core, hosts, services, composeform, envedit, updates, jobs, actions, scheduler, misc, ansi);
 };
 
+// Installable app (PWA): register the service worker (/sw.js; it caches nothing, see there).
+// Browsers only offer service workers, and app install, on HTTPS or localhost; over plain HTTP
+// navigator.serviceWorker is absent and the dashboard simply stays a web page. Registered after
+// load so it never competes with the page's own requests.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((e) => console.warn('service worker not registered:', e));
+  });
+}
+
 // x-dialog="expr" drives a native <dialog>: showModal() while expr is truthy, close() once it turns
 // falsy. It never writes state back. Esc and backdrop clicks end in the dialog's own 'close' event,
 // which each dialog maps to its state with @close (and can veto beforehand with @cancel).

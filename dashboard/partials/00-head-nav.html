@@ -7,6 +7,13 @@
   <meta name="color-scheme" content="light dark">
   <title>LabAssistant</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <!-- Installable app (PWA): the manifest, the service worker registered by js/main.js, and the
+       home-screen icon iOS reads instead of the manifest's. theme-color tints the app window's
+       title bar; the theme script below keeps it on the page background as the theme changes. -->
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-title" content="LabAssistant">
+  <meta name="theme-color" content="#ffffff">
   <!-- Basecoat themes from a .dark class on <html>, not from prefers-color-scheme directly, so the
        light/dark/auto control in the nav can override the OS. The choice is a per-browser display
        preference (localStorage), not manager state: it is about this screen, not the fleet, and it
@@ -23,8 +30,13 @@
       // Storage can be unavailable or blocked (private windows, cleared site data). Auto is then
       // the fallback and the choice simply doesn't outlive the page.
       try { mode = localStorage.getItem('theme') || 'auto'; } catch (e) { /* auto */ }
-      const paint = () => document.documentElement.classList.toggle(
-        'dark', mode === 'dark' || (mode === 'auto' && dark.matches));
+      // Basecoat's --background in each theme (oklch 100% / 14.5%), for the app window's title bar.
+      const themeColor = document.querySelector('meta[name="theme-color"]');
+      const paint = () => {
+        const isDark = mode === 'dark' || (mode === 'auto' && dark.matches);
+        document.documentElement.classList.toggle('dark', isDark);
+        if (themeColor) themeColor.content = isDark ? '#0a0a0a' : '#ffffff';
+      };
       window.applyTheme = (next) => {
         if (next) {
           mode = next;

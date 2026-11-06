@@ -182,6 +182,16 @@ tls_key  = "/home/<you>/.labassistant/tls/dashboard.key"
 Tailscale certificates last 90 days, so re-run those `tailscale cert` and `chown` lines on a
 schedule (a weekly root cron job is plenty). Any other CA's certificate works the same way.
 
+### Install as an app
+
+Over HTTPS (either way above) the dashboard is installable as an app (PWA): its own window, dock
+or home-screen icon, no browser chrome. In Chrome or Edge use the install icon in the address bar
+(or **Cast, save, and share → Install page as app**), on Android **Add to Home screen**, and in
+Safari **Share → Add to Dock** (macOS) or **Add to Home Screen** (iOS). Browsers only allow this on
+HTTPS (or `localhost`), so a plain `http://<vm>:8080` dashboard can't be installed. The app is
+always live: nothing is cached, and if the manager is unreachable (restarting, updating) the window
+shows a notice and reloads itself when it is back.
+
 ## Workflow
 
 1. Install and run the manager — it becomes your control host and root CA.
