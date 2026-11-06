@@ -7,10 +7,11 @@ let composeCM = null;
 
 // mode: 'simple' (the form view, composeform.js) or 'yaml'. original is the text as loaded or last
 // saved, for the unsaved-changes check; sha256 is what the host reported for it, so a save can't
-// silently overwrite a file changed on the host meanwhile.
+// silently overwrite a file changed on the host meanwhile. modal: the editor is the full-screen
+// modal rather than the panel docked beside the stack list (the Settings choice when it opened).
 const closedCompose = () => ({
   open: false, hostId: '', stack: '', path: '', multiFile: false, loading: false, busy: false, error: '', status: '',
-  mode: 'yaml', truncated: false, original: '', sha256: '', removeOrphans: true,
+  mode: 'yaml', truncated: false, original: '', sha256: '', removeOrphans: true, modal: false,
 });
 
 // The stack card's redeploy dialog. unsaved: the compose editor holds edits to this stack that the
@@ -97,7 +98,17 @@ export const services = {
     }
   },
   // ---- compose editor ----
-  // editCompose reads the file first and only opens the side panel once that succeeds. If the
+  // The editor is one <dialog> in either layout (Settings → Compose editor): a full-screen modal,
+  // or a panel docked to the right half of the page with the stack list beside it. A server that
+  // predates the setting sends none, which means the default, the modal.
+  composeModalPref() { return this.settings.composeEditorLayout !== 'panel'; },
+  composeDocked() { return this.compose.open && !this.compose.modal; },
+  // The page's banners sit behind the modal, out of reach, so it repeats the ones its own work can
+  // raise for this host: a sudo prompt (a save or .env read waits on it) and a pending approval
+  // (a .env Save & redeploy queues one).
+  composeSudoPrompts() { return this.sudoPrompts.filter(p => p.hostId === this.compose.hostId); },
+  composeApprovals() { return this.approvals.filter(a => a.hostId === this.compose.hostId); },
+  // editCompose reads the file first and only opens the editor once that succeeds. If the
   // read needs a sudo password, the sudo banner appears and submitSudo() routes the retry's
   // result back through openComposeFromJob().
   async editCompose(st) {
@@ -125,16 +136,19 @@ export const services = {
     try { const p = typeof job.params === 'string' ? JSON.parse(job.params) : job.params; if (p && p.stack) stack = p.stack; } catch (e) { /* keep res.stack */ }
     if (composeCM) { composeCM.toTextArea(); composeCM = null; }
     const content = normalizeText(res.content);
+    // Opening another stack over a docked editor keeps the dock: the dialog is already open, and
+    // the Settings choice applies the next time it opens.
+    const modal = this.compose.open ? this.compose.modal : this.composeModalPref();
     this.compose = {
       ...closedCompose(), open: true, hostId: job.hostId, stack, path: res.path || '', multiFile: !!res.multiFile,
-      truncated: !!res.truncated, original: content, sha256: res.sha256 || '',
+      truncated: !!res.truncated, original: content, sha256: res.sha256 || '', modal,
     };
     this.cfReset();
-    // On narrow screens the panel flows below the whole stack list rather than pinning beside it,
-    // so it opens off-screen; bring it into view.
+    // On narrow screens the docked panel flows below the whole stack list rather than pinning
+    // beside it, so it opens off-screen; bring it into view.
     this.$nextTick(() => {
       const panel = this.$refs.composePanel;
-      if (panel && window.matchMedia('(max-width: 768px)').matches) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (panel && !modal && window.matchMedia('(max-width: 768px)').matches) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
     if (this.compose.multiFile) return;
     this.$nextTick(async () => {
@@ -246,8 +260,11 @@ export const services = {
     const ok = await this.writeCompose(this.editorValue());
     this.compose.busy = false;
     if (!ok) return;
-    this.compose.status = 'Saved. Redeploy queued — confirm it in the approvals banner.';
-    const { hostId, stack, removeOrphans } = this.compose;
+    const { hostId, stack, removeOrphans, modal } = this.compose;
+    // The modal closes once the file is saved: the approvals banner and the job panel the deploy
+    // leads to are behind it. Docked, they are beside the editor, which stays open.
+    if (modal) this.composeTeardown();
+    else this.compose.status = 'Saved. Redeploy queued — confirm it in the approvals banner.';
     await this.runAction(hostId, 'duo', 'deploy', this.deployParams(hostId, stack, removeOrphans));
   },
   // ---- redeploy ----
@@ -280,8 +297,31 @@ export const services = {
   },
   closeCompose() {
     if (this.composeDirty() && !confirm(`Discard unsaved changes to ${this.compose.stack}'s compose file?`)) return;
+    this.composeTeardown();
+  },
+  composeTeardown() {
     if (composeCM) { composeCM.toTextArea(); composeCM = null; }
     this.cfReset();
     this.compose = closedCompose();
+  },
+  // Esc / backdrop on the modal: vetoed while saving, and when there are unsaved edits the user
+  // keeps. _composeDiscard records the answer for composeDialogClosed.
+  composeCancel(ev) {
+    this._composeDiscard = !this.compose.busy
+      && (!this.composeDirty() || confirm(`Discard unsaved changes to ${this.compose.stack}'s compose file?`));
+    if (!this._composeDiscard) ev.preventDefault();
+  },
+  // composeDialogClosed handles the dialog closing itself. The browser doesn't always let a cancel
+  // be vetoed (a second Esc with no click or keypress in between closes regardless), so a close
+  // nobody agreed to while there is something to lose reopens the editor as it was.
+  composeDialogClosed(el) {
+    if (el.open || !this.compose.open) return; // closed by closeCompose()/composeTeardown()
+    const discard = this._composeDiscard;
+    this._composeDiscard = false;
+    if (!discard && (this.compose.busy || this.composeDirty())) {
+      if (this.compose.modal) el.showModal(); else el.show();
+      return;
+    }
+    this.composeTeardown();
   },
 };

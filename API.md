@@ -194,7 +194,7 @@ Non-2xx responses use:
 | `GET /audit` | Read the audit log. |
 | `GET /events` | SSE stream of host online/offline, job, and status updates. |
 | `GET /settings` | Read manager settings. |
-| `PUT /settings` | Update manager settings. Omitted fields keep their current value. `heartbeatSeconds` (default 30) and `statusPollSeconds` (default 60) set how often associates send vitals and re-poll module statuses; both must be 5–3600 and are pushed to connected associates immediately. |
+| `PUT /settings` | Update manager settings. Omitted fields keep their current value. `heartbeatSeconds` (default 30) and `statusPollSeconds` (default 60) set how often associates send vitals and re-poll module statuses; both must be 5–3600 and are pushed to connected associates immediately. `composeEditorLayout` (default `modal`) is how the dashboard opens the compose editor: `modal` (full screen) or `panel` (docked beside the stack list). |
 | `GET /manager/version` | Compare the running manager with the tip of its checkout's branch on `origin` (read-only `git ls-remote`, cached ~10 min; `?refresh=1` forces a fresh check). Returns `{ "running", "local", "remote", "branch", "updateAvailable", "checkedAt", "error"? }`; `error` explains why no comparison was possible (not a checkout, detached HEAD, remote unreachable). |
 | `GET /backup` | Export settings. |
 | `POST /restore` | Import settings. |

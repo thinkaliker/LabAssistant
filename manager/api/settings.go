@@ -29,6 +29,11 @@ func (d Deps) putSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if m.ComposeEditorLayout != settings.ComposeEditorModal && m.ComposeEditorLayout != settings.ComposeEditorPanel {
+		writeErr(w, http.StatusBadRequest, "bad_request",
+			fmt.Sprintf("composeEditorLayout must be %q or %q", settings.ComposeEditorModal, settings.ComposeEditorPanel))
+		return
+	}
 	if err := d.Settings.UpdateManager(m); err != nil {
 		writeErr(w, http.StatusInternalServerError, "error", err.Error())
 		return

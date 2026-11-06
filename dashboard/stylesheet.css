@@ -659,8 +659,9 @@ button.badge {
 
 /* ---- Dialogs ---- */
 
-/* Native modal dialogs don't lock the page behind them. */
-html:has(dialog[open]) {
+/* Native modal dialogs don't lock the page behind them. Only modal ones: the docked compose
+    editor is an open <dialog> too, and the stack list beside it has to keep scrolling. */
+html:has(dialog:modal) {
     overflow: hidden;
 }
 
@@ -718,16 +719,61 @@ html:has(dialog[open]) {
     }
 }
 
-/* Pin the compose editor to the right half of the viewport. Fixed (not sticky) so it never adds
+/* The compose editor is one <dialog> in both layouts (Settings → Compose editor). Docked, it is
+    opened with show() and the dialog element is only a wrapper: drop the browser's dialog box so
+    the panel inside places itself. */
+.compose-dialog:not(.dialog) {
+    position: static;
+    width: auto;
+    height: auto;
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    overflow: visible;
+}
+
+/* Docked: pin the editor to the right half of the viewport. Fixed (not sticky) so it never adds
     to document height — sticky rendered it at its natural spot below the header and spilled past
     the bottom until you scrolled. Anchoring top+bottom makes it always fit the screen. */
-.compose-panel {
+.compose-dialog:not(.dialog)>.compose-panel {
     position: fixed;
     top: calc(var(--header-h) + 1rem);
     bottom: 1rem;
     right: .75rem;
     width: calc(50vw - 1.1rem);
     overflow: hidden;
+}
+
+/* Modal: fill the screen bar Basecoat's 1rem margin. No scale-in: CodeMirror measures its text
+    while the dialog opens, and a scaled panel would leave every click a few characters off. */
+.compose-dialog.dialog>.compose-panel {
+    width: calc(100% - 2rem);
+    max-width: none;
+    height: calc(100% - 2rem);
+    overflow: hidden;
+    scale: none;
+}
+
+/* The docked panel's header close button sits in the card's header grid; a dialog header is a
+    plain column, so put it in the corner where Basecoat's dialogs keep theirs. */
+.compose-dialog.dialog>.compose-panel>header {
+    padding-inline-end: 2.5rem;
+}
+
+.compose-dialog.dialog>.compose-panel>header>.card-action {
+    position: absolute;
+    top: 1rem;
+    inset-inline-end: 1rem;
+}
+
+/* Footer in the same order as the .env editor's: Close before Save. With .footer-option this puts
+    Close, Save, Save & redeploy on the right and the orphans checkbox on the left. */
+.compose-dialog.dialog footer>.compose-close {
+    order: -1;
 }
 
 /* The body takes the height the header and footer leave, and the editor takes whatever the
@@ -1111,10 +1157,10 @@ html:has(dialog[open]) {
     }
 }
 
-/* On narrow screens the stack list is full width, so drop the fixed overlay and let the editor
-    flow normally beneath it. */
+/* On narrow screens the stack list is full width, so drop the fixed overlay and let the docked
+    editor flow normally beneath it. */
 @media screen and (max-width: 768px) {
-    .compose-panel {
+    .compose-dialog:not(.dialog)>.compose-panel {
         position: static;
         width: auto;
         height: 70vh;

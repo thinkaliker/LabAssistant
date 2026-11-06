@@ -27,6 +27,12 @@ window.app = function app() {
 // falsy. It never writes state back. Esc and backdrop clicks end in the dialog's own 'close' event,
 // which each dialog maps to its state with @close (and can veto beforehand with @cancel).
 //
+// expr === 'inline' opens it with show() instead: not modal, so the page around it stays usable
+// and Esc / backdrop don't apply (the compose editor's docked-panel layout). show() still moves
+// focus into the dialog, onto its first button; a panel beside the page shouldn't take focus from
+// it, so it goes back to where it was (or nowhere, as before the panel opened). Which way it opens
+// is read when it opens; an open dialog keeps its kind.
+//
 // A backdrop click only counts when the press also started on the backdrop: drag-selecting text
 // out of an input and releasing past the panel's edge otherwise lands a click on the <dialog>
 // itself and would throw the form away.
@@ -36,13 +42,19 @@ document.addEventListener('alpine:init', () => {
   window.Alpine.directive('dialog', (el, { expression }, { effect, evaluateLater, cleanup }) => {
     const isOpen = evaluateLater(expression);
     effect(() => isOpen((open) => {
-      if (open && !el.open) el.showModal();
+      if (open && !el.open) {
+        if (open !== 'inline') { el.showModal(); return; }
+        const prev = document.activeElement;
+        el.show();
+        if (prev && prev !== document.body && !el.contains(prev)) prev.focus({ preventScroll: true });
+        else if (el.contains(document.activeElement)) document.activeElement.blur();
+      }
       else if (!open && el.open) el.close();
     }));
     let pressedBackdrop = false;
     const onPointerDown = (e) => { pressedBackdrop = e.target === el; };
     const onClick = (e) => {
-      if (!pressedBackdrop || e.target !== el) return;
+      if (!pressedBackdrop || e.target !== el || !el.matches(':modal')) return;
       // requestClose() fires 'cancel' first, so a dialog vetoing Esc vetoes this too.
       if (el.requestClose) el.requestClose(); else el.close();
     };

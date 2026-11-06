@@ -1,5 +1,5 @@
   <main class="app-main" x-show="ready && !needsLogin" x-cloak
-    :class="compose.open && page==='services' ? 'compose-open' : ''"
+    :class="composeDocked() && page==='services' ? 'compose-open' : ''"
     :style="jobPanelOpen ? ('padding-bottom:' + ((jobPanelHeight || Math.round(window.innerHeight * 0.33)) + 24) + 'px') : ''">
 
       <!-- Partial-refresh notice: one or more endpoints failed to read, so some panels are

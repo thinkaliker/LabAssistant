@@ -12,7 +12,7 @@ export const core = {
   authUser: '',
   login: { username: '', password: '' },
   loginError: '',
-  settings: { logLevel: 'info', defaultTimezone: '', heartbeatSeconds: 30, statusPollSeconds: 60 },
+  settings: { logLevel: 'info', defaultTimezone: '', heartbeatSeconds: 30, statusPollSeconds: 60, composeEditorLayout: 'modal' },
   // settingsDirty is set while the Settings form has unsaved edits. Every heartbeat triggers a
   // full refresh, which would otherwise overwrite whatever is being typed every few seconds.
   settingsDirty: false,
@@ -235,6 +235,19 @@ export const core = {
     }
     this.settingsDirty = false;
     this.refresh();
+  },
+  // The Dashboard card's choices save as soon as they change, like the theme. Only the changed
+  // field is sent (the server keeps the rest), and only it is updated here, so unsaved edits in
+  // the Manager card are neither saved nor overwritten.
+  async saveDashboardSetting(key, value) {
+    const prev = this.settings[key];
+    this.settings[key] = value;
+    const r = await fetch('/api/v1/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ [key]: value }) });
+    if (!r.ok) {
+      this.settings[key] = prev;
+      const e = await r.json().catch(() => ({}));
+      alert('Failed to save settings: ' + ((e.error && e.error.message) || r.status));
+    }
   },
   // Display theme. The head script owns storage and the .dark class (it has to run before the
   // stylesheets); this just hands it the new mode and keeps the control in sync with the result.

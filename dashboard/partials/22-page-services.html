@@ -10,8 +10,8 @@
               @click="hostSort='ip'">IP</button>
           </div>
         </div>
-        <!-- Stack list (shrinks to the left half while the compose editor is open) -->
-        <div class="svc-list grid gap-3" :class="compose.open && 'is-split'">
+        <!-- Stack list (shrinks to the left half while the compose editor is docked beside it) -->
+        <div class="svc-list grid gap-3" :class="composeDocked() && 'is-split'">
           <template x-if="services.stacks.length===0">
             <p class="text-muted-foreground">No compose stacks reported. Add a host which contains a docker compose stack
               first.</p>
@@ -83,10 +83,16 @@
           </template>
         </div>
 
-        <!-- Compose editor panel: pinned to the right half of the viewport (see .compose-panel) -->
-        <div class="card compose-panel" data-size="sm" x-show="compose.open" x-cloak x-ref="composePanel">
+        <!-- Compose editor: one <dialog> in both layouts (Settings → Compose editor). Modal, it fills
+             the screen; docked ('inline': show(), not modal), the panel pins itself to the right half
+             of the viewport and the page stays usable (see .compose-dialog). Esc / backdrop only
+             apply to the modal, and are vetoed while saving or to keep unsaved edits. -->
+        <dialog class="compose-dialog" :class="compose.modal ? 'dialog' : ''"
+          x-dialog="compose.open && (compose.modal || 'inline')" @cancel="composeCancel($event)"
+          @close="composeDialogClosed($el)" aria-labelledby="compose-title">
+        <div class="compose-panel" :class="compose.modal ? '' : 'card'" data-size="sm" x-ref="composePanel">
           <header>
-            <h2 x-text="'Edit compose: '+compose.stack"></h2>
+            <h2 id="compose-title" x-text="'Edit compose: '+compose.stack"></h2>
             <p class="font-mono text-xs" x-text="compose.path || ''"></p>
             <div class="card-action">
               <button type="button" class="btn" data-variant="ghost" data-size="icon-sm" aria-label="Close editor"
@@ -97,6 +103,50 @@
             </div>
           </header>
           <section>
+            <template x-if="compose.modal && stale">
+              <div class="alert" data-variant="warning">
+                <section x-text="staleMessage()"></section>
+              </div>
+            </template>
+            <template x-if="compose.modal && composeSudoPrompts().length">
+              <div class="alert" data-variant="destructive">
+                <h2>Sudo password required</h2>
+                <section>
+                  <template x-for="sp in composeSudoPrompts()" :key="sp.id">
+                    <div class="toolbar">
+                      <span class="font-medium" x-text="`${sp.module} ${sp.action}`"></span>
+                      <div class="actions">
+                        <button type="button" class="btn" data-size="sm" @click="openSudo(sp)">Provide password</button>
+                        <button type="button" class="btn" data-variant="outline" data-size="sm"
+                          @click="cancelSudo(sp.id)">Cancel</button>
+                      </div>
+                    </div>
+                  </template>
+                </section>
+              </div>
+            </template>
+            <template x-if="compose.modal && composeApprovals().length">
+              <div class="alert" data-variant="warning">
+                <h2>Pending approvals</h2>
+                <section>
+                  <template x-for="ap in composeApprovals()" :key="ap.id">
+                    <div class="toolbar">
+                      <div class="flex items-center gap-2 flex-wrap">
+                        <span class="font-medium" x-text="`${ap.module} ${ap.action}`"></span>
+                        <span class="badge" data-variant="destructive" x-show="ap.destructive">destructive</span>
+                        <span class="badge" data-variant="outline" x-show="ap.params && ap.params.removeOrphans">removes orphans</span>
+                      </div>
+                      <div class="actions">
+                        <button type="button" class="btn" data-variant="success" data-size="sm"
+                          @click="confirmApproval(ap.id)">Confirm</button>
+                        <button type="button" class="btn" data-variant="destructive" data-size="sm"
+                          @click="rejectApproval(ap.id)">Reject</button>
+                      </div>
+                    </div>
+                  </template>
+                </section>
+              </div>
+            </template>
             <template x-if="compose.multiFile">
               <div class="alert" data-variant="warning">
                 <section>This stack is built from multiple compose files; editing is disabled to avoid clobbering
@@ -292,12 +342,13 @@
             <button type="button" class="btn" data-variant="warning"
               :disabled="compose.loading || compose.multiFile || compose.truncated || compose.busy"
               @click="saveAndRedeploy()">Save &amp; redeploy</button>
-            <label class="label" x-show="!compose.multiFile && !compose.truncated" :title="orphansTitle(compose.hostId)">
+            <label class="label footer-option" x-show="!compose.multiFile && !compose.truncated" :title="orphansTitle(compose.hostId)">
               <input type="checkbox" class="input" :checked="compose.removeOrphans && canRemoveOrphans(compose.hostId)"
                 :disabled="!canRemoveOrphans(compose.hostId)" @change="compose.removeOrphans = $event.target.checked">
               Remove orphaned containers</label>
-            <button type="button" class="btn" data-variant="outline" @click="closeCompose()">Close</button>
+            <button type="button" class="btn compose-close" data-variant="outline" @click="closeCompose()">Close</button>
           </footer>
         </div>
+        </dialog>
       </div>
 

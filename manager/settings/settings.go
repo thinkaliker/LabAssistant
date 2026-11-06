@@ -26,7 +26,16 @@ type Manager struct {
 	// they re-query module statuses. Both are pushed to connected associates when changed.
 	HeartbeatSeconds  int `json:"heartbeatSeconds"`
 	StatusPollSeconds int `json:"statusPollSeconds"`
+	// ComposeEditorLayout is how the dashboard opens the compose editor: ComposeEditorModal
+	// (full screen over the page) or ComposeEditorPanel (docked beside the stack list).
+	ComposeEditorLayout string `json:"composeEditorLayout"`
 }
+
+// The compose editor layouts the dashboard knows.
+const (
+	ComposeEditorModal = "modal"
+	ComposeEditorPanel = "panel"
+)
 
 // Defaults and bounds for the associate refresh intervals. The floor keeps a typo from turning
 // every host into a busy loop of docker/apt queries; the ceiling keeps "online" meaningful.
@@ -65,9 +74,10 @@ type Store struct {
 // Load reads settings from path (missing file yields defaults).
 func Load(path string) (*Store, error) {
 	s := &Store{path: path, d: data{Manager: Manager{
-		LogLevel:          "info",
-		HeartbeatSeconds:  DefaultHeartbeatSeconds,
-		StatusPollSeconds: DefaultStatusPollSeconds,
+		LogLevel:            "info",
+		HeartbeatSeconds:    DefaultHeartbeatSeconds,
+		StatusPollSeconds:   DefaultStatusPollSeconds,
+		ComposeEditorLayout: ComposeEditorModal,
 	}, AuthUsername: "admin"}}
 	b, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {

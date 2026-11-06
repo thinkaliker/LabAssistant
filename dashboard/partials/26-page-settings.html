@@ -75,6 +75,25 @@
 
           <div class="card">
             <header>
+              <h2>Dashboard</h2>
+            </header>
+            <section class="grid gap-4 sm:grid-cols-2">
+              <div class="field">
+                <label for="set-compose-layout">Compose editor</label>
+                <select id="set-compose-layout" class="select w-full"
+                  :value="settings.composeEditorLayout === 'panel' ? 'panel' : 'modal'"
+                  @change="saveDashboardSetting('composeEditorLayout', $event.target.value)">
+                  <option value="modal">Full screen</option>
+                  <option value="panel">Side panel</option>
+                </select>
+                <p class="text-xs text-muted-foreground">Full screen covers the page while you edit; the side panel
+                  keeps the stack list beside it. Takes effect the next time you open the editor.</p>
+              </div>
+            </section>
+          </div>
+
+          <div class="card">
+            <header>
               <h2>API Tokens</h2>
             </header>
             <section class="grid gap-3">
