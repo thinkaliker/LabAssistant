@@ -77,11 +77,16 @@
           </div>
         </template>
         <div class="toolbar">
-          <div class="button-group" role="group" aria-label="Editor view">
-            <button type="button" class="btn" data-variant="outline" data-size="sm" :aria-pressed="envEdit.mode==='simple'"
-              @click="envSetMode('simple')">Simple</button>
-            <button type="button" class="btn" data-variant="outline" data-size="sm" :aria-pressed="envEdit.mode==='raw'"
-              @click="envSetMode('raw')">Raw</button>
+          <div class="flex items-center gap-2 flex-wrap">
+            <div class="button-group" role="group" aria-label="Editor view">
+              <button type="button" class="btn" data-variant="outline" data-size="sm" :aria-pressed="envEdit.mode==='simple'"
+                @click="envSetMode('simple')">Simple</button>
+              <button type="button" class="btn" data-variant="outline" data-size="sm" :aria-pressed="envEdit.mode==='raw'"
+                @click="envSetMode('raw')">Raw</button>
+            </div>
+            <!-- mousedown.prevent keeps focus (and the selection it acts on) in the text. -->
+            <button type="button" class="btn" data-variant="ghost" data-size="sm" x-show="envEdit.mode==='raw'"
+              :title="commentTitle()" @mousedown.prevent @click="envToggleComment()">Toggle comment</button>
           </div>
           <span class="text-xs text-muted-foreground">Values are read by docker compose for <code>${VAR}</code> in the
             compose file.</span>
@@ -158,7 +163,8 @@
         </div>
 
         <textarea class="textarea font-mono env-raw" x-show="envEdit.mode==='raw'" x-model="envEdit.raw" rows="16"
-          spellcheck="false" autocomplete="off" aria-label=".env contents"></textarea>
+          spellcheck="false" autocomplete="off" aria-label=".env contents" x-ref="envRaw"
+          @keydown="envRawKeydown($event)"></textarea>
 
         <p class="text-sm text-destructive" x-show="envEdit.error" x-text="envEdit.error"></p>
         <p class="text-sm text-success" x-show="envEdit.status" x-text="envEdit.status"></p>

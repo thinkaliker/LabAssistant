@@ -172,6 +172,10 @@
                   :disabled="!cform.canUndo" @click="cfUndo()">Undo</button>
                 <button type="button" class="btn" data-variant="ghost" data-size="sm" x-show="compose.mode==='simple'"
                   @click="cfCollapseAll()">Collapse all</button>
+                <!-- mousedown.prevent keeps focus (and the selection it acts on) in the editor. -->
+                <button type="button" class="btn" data-variant="ghost" data-size="sm"
+                  x-show="compose.mode==='yaml' && !compose.truncated" :title="commentTitle()"
+                  @mousedown.prevent @click="composeToggleComment()">Toggle comment</button>
               </div>
               <button type="button" class="btn" data-variant="outline" data-size="sm"
                 :class="envEdit.loading && 'is-loading'"

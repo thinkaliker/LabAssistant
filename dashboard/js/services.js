@@ -1,5 +1,7 @@
 // Services page: host-tagged sorting, service status tags, and the compose file editor.
 
+import { isCommentShortcut, commentTitle as lineCommentTitle, toggleCodeMirror, toggleTextarea } from './linecomment.js';
+
 // CodeMirror instance for the compose editor, kept OUT of Alpine's reactive state so its
 // internal objects aren't wrapped in reactive proxies (which breaks the editor). Module-scoped
 // because every user of it lives in this file, and there is one app() component per page.
@@ -203,6 +205,7 @@ export const services = {
     if (!window.CodeMirror) { // fallback: plain textarea with basic tab handling
       ta.style.cssText = 'width:100%;height:60vh;font-family:monospace';
       ta.onkeydown = (e) => {
+        if (isCommentShortcut(e)) { e.preventDefault(); toggleTextarea(ta); return; }
         if (e.key === 'Tab') { e.preventDefault(); const s = ta.selectionStart, en = ta.selectionEnd; ta.value = ta.value.slice(0, s) + '  ' + ta.value.slice(en); ta.selectionStart = ta.selectionEnd = s + 2; }
       };
       return;
@@ -220,8 +223,22 @@ export const services = {
         'Shift-Tab': (cm) => cm.indentSelection('subtract'),
       },
     });
+    // Cmd/Ctrl+/ toggles comments. Matched on keydown by the character typed (see
+    // isCommentShortcut) rather than as an extraKeys binding, which goes by the physical key.
+    composeCM.on('keydown', (cm, e) => {
+      if (!isCommentShortcut(e)) return;
+      e.preventDefault();
+      toggleCodeMirror(cm);
+    });
     composeCM.setSize(null, '60vh');
     setTimeout(() => composeCM && composeCM.refresh(), 50);
+  },
+  // The YAML view's "Toggle comment" button (Cmd/Ctrl+/ in the editor). The button keeps focus in
+  // the editor (mousedown.prevent), so the selection it acts on is still the one on screen.
+  commentTitle() { return lineCommentTitle(); },
+  composeToggleComment() {
+    if (composeCM) { toggleCodeMirror(composeCM); composeCM.focus(); }
+    else if (this.$refs.composeEditor) toggleTextarea(this.$refs.composeEditor);
   },
   // editorValue is the text a save writes. The form's text only counts while it holds a document;
   // otherwise the YAML editor (which always has the file) does, so a save can never send nothing.

@@ -3,6 +3,7 @@
 // view edits it directly.
 
 import { parseEnv, envRows, envOps } from './dotenv.js';
+import { isCommentShortcut, toggleTextarea } from './linecomment.js';
 
 // Mirrors maxEnvBytes in modules/duo/env.go.
 const MAX_ENV_BYTES = 256 * 1024;
@@ -102,6 +103,16 @@ export const envedit = {
   envToggleReveal(row) {
     const r = this.envEdit.reveal;
     this.envEdit.reveal = r.includes(row.id) ? r.filter((x) => x !== row.id) : [...r, row.id];
+  },
+  // Raw view: Cmd/Ctrl+/ or the "Toggle comment" button comments out the selected lines, or
+  // uncomments them (see linecomment.js).
+  envRawKeydown(e) {
+    if (!isCommentShortcut(e)) return;
+    e.preventDefault();
+    toggleTextarea(e.target);
+  },
+  envToggleComment() {
+    if (this.$refs.envRaw) toggleTextarea(this.$refs.envRaw);
   },
   envSetMode(mode) {
     if (mode === this.envEdit.mode) return;
