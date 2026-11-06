@@ -157,6 +157,7 @@ Non-2xx responses use:
 |---------------|-------------|
 | `POST /auth/login` | Establish a session. |
 | `POST /auth/logout` | End the session. |
+| `POST /auth/password` | Change the dashboard password: `{ "currentPassword", "newPassword" }` → `204`, and every *other* session is signed out (API tokens are untouched). Needs a session cookie — an API token gets `403 session_required`. A wrong current password is `403 wrong_password`; an empty or over-72-byte new one is `400`. With no password set yet it is `409 no_password`: the first one is set on the manager host with `manage.sh setpass`. |
 | `POST /auth/tokens` | Mint an API token. |
 | `DELETE /auth/tokens/{id}` | Revoke an API token. |
 | `GET /overview` | Lab-wide aggregate summary (see Overview). |

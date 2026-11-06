@@ -109,6 +109,12 @@ running service reads — always prefer it over `./bin/manager setpass` to avoid
 leaves the dashboard in open mode (no login/logout). (Deployed with `--no-service`? Run
 `./bin/manager serve` directly instead — dashboard on :8080, associate mTLS on :8443.)
 
+Once a password is set, change it from **Settings → Password** in the dashboard: it takes effect
+immediately and signs out every other session. `setpass` still works (say, if you've forgotten the
+password), but it writes the file behind the running manager's back, so restart the service right
+after — until then the old password keeps working, and a settings or token change made from the
+dashboard in the meantime writes the old password back.
+
 The deploy script installs a starter config at `$LABASSISTANT_HOME/config/config.toml` (copied
 from [`config.sample.toml`](config.sample.toml); with the default home that's
 `~/.labassistant/config/config.toml`). To serve the dashboard on a different port — e.g. when 8080

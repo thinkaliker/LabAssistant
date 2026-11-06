@@ -1331,6 +1331,47 @@
 
           <div class="card">
             <header>
+              <h2>Password</h2>
+            </header>
+            <section>
+              <!-- authUser is set only when the manager requires a login, so it doubles as the
+                   open-mode test: with no password there is nothing to change from here. -->
+              <form class="grid gap-4" x-show="authUser" @submit.prevent="changePassword()">
+                <input type="text" autocomplete="username" :value="authUser" hidden>
+                <div class="grid gap-4 sm:grid-cols-3">
+                  <div class="field">
+                    <label for="pw-current">Current password</label>
+                    <input id="pw-current" class="input" type="password" autocomplete="current-password"
+                      x-model="pw.current" required>
+                  </div>
+                  <div class="field">
+                    <label for="pw-new">New password</label>
+                    <input id="pw-new" class="input" type="password" autocomplete="new-password"
+                      x-model="pw.next" required>
+                  </div>
+                  <div class="field">
+                    <label for="pw-confirm">Confirm new password</label>
+                    <input id="pw-confirm" class="input" type="password" autocomplete="new-password"
+                      x-model="pw.confirm" required>
+                  </div>
+                </div>
+                <p class="text-xs text-muted-foreground">Signs out every other browser and device signed in as
+                  <strong x-text="authUser"></strong>. This one stays signed in. API tokens are not affected.</p>
+                <div>
+                  <button type="submit" class="btn" :class="pw.busy && 'is-loading'" :disabled="pw.busy">Change
+                    password</button>
+                </div>
+                <p class="text-sm text-destructive" x-show="pw.error" x-text="pw.error"></p>
+                <p class="text-sm text-success" x-show="pw.done" x-text="pw.done"></p>
+              </form>
+              <p class="text-sm text-muted-foreground" x-show="!authUser">No password is set, so anyone who can
+                reach this dashboard can use it. Set one on the manager host with
+                <code>./scripts/manage.sh setpass</code>, then restart the manager.</p>
+            </section>
+          </div>
+
+          <div class="card">
+            <header>
               <h2>API Tokens</h2>
             </header>
             <section class="grid gap-3">

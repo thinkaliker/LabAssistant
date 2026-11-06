@@ -4,10 +4,13 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/thinkaliker/labassistant/manager/settings"
 )
 
 const sessionCookie = "la_session"
@@ -55,6 +58,20 @@ func (s *Sessions) Delete(tok string) {
 	s.mu.Lock()
 	delete(s.m, tok)
 	s.mu.Unlock()
+}
+
+// DeleteExcept invalidates every session but keep, returning how many it ended.
+func (s *Sessions) DeleteExcept(keep string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for tok := range s.m {
+		if tok != keep {
+			delete(s.m, tok)
+			n++
+		}
+	}
+	return n
 }
 
 // authMiddleware enforces authentication on /api/v1 except the public login and session
@@ -124,6 +141,52 @@ func (d Deps) login(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode, MaxAge: int(sessionTTL.Seconds()),
 	})
 	writeJSON(w, http.StatusOK, map[string]string{"username": req.Username})
+}
+
+// changePassword replaces the dashboard password and signs out every other session, so a
+// password change also locks out anyone holding an old login. It needs a dashboard session,
+// not an API token: a token that could set the password could turn itself into a full login.
+func (d Deps) changePassword(w http.ResponseWriter, r *http.Request) {
+	if !d.Settings.AuthConfigured() {
+		writeErr(w, http.StatusConflict, "no_password",
+			"no password is set; set the first one with `manage.sh setpass` on the manager host")
+		return
+	}
+	c, err := r.Cookie(sessionCookie)
+	if err != nil || !d.Sessions.Valid(c.Value) {
+		writeErr(w, http.StatusForbidden, "session_required", "changing the password needs a dashboard sign-in, not an API token")
+		return
+	}
+	var req struct {
+		CurrentPassword string `json:"currentPassword"`
+		NewPassword     string `json:"newPassword"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", "invalid JSON")
+		return
+	}
+	switch err := d.Settings.ChangePassword(req.CurrentPassword, req.NewPassword); {
+	case err == nil:
+	case errors.Is(err, settings.ErrWrongPassword):
+		writeErr(w, http.StatusForbidden, "wrong_password", "current password is incorrect")
+		return
+	case errors.Is(err, settings.ErrEmptyPassword):
+		writeErr(w, http.StatusBadRequest, "bad_request", "new password cannot be empty")
+		return
+	case errors.Is(err, settings.ErrPasswordTooLong):
+		writeErr(w, http.StatusBadRequest, "bad_request", "new password is too long (72 bytes at most)")
+		return
+	case errors.Is(err, settings.ErrPasswordChanged):
+		writeErr(w, http.StatusConflict, "conflict", "the password was changed at the same time; sign in again and retry")
+		return
+	default:
+		writeErr(w, http.StatusInternalServerError, "error", err.Error())
+		return
+	}
+	ended := d.Sessions.DeleteExcept(c.Value)
+	d.Aud.Record("password_changed", "", "user", "dashboard password changed",
+		map[string]int{"sessionsEnded": ended})
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (d Deps) logout(w http.ResponseWriter, r *http.Request) {

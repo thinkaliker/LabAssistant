@@ -13,6 +13,8 @@ export const misc = {
   newTokenName: '',
   newTokenAudit: false,
   newTokenValue: '',
+  // Settings → Password form; error and done are the messages shown under it.
+  pw: { current: '', next: '', confirm: '', busy: false, error: '', done: '' },
 
   // ---- audit pagination (client-side over the fetched newest-first entries) ----
   auditPages() { return Math.max(1, Math.ceil(this.audit.length / this.auditPageSize)); },
@@ -131,6 +133,32 @@ export const misc = {
       }
       this.checkInstance();
     }, 2000);
+  },
+  async changePassword() {
+    const pw = this.pw;
+    pw.error = ''; pw.done = '';
+    if (pw.next !== pw.confirm) { pw.error = 'The new passwords don\'t match.'; return; }
+    if (pw.next === pw.current) { pw.error = 'The new password is the same as the current one.'; return; }
+    pw.busy = true;
+    try {
+      const r = await fetch('/api/v1/auth/password', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword: pw.current, newPassword: pw.next }),
+      });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        pw.error = (e.error && e.error.message) || `Couldn't change the password (${r.status}).`;
+        // Keep the new password typed in so a wrong current one can be fixed and resubmitted.
+        if (r.status === 403) pw.current = '';
+        return;
+      }
+      pw.current = ''; pw.next = ''; pw.confirm = '';
+      pw.done = 'Password changed. Other sessions have been signed out.';
+    } catch (e) {
+      pw.error = 'Couldn\'t reach the manager.';
+    } finally {
+      pw.busy = false;
+    }
   },
   async createToken() {
     const r = await fetch('/api/v1/auth/tokens', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: this.newTokenName, auditAccess: this.newTokenAudit }) });

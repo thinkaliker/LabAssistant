@@ -100,6 +100,7 @@ func Router(d Deps) http.Handler {
 	mux.HandleFunc("POST /api/v1/auth/login", d.login)
 	mux.HandleFunc("POST /api/v1/auth/logout", d.logout)
 	mux.HandleFunc("GET /api/v1/auth/session", d.session)
+	mux.HandleFunc("POST /api/v1/auth/password", d.changePassword)
 	mux.HandleFunc("GET /api/v1/auth/tokens", d.listTokens)
 	mux.HandleFunc("POST /api/v1/auth/tokens", d.createToken)
 	mux.HandleFunc("DELETE /api/v1/auth/tokens/{id}", d.revokeToken)

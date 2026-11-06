@@ -5,8 +5,9 @@
 # manager/config/config.go for the authoritative list). The deploy script installs
 # this file for you on a fresh home and never overwrites an existing config.toml.
 #
-# Note: the dashboard login (set with `manager setpass`) and the live log level
-# (set from the dashboard) live in data/settings.json, not here.
+# Note: the dashboard login (first set with `manager setpass`, then changeable
+# from Settings → Password) and the live log level (set from the dashboard) live
+# in data/settings.json, not here.
 
 # --- network -----------------------------------------------------------------
 

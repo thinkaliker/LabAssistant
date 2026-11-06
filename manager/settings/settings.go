@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"log/slog"
 	"os"
 	"sync"
 	"time"
@@ -46,23 +47,44 @@ const (
 	MaxIntervalSeconds       = 3600
 )
 
-// Token is an API token record (the plaintext is shown only once at creation).
+// Token is an API token's metadata, as listed to the dashboard (the plaintext is shown only
+// once at creation). The hash that authenticates it lives on storedToken, so no API response
+// can carry it.
 type Token struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
-	Hash      string    `json:"-"`
 	CreatedAt time.Time `json:"createdAt"`
 	// AuditAccess opts a token into reading the audit log. Off by default: the audit trail
 	// can reference sensitive operations, so automation tokens don't get it implicitly.
 	AuditAccess bool `json:"auditAccess"`
 }
 
-type data struct {
-	Manager      Manager `json:"manager"`
-	AuthUsername string  `json:"authUsername"`
-	AuthPassHash string  `json:"authPassHash"`
-	Tokens       []Token `json:"tokens"`
+// storedToken is a token as persisted: its metadata plus the SHA-256 of the plaintext. The
+// hash used to be a `json:"-"` field on Token to keep it out of API responses, which kept it
+// out of settings.json too, so every token stopped authenticating at the next restart.
+type storedToken struct {
+	Token
+	Hash string `json:"hash"`
 }
+
+type data struct {
+	Manager      Manager       `json:"manager"`
+	AuthUsername string        `json:"authUsername"`
+	AuthPassHash string        `json:"authPassHash"`
+	Tokens       []storedToken `json:"tokens"`
+}
+
+// Errors from ChangePassword.
+var (
+	ErrNoPassword    = errors.New("no password is set")
+	ErrWrongPassword = errors.New("current password is incorrect")
+	ErrEmptyPassword = errors.New("new password cannot be empty")
+	// ErrPasswordTooLong is bcrypt's input limit: it refuses anything past 72 bytes.
+	ErrPasswordTooLong = bcrypt.ErrPasswordTooLong
+	// ErrPasswordChanged means the password changed between checking the current one and
+	// storing the new one (a concurrent change); the caller should retry with the new current.
+	ErrPasswordChanged = errors.New("password was changed concurrently")
+)
 
 // Store is the persisted settings + auth store.
 type Store struct {
@@ -89,7 +111,24 @@ func Load(path string) (*Store, error) {
 	if err := json.Unmarshal(b, &s.d); err != nil {
 		return nil, err
 	}
+	s.dropHashlessTokens()
 	return s, nil
+}
+
+// dropHashlessTokens removes tokens saved before their hash was persisted. Without a hash a
+// token can never authenticate, so listing it would only pass a dead credential off as live;
+// the warning names each one so it can be reissued.
+func (s *Store) dropHashlessTokens() {
+	kept := s.d.Tokens[:0]
+	for _, t := range s.d.Tokens {
+		if t.Hash == "" {
+			slog.Warn("dropping API token saved without its hash; create a new one to replace it",
+				"id", t.ID, "name", t.Name, "created", t.CreatedAt)
+			continue
+		}
+		kept = append(kept, t)
+	}
+	s.d.Tokens = kept
 }
 
 func (s *Store) save() error {
@@ -149,6 +188,46 @@ func (s *Store) SetPassword(username, password string) error {
 	return s.save()
 }
 
+// ChangePassword replaces the login password once current is verified. It refuses when no
+// password is set yet (ErrNoPassword): the first one comes from `manager setpass`, so a
+// dashboard left in open mode can't be claimed by whoever reaches it first.
+//
+// bcrypt is deliberately slow, so both hashes are computed outside the lock (holding it would
+// stall every request's auth check); the swap then only lands if the hash is still the one
+// that was verified.
+func (s *Store) ChangePassword(current, next string) error {
+	if next == "" {
+		return ErrEmptyPassword
+	}
+	if len(next) > 72 {
+		return ErrPasswordTooLong
+	}
+	s.mu.RLock()
+	old := s.d.AuthPassHash
+	s.mu.RUnlock()
+	if old == "" {
+		return ErrNoPassword
+	}
+	if bcrypt.CompareHashAndPassword([]byte(old), []byte(current)) != nil {
+		return ErrWrongPassword
+	}
+	h, err := bcrypt.GenerateFromPassword([]byte(next), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.d.AuthPassHash != old {
+		return ErrPasswordChanged
+	}
+	s.d.AuthPassHash = string(h)
+	if err := s.save(); err != nil {
+		s.d.AuthPassHash = old // keep memory and disk agreeing on the live password
+		return err
+	}
+	return nil
+}
+
 // CheckLogin verifies username + password.
 func (s *Store) CheckLogin(username, password string) bool {
 	s.mu.RLock()
@@ -166,9 +245,9 @@ func (s *Store) AddToken(name string, auditAccess bool) (Token, string, error) {
 		return Token{}, "", err
 	}
 	plain := hex.EncodeToString(raw)
-	t := Token{ID: uuid.NewString(), Name: name, Hash: hashToken(plain), CreatedAt: time.Now(), AuditAccess: auditAccess}
+	t := Token{ID: uuid.NewString(), Name: name, CreatedAt: time.Now(), AuditAccess: auditAccess}
 	s.mu.Lock()
-	s.d.Tokens = append(s.d.Tokens, t)
+	s.d.Tokens = append(s.d.Tokens, storedToken{Token: t, Hash: hashToken(plain)})
 	err := s.save()
 	s.mu.Unlock()
 	return t, plain, err
@@ -193,7 +272,9 @@ func (s *Store) ListTokens() []Token {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]Token, len(s.d.Tokens))
-	copy(out, s.d.Tokens)
+	for i, t := range s.d.Tokens {
+		out[i] = t.Token
+	}
 	return out
 }
 
