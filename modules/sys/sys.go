@@ -3,9 +3,11 @@
 // are an explicit, enumerated set (never arbitrary command execution); privilege is
 // declared per action.
 //
-// reboot and restart-service are SIMULATED in this build so development hosts are never
-// actually rebooted. TODO(real): wire reboot -> `systemctl reboot` and restart-service ->
-// `systemctl restart <unit>` via the privileged helper, gated behind explicit enablement.
+// reboot and restart-service act on the host for real, run through the privileged helper:
+// systemd or OpenRC on Linux, shutdown / launchctl on macOS. An OS without a known command
+// fails the action rather than pretending. Setting LABASSISTANT_SYS_SIMULATE=1 on the
+// associate swaps them for a harmless simulation (local testing); nothing else does, since
+// the host OS says nothing about whether a machine is safe to reboot.
 package sys
 
 import (
@@ -20,15 +22,29 @@ import (
 	"runtime"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/thinkaliker/labassistant/module"
 )
 
-// realSys reports whether reboot/restart-service should run for real. Real destructive
-// host operations are gated behind LABASSISTANT_SYS_REAL=1 on Linux so development hosts
-// are never rebooted by accident.
-func realSys() bool {
-	return runtime.GOOS == "linux" && os.Getenv("LABASSISTANT_SYS_REAL") == "1"
+// SimulateEnv, set to "1" on the associate, makes reboot/restart-service simulate instead of
+// acting on the host. The associate forwards it to the privileged helper (it is listed in
+// elevated.ForwardedEnv), because sudo resets the helper's environment.
+const SimulateEnv = "LABASSISTANT_SYS_SIMULATE"
+
+// simulated reports whether reboot/restart-service are swapped for a simulation.
+func simulated() bool { return os.Getenv(SimulateEnv) == "1" }
+
+// mode is shown in the Detect capabilities on the dashboard's Hosts page: "simulated" when
+// opted out, "unsupported" on an OS this module cannot reboot, else "real".
+func mode() string {
+	if simulated() {
+		return "simulated"
+	}
+	if _, err := rebootArgv(runtime.GOOS, hasSystemctl()); err != nil {
+		return "unsupported"
+	}
+	return "real"
 }
 
 // Module is the sys capability.
@@ -54,7 +70,7 @@ func (m *Module) Manifest() module.Manifest {
 }
 
 func (m *Module) Detect(ctx context.Context) (module.Detection, error) {
-	return module.Detection{Applicable: true, Capabilities: map[string]string{"os": runtime.GOOS}}, nil
+	return module.Detection{Applicable: true, Capabilities: map[string]string{"os": runtime.GOOS, "mode": mode()}}, nil
 }
 
 func (m *Module) Status(ctx context.Context) (module.Status, error) {
@@ -66,10 +82,14 @@ func (m *Module) Status(ctx context.Context) (module.Status, error) {
 func (m *Module) Execute(ctx context.Context, req module.ActionRequest, emit func(module.Event)) (module.Result, error) {
 	switch req.Action {
 	case "reboot":
-		if realSys() {
-			return runReal(ctx, emit, "systemctl", "reboot")
+		if simulated() {
+			return m.simulate(ctx, emit, "rebooting host (simulated)", "host would reboot now")
 		}
-		return m.simulate(ctx, emit, "rebooting host (simulated)", "host would reboot now")
+		argv, err := rebootArgv(runtime.GOOS, hasSystemctl())
+		if err != nil {
+			return module.Result{State: module.JobFailed, Error: err.Error()}, nil
+		}
+		return runReal(ctx, emit, "requesting reboot; the host goes offline and reconnects once it is back up", argv...)
 	case "restart-service":
 		var p struct {
 			Service string `json:"service"`
@@ -78,10 +98,17 @@ func (m *Module) Execute(ctx context.Context, req module.ActionRequest, emit fun
 		if p.Service == "" {
 			return module.Result{State: module.JobFailed, Error: "service is required"}, nil
 		}
-		if realSys() {
-			return runReal(ctx, emit, "systemctl", "restart", p.Service)
+		if !validService(p.Service) {
+			return module.Result{State: module.JobFailed, Error: fmt.Sprintf("invalid service name %q", p.Service)}, nil
 		}
-		return m.simulate(ctx, emit, "restarting "+p.Service+" (simulated)", p.Service+" restarted")
+		if simulated() {
+			return m.simulate(ctx, emit, "restarting "+p.Service+" (simulated)", p.Service+" restarted")
+		}
+		argv, err := restartArgv(runtime.GOOS, hasSystemctl(), p.Service)
+		if err != nil {
+			return module.Result{State: module.JobFailed, Error: err.Error()}, nil
+		}
+		return runReal(ctx, emit, "restarting "+p.Service, argv...)
 	case "uptime":
 		return dataResult(map[string]string{"output": strings.TrimSpace(runCmd(ctx, "uptime"))}), nil
 	case "disk-usage":
@@ -122,10 +149,60 @@ func (m *Module) StreamLogs(ctx context.Context, params json.RawMessage, emit fu
 	}
 }
 
-// runReal executes a real command, streaming its output as log events.
-func runReal(ctx context.Context, emit func(module.Event), name string, args ...string) (module.Result, error) {
+// hasSystemctl reports whether the host is managed by systemd. On Linux the associate installer
+// supports systemd and OpenRC, so its absence there means OpenRC.
+func hasSystemctl() bool {
+	_, err := exec.LookPath("systemctl")
+	return err == nil
+}
+
+// rebootArgv is the command that reboots a host running goos.
+func rebootArgv(goos string, systemctl bool) ([]string, error) {
+	switch {
+	case goos == "linux" && systemctl:
+		return []string{"systemctl", "reboot"}, nil
+	case goos == "linux":
+		return []string{"reboot"}, nil
+	case goos == "darwin":
+		return []string{"shutdown", "-r", "now"}, nil
+	}
+	return nil, fmt.Errorf("reboot is not supported on %s", goos)
+}
+
+// restartArgv is the command that restarts the named service on a host running goos. On macOS
+// the name is a launchd daemon label (e.g. com.docker.vmnetd).
+func restartArgv(goos string, systemctl bool, service string) ([]string, error) {
+	switch {
+	case goos == "linux" && systemctl:
+		return []string{"systemctl", "restart", service}, nil
+	case goos == "linux":
+		return []string{"rc-service", service, "restart"}, nil
+	case goos == "darwin":
+		return []string{"launchctl", "kickstart", "-k", "system/" + service}, nil
+	}
+	return nil, fmt.Errorf("restart-service is not supported on %s", goos)
+}
+
+// validService rejects names that systemctl / rc-service / launchctl would parse as something other than
+// one service: a leading '-' (an option) or any whitespace or control character. No shell is
+// involved, so nothing else needs escaping.
+func validService(s string) bool {
+	if s == "" || s[0] == '-' {
+		return false
+	}
+	for _, r := range s {
+		if unicode.IsSpace(r) || unicode.IsControl(r) {
+			return false
+		}
+	}
+	return true
+}
+
+// runReal executes a real command, streaming startMsg and then its output as log events.
+func runReal(ctx context.Context, emit func(module.Event), startMsg string, argv ...string) (module.Result, error) {
 	emit(module.Event{Kind: module.EventState, State: module.JobRunning})
-	cmd := exec.CommandContext(ctx, name, args...)
+	emit(module.Event{Kind: module.EventLog, Message: startMsg})
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	pr, pw := io.Pipe()
 	cmd.Stdout = pw
 	cmd.Stderr = pw

@@ -15,6 +15,14 @@
 # is independent, so enrolled hosts keep working.
 http_addr = ":8080"
 
+# Serve the dashboard over HTTPS: PEM certificate and key files (set both, or
+# neither for plain HTTP). http_addr then speaks HTTPS only. The files are re-read
+# when they change, so a renewed certificate needs no restart. On a tailnet,
+# `tailscale cert` can issue them, or skip these and front the dashboard with
+# `tailscale serve` instead (see README "HTTPS").
+#tls_cert = "/home/you/.labassistant/tls/dashboard.crt"
+#tls_key  = "/home/you/.labassistant/tls/dashboard.key"
+
 # Associate mTLS stream listen address (where associates dial in).
 #grpc_addr = ":8443"
 

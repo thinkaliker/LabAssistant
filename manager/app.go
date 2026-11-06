@@ -4,6 +4,7 @@ package manager
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -245,11 +246,19 @@ func (a *App) Serve(ctx context.Context) error {
 	)
 	pb.RegisterManagerServiceServer(grpcSrv, a.hub)
 
+	httpSrv := &http.Server{Addr: a.cfg.HTTPAddr, Handler: a.httpHandler()}
+	if a.cfg.TLSEnabled() {
+		certs, err := newCertReloader(a.cfg.TLSCert, a.cfg.TLSKey)
+		if err != nil {
+			return err
+		}
+		httpSrv.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12, GetCertificate: certs.GetCertificate}
+	}
+
 	grpcLis, err := net.Listen("tcp", a.cfg.GRPCAddr)
 	if err != nil {
 		return fmt.Errorf("listen grpc %s: %w", a.cfg.GRPCAddr, err)
 	}
-	httpSrv := &http.Server{Addr: a.cfg.HTTPAddr, Handler: a.httpHandler()}
 
 	errCh := make(chan error, 2)
 	go func() {
@@ -257,8 +266,15 @@ func (a *App) Serve(ctx context.Context) error {
 		errCh <- grpcSrv.Serve(grpcLis)
 	}()
 	go func() {
-		slog.Info("http listening", "addr", a.cfg.HTTPAddr)
-		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		var err error
+		if httpSrv.TLSConfig != nil {
+			slog.Info("https listening", "addr", a.cfg.HTTPAddr, "cert", a.cfg.TLSCert)
+			err = httpSrv.ListenAndServeTLS("", "")
+		} else {
+			slog.Info("http listening", "addr", a.cfg.HTTPAddr)
+			err = httpSrv.ListenAndServe()
+		}
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
 	}()

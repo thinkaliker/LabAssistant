@@ -69,7 +69,7 @@ into the associate for v1).
 | --- | --- |
 | **duo** | **d**ocker **u**pdater/**o**rchestrator — image update checks (Watchtower-style), compose start/stop/restart, compose and `.env` file reads/writes for the editor, docker log streaming. On hosts without the `docker` CLI it stays empty; set `LABASSISTANT_DEMO=1` on the associate to seed demo stacks for a docker-less walkthrough. |
 | **qup** | **q**uick **up**dater — dry-run + apply host package updates, distro-detected (Debian-based today). |
-| **sys** | **sys**tem — host commands: logs, reboot (confirmed), interfaces, disk usage, uptime, service restarts. |
+| **sys** | **sys**tem — host commands: logs, reboot (confirmed), interfaces, disk usage, uptime, service restarts. Reboot and service restarts act on the host on any OS: systemd or OpenRC on Linux, `shutdown` / `launchctl` on macOS (other OSes fail them). For local testing, set `LABASSISTANT_SYS_SIMULATE=1` on the associate to simulate them instead. The Hosts page shows `mode=real` or `mode=simulated`. |
 
 More detail in [DESIGN.md](DESIGN.md#modules).
 
@@ -142,8 +142,45 @@ To pull, rebuild, and restart in one step: `./scripts/manage.sh update`. Running
 `go test ./...` also runs the dashboard's JavaScript tests (`dashboard/jstest`, via
 `node --test dashboard/jstest/`) when Node 22.7+ is installed, and skips them otherwise.
 
-Open the dashboard at `http://<vm>:8080` (or whichever `http_addr` you set). To enroll a host without the SSH flow, mint a bundle
+Open the dashboard at `http://<vm>:8080` (or whichever `http_addr` you set; for `https://`, see
+[HTTPS](#https) below). To enroll a host without the SSH flow, mint a bundle
 with `./bin/manager enroll -name <host>` (see [BUILD.md](BUILD.md)).
+
+### HTTPS
+
+The dashboard is plain HTTP until you give it a certificate. On a tailnet there are two ways;
+both need MagicDNS and HTTPS certificates enabled in the Tailscale admin console (DNS page).
+
+**Let Tailscale terminate TLS (simplest).** Tailscale fetches and renews a certificate for the
+machine's `*.ts.net` name and proxies to the dashboard, so LabAssistant needs no TLS config:
+
+```bash
+sudo tailscale serve --bg 8080   # https://<machine>.<tailnet>.ts.net -> localhost:8080
+```
+
+Then set `http_addr = "127.0.0.1:8080"` in `config.toml` and restart, so the plain-HTTP port is
+no longer reachable over the tailnet directly.
+
+**Or have the manager serve HTTPS itself.** Point `tls_cert` and `tls_key` in `config.toml` at
+PEM files, at the top level of the file, above any `[section]` header (TOML files keys below a
+header into that section). `http_addr` then speaks HTTPS only, and the startup log says
+`https listening`. The manager re-reads the files within ~30s of
+them changing, so a renewal needs no restart. With Tailscale issuing the certificate:
+
+```bash
+mkdir -p ~/.labassistant/tls
+sudo tailscale cert --cert-file ~/.labassistant/tls/dashboard.crt \
+  --key-file ~/.labassistant/tls/dashboard.key <machine>.<tailnet>.ts.net
+sudo chown "$USER" ~/.labassistant/tls/dashboard.*   # the manager runs as you, not root
+```
+
+```toml
+tls_cert = "/home/<you>/.labassistant/tls/dashboard.crt"
+tls_key  = "/home/<you>/.labassistant/tls/dashboard.key"
+```
+
+Tailscale certificates last 90 days, so re-run those `tailscale cert` and `chown` lines on a
+schedule (a weekly root cron job is plenty). Any other CA's certificate works the same way.
 
 ## Workflow
 

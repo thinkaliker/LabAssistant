@@ -32,6 +32,42 @@ type Request struct {
 	Module string          `json:"module"`
 	Action string          `json:"action"`
 	Params json.RawMessage `json:"params,omitempty"`
+	// Env carries the associate's values for the ForwardedEnv variables. Run fills it in and
+	// Serve applies it; anything outside ForwardedEnv is ignored.
+	Env map[string]string `json:"env,omitempty"`
+}
+
+// ForwardedEnv lists the associate environment variables the helper must see to behave like
+// the associate would in-process. sudo's env_reset strips them from the helper otherwise,
+// which would turn, say, a host's "simulate reboots" opt-out into a real reboot.
+var ForwardedEnv = []string{
+	"LABASSISTANT_SYS_SIMULATE", // modules/sys: simulate reboot / restart-service
+}
+
+// forwardedEnv snapshots the ForwardedEnv variables set in this process.
+func forwardedEnv() map[string]string {
+	var env map[string]string
+	for _, k := range ForwardedEnv {
+		if v, ok := os.LookupEnv(k); ok {
+			if env == nil {
+				env = map[string]string{}
+			}
+			env[k] = v
+		}
+	}
+	return env
+}
+
+// applyEnv sets the ForwardedEnv entries of env in this process, ignoring any other key.
+func applyEnv(env map[string]string) error {
+	for _, k := range ForwardedEnv {
+		if v, ok := env[k]; ok {
+			if err := os.Setenv(k, v); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // Frame is one line on the helper's stdout: either an Event or the terminal Result.
@@ -55,6 +91,9 @@ func Run(ctx context.Context, command []string, password string, req Request, em
 
 	// Write the request to a 0600 temp file the helper reads via --request. The password is
 	// never written here — it stays on stdin only.
+	if req.Env == nil {
+		req.Env = forwardedEnv()
+	}
 	reqFile, err := os.CreateTemp("", "la-helper-req-*.json")
 	if err != nil {
 		return module.Result{}, err
@@ -154,6 +193,9 @@ func Serve(ctx context.Context, in io.Reader, out io.Writer, modulesByName map[s
 		return fmt.Errorf("decode request: %w", err)
 	}
 	enc := json.NewEncoder(out)
+	if err := applyEnv(req.Env); err != nil {
+		return enc.Encode(Frame{Result: &module.Result{State: module.JobFailed, Error: "apply forwarded env: " + err.Error()}})
+	}
 
 	m, ok := modulesByName[req.Module]
 	if !ok {

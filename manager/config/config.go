@@ -3,10 +3,14 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
+	"reflect"
+	"strings"
 
 	toml "github.com/pelletier/go-toml/v2"
 )
@@ -15,6 +19,11 @@ import (
 type Config struct {
 	// HTTPAddr is the listen address for the dashboard and REST API.
 	HTTPAddr string `toml:"http_addr"`
+	// TLSCert / TLSKey are PEM certificate and key files. With both set the dashboard and REST
+	// API are served over HTTPS on HTTPAddr; with neither, plain HTTP. The files are re-read
+	// when they change, so a renewed certificate takes effect without a restart.
+	TLSCert string `toml:"tls_cert"`
+	TLSKey  string `toml:"tls_key"`
 	// GRPCAddr is the listen address for the associate mTLS stream.
 	GRPCAddr string `toml:"grpc_addr"`
 	// LogLevel is one of debug, info, warn, error.
@@ -59,6 +68,9 @@ type Auth struct {
 	PasswordHash string `toml:"password_hash"`
 }
 
+// TLSEnabled reports whether the dashboard is served over HTTPS.
+func (c Config) TLSEnabled() bool { return c.TLSCert != "" && c.TLSKey != "" }
+
 // Default returns the configuration used when no file is present.
 func Default() Config {
 	return Config{
@@ -90,5 +102,51 @@ func Load(path string) (Config, error) {
 	if err := toml.Unmarshal(b, &cfg); err != nil {
 		return Config{}, fmt.Errorf("parse config %s: %w", path, err)
 	}
+	if (cfg.TLSCert == "") != (cfg.TLSKey == "") {
+		return Config{}, fmt.Errorf("config %s: tls_cert and tls_key must be set together", path)
+	}
+	for _, k := range unknownKeys(b) {
+		if hint := misplacedHint(k); hint != "" {
+			slog.Warn("ignoring config key", "file", path, "key", k, "hint", hint)
+		} else {
+			slog.Warn("ignoring unknown config key", "file", path, "key", k)
+		}
+	}
 	return cfg, nil
+}
+
+// unknownKeys lists the dotted keys in a config file that Config does not define. The lenient
+// decode in Load drops them silently, which hides mistakes: a `tls_cert` written below an
+// [enroll] header, or into a config read by a build that predates it, quietly leaves the
+// dashboard on plain HTTP.
+func unknownKeys(b []byte) []string {
+	var probe Config
+	err := toml.NewDecoder(bytes.NewReader(b)).DisallowUnknownFields().Decode(&probe)
+	var sme *toml.StrictMissingError
+	if !errors.As(err, &sme) {
+		return nil
+	}
+	keys := make([]string, 0, len(sme.Errors))
+	for i := range sme.Errors {
+		keys = append(keys, strings.Join(sme.Errors[i].Key(), "."))
+	}
+	return keys
+}
+
+// misplacedHint explains an unknown key that is really a top-level setting caught under a
+// [section] header (TOML assigns every key after a header to that table).
+func misplacedHint(key string) string {
+	parts := strings.Split(key, ".")
+	if len(parts) < 2 {
+		return ""
+	}
+	name := parts[len(parts)-1]
+	t := reflect.TypeOf(Config{})
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if f.Type.Kind() != reflect.Struct && f.Tag.Get("toml") == name {
+			return fmt.Sprintf("%s is a top-level setting; move it above the first [section] header", name)
+		}
+	}
+	return ""
 }

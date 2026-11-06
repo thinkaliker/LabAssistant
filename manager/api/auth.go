@@ -117,8 +117,10 @@ func (d Deps) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tok := d.Sessions.Create()
+	// Secure only when this hop is TLS: a plain-HTTP dashboard (or one behind a TLS-terminating
+	// proxy on loopback) would otherwise never get the cookie back.
 	http.SetCookie(w, &http.Cookie{
-		Name: sessionCookie, Value: tok, Path: "/", HttpOnly: true,
+		Name: sessionCookie, Value: tok, Path: "/", HttpOnly: true, Secure: r.TLS != nil,
 		SameSite: http.SameSiteLaxMode, MaxAge: int(sessionTTL.Seconds()),
 	})
 	writeJSON(w, http.StatusOK, map[string]string{"username": req.Username})
@@ -128,7 +130,7 @@ func (d Deps) logout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(sessionCookie); err == nil {
 		d.Sessions.Delete(c.Value)
 	}
-	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1, Secure: r.TLS != nil})
 	w.WriteHeader(http.StatusNoContent)
 }
 

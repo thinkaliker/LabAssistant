@@ -213,6 +213,17 @@ specific system services. More commands can be added later but must be specifica
 Specific actions (reboot, some logs, restarting system services) are elevated; otherwise no
 elevation is needed.
 
+reboot and restart-service act on the host whatever its OS: `systemctl reboot` /
+`systemctl restart` on systemd, `reboot` / `rc-service <name> restart` on OpenRC, and
+`shutdown -r now` / `launchctl kickstart -k system/<label>` on macOS. On any other OS they fail
+with "not supported" rather than pretending. The OS never decides simulation, because a Mac can
+be a real host. Only `LABASSISTANT_SYS_SIMULATE=1` on the associate does, swapping both actions
+for a harmless simulation for local testing. The associate passes that variable to the privileged
+helper in the request, because sudo resets the helper's environment. Associates the manager runs
+locally inherit it from the manager's environment (`LABASSISTANT_SYS_SIMULATE=1 ./bin/manager
+serve`). For an SSH-installed associate, set it with `systemctl edit labassistant-associate`
+(`Environment=LABASSISTANT_SYS_SIMULATE=1`).
+
 ### more tbd
 
 ## Workflow and Setup
